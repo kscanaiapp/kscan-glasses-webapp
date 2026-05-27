@@ -621,3 +621,126 @@ Candidate mitigations (documentation-only, not implemented in this phase):
 - Tune glow radius/opacity if bloom/glare reduces clarity outdoors.
 - Prefer high-contrast cyan/chrome text and avoid low-contrast greys for primary info.
 
+
+## Phase 7.1 - Meta Source Reconciliation (Documentation-Only)
+
+This section reconciles Phase 7 classifications using newly available official sources.
+
+Sources used in this reconciliation:
+- Meta Help page: https://www.meta.com/help/ai-glasses/621680547224505/ (Updated: 30 weeks ago)
+- Official GitHub: `facebookincubator/meta-wearables-webapp` README
+- Official GitHub: `facebook/meta-wearables-dat-ios` README
+- Official GitHub: `facebook/meta-wearables-dat-android` README
+
+### Phase 7 Baseline Reconciliation Targets
+
+Previously targeted from Phase 7 as non-VERIFIED categories:
+- `Official Meta Setup Requirements`: glasses/app version minimums, Developer Mode flow details.
+- `Meta Runtime Capability Matrix`: microphone/camera/support matrix, permissions ownership model details.
+- `Permission UX Findings`: prompt ownership and D-pad dialog interaction behavior.
+- `DAT iOS/Android Findings`: native-to-web bridge naming/contracts.
+
+### Official Meta Setup Requirements (Reconciled)
+
+VERIFIED
+- Meta Ray-Ban Display glasses require setup with the Meta AI mobile app. VERIFIED [Source: Meta Help Page, Updated 30 weeks ago]
+- Meta AI mobile app is required, mobile-only, and used to pair/manage devices. VERIFIED [Source: Meta Help Page]
+- Setup requires a paired phone workflow through the Meta AI mobile app. VERIFIED [Source: Meta Help Page]
+- Web Apps for MRBD are standard HTML/CSS/JS apps. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- HTTPS hosting is required for Web App deployment to glasses. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- Meta AI app Web App add path (Devices -> Display Glasses settings -> App connections -> Web apps -> Add a web app) is documented in official toolkit guidance. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+
+UNKNOWN
+- Whether Developer Mode persists across app restarts/account changes.
+- Whether all testers must always enable Developer Mode in all release-channel scenarios.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Exact mandatory minimum glasses firmware version number.
+- Exact mandatory minimum Meta AI app version number.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Developer Center pages referenced by GitHub READMEs that may contain detailed versioning/Developer Mode nuance.
+
+REQUIRES DEVICE VALIDATION
+- End-to-end app onboarding UI wording variance between iOS and Android app builds.
+
+### Web App Add/Connect Flow (Reconciled)
+
+VERIFIED
+- Setup and pairing start from Meta AI mobile app and QR/app-store onboarding path. VERIFIED [Source: Meta Help Page]
+- Web App add/connect flow exists via App connections -> Web apps in official toolkit docs. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+
+PARTIALLY DOCUMENTED
+- In-app sharing flow details and recipient requirements are referenced in broader DAT ecosystem but not fully specified in accessible public source text.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Universal Web App menu item-level semantics (Restart/Resume/Permissions) in authoritative public docs from accessible sources.
+- Pinning behavior details for every runtime state.
+
+### Meta Runtime Capability Matrix (Reconciled)
+
+VERIFIED
+- 600x600 viewport assumption and D-pad-first interaction are official toolkit constraints. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- Dark background guidance for additive display is official toolkit guidance. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- `.focusable` convention is explicitly part of toolkit constraints. VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+
+PARTIALLY DOCUMENTED
+- DAT repos verify native camera/stream capabilities at SDK level, but this does not directly confirm Web App-native camera support.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Public, explicit Web App runtime statement in accessible sources confirming exact support/unsupported status for microphone, notifications, offline, and text input.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Developer Center capability matrix details referenced by READMEs but not accessible here.
+
+REQUIRES DEVICE VALIDATION
+- devicePixelRatio behavior, waveguide bloom impacts, and permission prompt interaction mechanics.
+
+### Permission UX (Reconciled)
+
+VERIFIED
+- DAT SDK ecosystem includes permission/registration topics in official repos. VERIFIED [Source: facebook/meta-wearables-dat-ios README; facebook/meta-wearables-dat-android README]
+
+PARTIALLY DOCUMENTED
+- Permission architecture exists at native SDK layer, but ownership of prompts for Web App runtime (phone vs glasses vs browser) remains unspecified publicly.
+
+UNKNOWN
+- Whether permission dialogs are directly D-pad navigable in all contexts.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Mandatory `.focusable`-triggered permission request rule text for each permission class.
+
+### DAT iOS / DAT Android Bridge Unknowns (Reconciled)
+
+VERIFIED
+- iOS DAT SDK exists and supports wearable integrations with video streaming and photo capture. VERIFIED [Source: facebook/meta-wearables-dat-ios README]
+- Android DAT SDK exists and supports wearable integrations with video streaming and photo capture. VERIFIED [Source: facebook/meta-wearables-dat-android README]
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Mandatory native-to-web bridge object names (`window.webkit.messageHandlers.DATBridge`, `window.DATBridge`, etc.).
+- Canonical cross-platform JS bridge envelope names/fields for WebView injection.
+
+HIGH PRIORITY ARCHITECTURAL RISK
+- Assuming one identical JS bridge object/contract for iOS and Android without Meta-verified source or device proof.
+
+### Voice / Microphone Reconciliation
+
+VERIFIED
+- Product vision can include hands-free experiences at the native DAT/mobile integration level. VERIFIED [Source: DAT iOS/Android READMEs]
+
+PARTIALLY DOCUMENTED
+- Native DAT capability does not automatically imply equivalent Web App microphone support.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Definitive current MRBD Web App microphone support statement from Developer Center capability docs in this environment.
+
+### Source Conflicts
+
+SOURCE CONFLICT — NEEDS META CONFIRMATION
+- No direct contradiction found between the accessible Meta Help setup article and accessible official GitHub READMEs for setup flow at high level.
+- Potential conflict candidates (version minimums, Developer Mode specifics, capability exclusions) remain unresolved due restricted access to deeper official docs.
+
+### Bridge Policy Guardrail Confirmation
+
+- Current adapter-based `src/datBridge.js` remains appropriate interim architecture pending source/device verification.
+- This phase does not treat `window.webkit.messageHandlers.*` or `window.DATBridge.*` as mandatory without direct Meta evidence.
