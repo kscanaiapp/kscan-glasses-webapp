@@ -31,7 +31,7 @@ const els = {
   datStatus: document.getElementById('dat-status'),
   voiceStatus: document.getElementById('voice-status'),
   errorMessage: document.getElementById('error-message'),
-  hud: document.getElementById('dat-hud'),
+  hud: null,
 };
 
 const screens = [els.home, els.processing, els.results, els.library, els.settings, els.error];
@@ -286,8 +286,13 @@ function registerMatrices() {
 }
 
 function initStatus() {
-  if (!import.meta.env.DEV && els.hud) {
-    els.hud.remove();
+  if (import.meta.env.DEV && !els.hud) {
+    const hud = document.createElement('aside');
+    hud.id = 'dat-hud';
+    hud.setAttribute('aria-hidden', 'true');
+    hud.textContent = 'DAT: CHECKING | ANALYZE: CHECKING | BACKEND: CHECKING | FLOW: IDLE';
+    document.getElementById('app')?.appendChild(hud);
+    els.hud = hud;
   }
 
   els.datStatus.textContent = getDatStatus();

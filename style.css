@@ -84,7 +84,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 20px;
 }
 
 .top-bar h1 {
@@ -118,8 +118,8 @@ body {
 
 .top-left {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  top: 20px;
+  left: 20px;
   z-index: 2;
 }
 
