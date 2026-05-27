@@ -3,7 +3,11 @@ function isMetaRuntime() {
 }
 
 function isMockEnabled() {
-  return String(import.meta.env.MOCK_DAT || '').toLowerCase() === 'true';
+  return String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true' && !import.meta.env.PROD;
+}
+
+function bridgeAvailable() {
+  return Boolean(window.parent && typeof window.parent.postMessage === 'function' && typeof window.addEventListener === 'function');
 }
 
 function generateMockImage() {
@@ -11,6 +15,8 @@ function generateMockImage() {
   canvas.width = 600;
   canvas.height = 600;
   const ctx = canvas.getContext('2d');
+
+  if (!ctx) throw new Error('Unable to create mock canvas');
 
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -27,9 +33,13 @@ function generateMockImage() {
 }
 
 export async function capturePhoto() {
-  if (isMockEnabled() || !isMetaRuntime()) {
+  if (isMockEnabled()) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     return generateMockImage();
+  }
+
+  if (!isMetaRuntime() || !bridgeAvailable()) {
+    throw new Error('DAT bridge unavailable and mock capture is disabled');
   }
 
   return new Promise((resolve, reject) => {
@@ -48,24 +58,16 @@ export async function capturePhoto() {
 
       if (payload.type === 'CAPTURE_RESPONSE') {
         const image = payload?.data?.base64Image;
-        if (typeof image === 'string' && image.length > 16) {
-          cleanup();
-          resolve(image);
-        } else {
-          cleanup();
-          reject(new Error('Invalid CAPTURE_RESPONSE payload'));
-        }
+        cleanup();
+        if (typeof image === 'string' && image.length > 16) resolve(image);
+        else reject(new Error('Invalid CAPTURE_RESPONSE payload'));
       }
 
       if (payload.type === 'photo-captured') {
         const image = payload?.base64;
-        if (typeof image === 'string' && image.length > 16) {
-          cleanup();
-          resolve(image);
-        } else {
-          cleanup();
-          reject(new Error('Invalid photo-captured payload'));
-        }
+        cleanup();
+        if (typeof image === 'string' && image.length > 16) resolve(image);
+        else reject(new Error('Invalid photo-captured payload'));
       }
 
       if (payload.type === 'CAPTURE_ERROR') {
@@ -81,6 +83,6 @@ export async function capturePhoto() {
 
 export function getDatStatus() {
   if (isMockEnabled()) return 'DAT: mock';
-  if (isMetaRuntime()) return 'DAT: ready';
-  return 'DAT: mock (browser)';
+  if (isMetaRuntime() && bridgeAvailable()) return 'DAT: ready';
+  return 'DAT: unavailable';
 }

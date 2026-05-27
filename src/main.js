@@ -1,4 +1,4 @@
-import { initNavigation, focusFirstInView, registerFocusMatrix } from './navigation.js';
+import { initNavigation, focusFirstInView, registerFocusMatrix, resetFocusIndex } from './navigation.js';
 import { capturePhoto, getDatStatus } from './datBridge.js';
 import { sanitizeImageBeforeUpload } from './privacyImageSanitizer.js';
 import { analyzeImage } from './api.js';
@@ -14,10 +14,9 @@ const STATE = {
 };
 
 let appState = STATE.IDLE;
-let lastError = 'Something went wrong.';
 let currentView = 'home';
-
 const screenHistory = [];
+
 const els = {
   home: document.getElementById('home'),
   processing: document.getElementById('processing'),
@@ -33,6 +32,8 @@ const els = {
   errorMessage: document.getElementById('error-message'),
 };
 
+const screens = [els.home, els.processing, els.results, els.library, els.settings, els.error];
+
 function setState(next) {
   appState = next;
   if (next === STATE.CAPTURING) els.processingText.textContent = 'Capturing...';
@@ -40,14 +41,27 @@ function setState(next) {
   if (next === STATE.ANALYZING) els.processingText.textContent = 'Analyzing...';
 }
 
+function syncViewA11y(activeViewId) {
+  screens.forEach((screen) => {
+    if (!screen) return;
+    const active = screen.id === activeViewId;
+    screen.setAttribute('aria-hidden', active ? 'false' : 'true');
+  });
+}
+
 function showScreen(viewId, pushHistory = true) {
+  resetFocusIndex();
+
   if (pushHistory && currentView !== viewId) screenHistory.push(currentView);
-  Object.values(els)
-    .filter((node) => node instanceof HTMLElement && node.classList.contains('screen'))
-    .forEach((screen) => screen.classList.add('hidden'));
+
+  screens.forEach((screen) => {
+    if (!screen) return;
+    screen.classList.add('hidden');
+  });
 
   els[viewId].classList.remove('hidden');
   currentView = viewId;
+  syncViewA11y(viewId);
 
   if (viewId === 'results') {
     const firstCard = els.resultsList.querySelector('.product-card.focusable');
@@ -82,6 +96,10 @@ function renderProducts(data) {
 
   if (!products.length) {
     els.resultsEmpty.classList.remove('hidden');
+    registerFocusMatrix('results', [
+      [document.getElementById('results-back-btn')],
+      [document.getElementById('retry-empty-btn')],
+    ]);
     return;
   }
 
@@ -123,8 +141,7 @@ function renderProducts(data) {
 
 function showError(message) {
   setState(STATE.ERROR);
-  lastError = safeText(message, 'Something went wrong.');
-  els.errorMessage.textContent = lastError;
+  els.errorMessage.textContent = safeText(message, 'Something went wrong.');
   showScreen('error');
 }
 
@@ -209,8 +226,8 @@ function initStatus() {
 }
 
 function initSupabasePlaceholder() {
-  const url = import.meta.env.SUPABASE_URL || '';
-  const anon = import.meta.env.SUPABASE_ANON_KEY || '';
+  const url = import.meta.env.VITE_SUPABASE_URL || '';
+  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
   void { configured: Boolean(url && anon) };
 }
 

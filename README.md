@@ -2,6 +2,13 @@
 
 Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. This repository is intentionally separate from the K Scan mobile app, backend API codebase, and marketing website so glasses-specific UX, runtime constraints, and release cadence can evolve independently.
 
+## ⚠️ Current Limitations
+
+- DAT is scaffolded, not device-verified.
+- Privacy sanitizer strips metadata/resizes but real face detection is pending.
+- Backend API client is scaffolded; production backend testing is pending.
+- Supabase sync is not implemented yet.
+
 ## Overview
 
 This app targets a fixed `600x600` display with D-pad-only interaction and no global scrolling. It includes:
@@ -47,12 +54,12 @@ npm run build
 
 Use `.env` (see `.env.example`):
 
-- `KSCAN_BACKEND_URL`: backend host, used as `${KSCAN_BACKEND_URL}/api/analyze`
-- `SUPABASE_URL`: placeholder only in this scaffold
-- `SUPABASE_ANON_KEY`: placeholder only in this scaffold
-- `META_APP_ID`: reserved for future Meta auth/runtime integration
-- `META_CLIENT_TOKEN`: reserved for future Meta auth/runtime integration
-- `MOCK_DAT`: `true` enables browser mock capture mode
+- `VITE_KSCAN_BACKEND_URL`: backend host, used as `${VITE_KSCAN_BACKEND_URL}/api/analyze`
+- `VITE_SUPABASE_URL`: placeholder only in this scaffold
+- `VITE_SUPABASE_ANON_KEY`: placeholder only in this scaffold
+- `VITE_META_APP_ID`: reserved for future Meta auth/runtime integration
+- `VITE_META_CLIENT_TOKEN`: reserved for future Meta auth/runtime integration
+- `VITE_MOCK_DAT`: `true` enables browser mock capture mode in development only
 
 ## Local Testing
 
@@ -76,7 +83,7 @@ All handled keys are globally intercepted and call `preventDefault()`.
 
 ### DAT Bridge Notes
 
-- Browser mock mode (default with `MOCK_DAT=true`) returns a generated base64 JPEG test image.
+- Browser mock mode (default with `VITE_MOCK_DAT=true`) returns a generated base64 JPEG test image.
 - Runtime capture request message:
 
 ```json

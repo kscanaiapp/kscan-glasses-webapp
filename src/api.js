@@ -1,12 +1,9 @@
-const BASE_URL = (import.meta.env.KSCAN_BACKEND_URL || '').replace(/\/$/, '');
+const BASE_URL = (import.meta.env.VITE_KSCAN_BACKEND_URL || '').replace(/\/$/, '');
 
-function withTimeout(promise, ms) {
+function withTimeout(promiseFactory, ms) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
-  return {
-    signal: controller.signal,
-    wrapped: promise(controller.signal).finally(() => clearTimeout(timer)),
-  };
+  return promiseFactory(controller.signal).finally(() => clearTimeout(timer));
 }
 
 function normalizeProduct(item) {
@@ -24,21 +21,19 @@ function normalizeProduct(item) {
 }
 
 export async function analyzeImage(base64) {
-  if (!BASE_URL) throw new Error('Missing KSCAN_BACKEND_URL');
-
-  const { signal, wrapped } = withTimeout(
-    (abortSignal) => fetch(`${BASE_URL}/api/analyze`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64 }),
-      signal: abortSignal,
-    }),
-    10000,
-  );
+  if (!BASE_URL) throw new Error('Missing VITE_KSCAN_BACKEND_URL');
 
   let response;
   try {
-    response = await wrapped;
+    response = await withTimeout(
+      (signal) => fetch(`${BASE_URL}/api/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64 }),
+        signal,
+      }),
+      10000,
+    );
   } catch (error) {
     if (error?.name === 'AbortError') throw new Error('Analyze request timed out');
     throw new Error('Network error during analyze request');

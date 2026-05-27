@@ -1,6 +1,10 @@
 const focusMatrices = new Map();
-let currentViewId = null;
 let onBackHandler = null;
+let focusIndex = 0;
+
+export function resetFocusIndex() {
+  focusIndex = 0;
+}
 
 function visibleScreen() {
   return document.querySelector('.screen:not(.hidden)');
@@ -12,70 +16,35 @@ function getFocusableInView(viewId) {
   return Array.from(view.querySelectorAll('.focusable:not([disabled]):not(.hidden)'));
 }
 
-function findActivePosition(matrix, activeEl) {
-  for (let r = 0; r < matrix.length; r += 1) {
-    for (let c = 0; c < matrix[r].length; c += 1) {
-      if (matrix[r][c] === activeEl) return { r, c };
-    }
-  }
-  return null;
+function clearFocusedClass() {
+  document.querySelectorAll('.focusable.focused').forEach((el) => el.classList.remove('focused'));
 }
 
-function moveByMatrix(viewId, direction) {
-  const matrix = focusMatrices.get(viewId);
-  if (!matrix || matrix.length === 0) return false;
+function applyFocusedClass(el) {
+  clearFocusedClass();
+  if (el instanceof HTMLElement) el.classList.add('focused');
+}
 
-  const active = document.activeElement;
-  let position = findActivePosition(matrix, active);
-  if (!position) {
-    for (let r = 0; r < matrix.length; r += 1) {
-      for (let c = 0; c < matrix[r].length; c += 1) {
-        if (matrix[r][c] instanceof HTMLElement) {
-          matrix[r][c].focus();
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  let nr = position.r;
-  let nc = position.c;
-  const rowLen = matrix[position.r].length;
-
-  if (direction === 'up') nr = (position.r - 1 + matrix.length) % matrix.length;
-  if (direction === 'down') nr = (position.r + 1) % matrix.length;
-  if (direction === 'left') nc = (position.c - 1 + rowLen) % rowLen;
-  if (direction === 'right') nc = (position.c + 1) % rowLen;
-
-  const target = matrix[nr]?.[nc];
-  if (target instanceof HTMLElement && !target.disabled && !target.classList.contains('hidden')) {
-    target.focus();
-    target.scrollIntoView({ block: 'nearest' });
-    return true;
-  }
-
-  return false;
+function focusAtIndex(viewId, index) {
+  const items = getFocusableInView(viewId);
+  if (!items.length) return;
+  focusIndex = ((index % items.length) + items.length) % items.length;
+  items[focusIndex].focus();
+  items[focusIndex].scrollIntoView({ block: 'nearest' });
+  applyFocusedClass(items[focusIndex]);
 }
 
 function moveByList(viewId, direction) {
   const items = getFocusableInView(viewId);
-  if (items.length === 0) return;
-
-  const active = document.activeElement;
-  const idx = items.indexOf(active);
-  const next = idx === -1
-    ? 0
-    : (direction === 'up' || direction === 'left'
-      ? (idx - 1 + items.length) % items.length
-      : (idx + 1) % items.length);
-
-  items[next].focus();
-  items[next].scrollIntoView({ block: 'nearest' });
+  if (!items.length) return;
+  const delta = direction === 'up' ? -1 : 1;
+  focusAtIndex(viewId, focusIndex + delta);
 }
 
-function activateFocused() {
-  const active = document.activeElement;
+function activateFocused(viewId) {
+  const items = getFocusableInView(viewId);
+  if (!items.length) return;
+  const active = items[focusIndex] || document.activeElement;
   if (active && active.classList.contains('focusable')) active.click();
 }
 
@@ -88,33 +57,23 @@ function handleKeydown(event) {
   if (!visible) return;
   const viewId = visible.id;
 
-  if (event.key === 'ArrowLeft') {
-    if (!moveByMatrix(viewId, 'left') && typeof onBackHandler === 'function') onBackHandler();
+  if (event.key === 'ArrowLeft' || event.key === 'Escape') {
+    if (typeof onBackHandler === 'function') onBackHandler();
     return;
   }
 
   if (event.key === 'ArrowUp') {
-    if (!moveByMatrix(viewId, 'up')) moveByList(viewId, 'up');
+    moveByList(viewId, 'up');
     return;
   }
 
   if (event.key === 'ArrowDown') {
-    if (!moveByMatrix(viewId, 'down')) moveByList(viewId, 'down');
+    moveByList(viewId, 'down');
     return;
   }
 
-  if (event.key === 'ArrowRight') {
-    if (!moveByMatrix(viewId, 'right')) activateFocused();
-    return;
-  }
-
-  if (event.key === 'Enter') {
-    activateFocused();
-    return;
-  }
-
-  if (event.key === 'Escape' && typeof onBackHandler === 'function') {
-    onBackHandler();
+  if (event.key === 'ArrowRight' || event.key === 'Enter') {
+    activateFocused(viewId);
   }
 }
 
@@ -123,24 +82,36 @@ export function registerFocusMatrix(viewId, matrix) {
 }
 
 export function focusFirstInView(viewId) {
-  currentViewId = viewId;
+  resetFocusIndex();
   const matrix = focusMatrices.get(viewId);
   if (matrix && matrix.length) {
     for (const row of matrix) {
       for (const element of row) {
         if (element instanceof HTMLElement && !element.classList.contains('hidden') && !element.disabled) {
           element.focus();
+          applyFocusedClass(element);
           return;
         }
       }
     }
   }
 
-  const items = getFocusableInView(viewId);
-  if (items[0]) items[0].focus();
+  focusAtIndex(viewId, 0);
 }
 
 export function initNavigation({ onBack }) {
   onBackHandler = onBack;
   document.addEventListener('keydown', handleKeydown);
+  document.addEventListener('focusin', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.classList.contains('focusable')) return;
+
+    const visible = visibleScreen();
+    if (!visible || !visible.contains(target)) return;
+
+    const items = getFocusableInView(visible.id);
+    const index = items.indexOf(target);
+    if (index >= 0) focusIndex = index;
+    applyFocusedClass(target);
+  });
 }

@@ -30,6 +30,7 @@ body {
   position: relative;
   width: 600px;
   height: 600px;
+  overflow: hidden;
 }
 
 .screen {
@@ -87,7 +88,7 @@ body {
 }
 
 .top-bar h1 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
 }
 
@@ -231,7 +232,10 @@ body {
   cursor: pointer;
 }
 
-.focusable:focus {
+.focusable:focus,
+.focusable.focused {
+  position: relative;
+  z-index: 5;
   outline: 3px solid var(--cyan-hot);
   box-shadow: 0 0 0 3px rgba(0, 255, 255, 0.35), 0 0 16px rgba(0, 255, 255, 0.75);
 }

@@ -8,7 +8,7 @@
 </head>
 <body>
   <main id="app" aria-live="polite">
-    <section id="home" class="screen is-active" aria-label="Home">
+    <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
       <div class="home-center">
         <button id="scan-btn" class="btn btn-primary focusable">K Scan</button>
         <p class="subtitle">Voice or gesture</p>
@@ -23,7 +23,7 @@
       </nav>
     </section>
 
-    <section id="processing" class="screen hidden" aria-label="Processing">
+    <section id="processing" class="screen hidden" aria-label="Processing" aria-hidden="true">
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
         <div class="spinner" aria-hidden="true"></div>
@@ -31,7 +31,7 @@
       </div>
     </section>
 
-    <section id="results" class="screen hidden" aria-label="Results">
+    <section id="results" class="screen hidden" aria-label="Results" aria-hidden="true">
       <header class="top-bar">
         <button id="results-back-btn" class="btn btn-ghost focusable">Back</button>
         <h1>Results</h1>
@@ -43,7 +43,7 @@
       </div>
     </section>
 
-    <section id="library" class="screen hidden" aria-label="Library">
+    <section id="library" class="screen hidden" aria-label="Library" aria-hidden="true">
       <header class="top-bar">
         <button id="library-back-btn" class="btn btn-ghost focusable">Back</button>
         <h1>Library</h1>
@@ -56,7 +56,7 @@
       </div>
     </section>
 
-    <section id="settings" class="screen hidden" aria-label="Settings">
+    <section id="settings" class="screen hidden" aria-label="Settings" aria-hidden="true">
       <header class="top-bar">
         <button id="settings-back-btn" class="btn btn-ghost focusable">Back</button>
         <h1>Settings</h1>
@@ -69,7 +69,7 @@
       </div>
     </section>
 
-    <section id="error" class="screen hidden" aria-label="Error">
+    <section id="error" class="screen hidden" aria-label="Error" aria-hidden="true">
       <div class="error-center">
         <div class="error-symbol" aria-hidden="true">!</div>
         <p id="error-message">Something went wrong.</p>
