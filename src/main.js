@@ -8,7 +8,7 @@ import {
   toUserFriendlyCaptureError,
 } from './datBridge.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
-import { analyzeImage } from './api.js';
+import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
 import { initVoice } from './voice.js';
 
 const STATE = {
@@ -116,11 +116,53 @@ function safeText(value, fallback) {
   return typeof value === 'string' && value.trim() ? value : fallback;
 }
 
+function createText(tag, className, value) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  node.textContent = value;
+  return node;
+}
+
+function createProductCard(product) {
+  const card = document.createElement('button');
+  card.type = 'button';
+  card.className = 'row product-card focusable';
+
+  const hasImage = typeof product.imageUrl === 'string' && product.imageUrl.length > 0;
+  if (hasImage) {
+    const image = document.createElement('img');
+    image.className = 'product-thumb';
+    image.src = product.imageUrl;
+    image.alt = 'Product image';
+    card.appendChild(image);
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'product-thumb product-thumb-placeholder';
+    placeholder.setAttribute('aria-hidden', 'true');
+    card.appendChild(placeholder);
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'product-meta';
+  meta.appendChild(createText('p', 'brand', safeText(product.brand, 'Unknown Brand')));
+  meta.appendChild(createText('p', 'name', safeText(product.name, 'Unnamed Product')));
+
+  const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
+  meta.appendChild(createText('p', 'price', priceText));
+  meta.appendChild(createText('p', 'link', product.url ? 'Open product' : 'No link available'));
+  card.appendChild(meta);
+
+  card.addEventListener('click', () => {});
+  return card;
+}
+
 function renderProducts(data) {
   const products = Array.isArray(data?.products) ? data.products : [];
   els.resultsList.innerHTML = '';
 
   if (!products.length) {
+    const empty = els.resultsEmpty.querySelector('p');
+    if (empty) empty.textContent = 'No items identified';
     els.resultsEmpty.classList.remove('hidden');
     registerFocusMatrix('results', [
       [document.getElementById('results-back-btn')],
@@ -132,30 +174,7 @@ function renderProducts(data) {
   els.resultsEmpty.classList.add('hidden');
 
   products.forEach((product) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'row product-card focusable';
-
-    const img = product.image
-      ? `<img class="product-thumb" src="${product.image}" alt="Product image" />`
-      : '<div class="product-thumb" aria-hidden="true"></div>';
-
-    const confidenceText = Number.isFinite(product.confidence)
-      ? `${Math.round(product.confidence * 100)}%`
-      : 'n/a';
-
-    card.innerHTML = `
-      ${img}
-      <div class="product-meta">
-        <p>${safeText(product.brand, 'Unknown Brand')}</p>
-        <p class="name">${safeText(product.name, 'Unnamed Product')}</p>
-        <p class="price">${safeText(product.price, 'Price unavailable')}</p>
-        <p class="confidence">Confidence: ${confidenceText}</p>
-        <p class="link">Buy/Open: ${safeText(product.link, '#')}</p>
-      </div>
-    `;
-
-    card.addEventListener('click', () => {});
+    const card = createProductCard(product);
     els.resultsList.appendChild(card);
   });
 
@@ -174,6 +193,16 @@ function showError(message) {
 function normalizeScanError(error) {
   if (error instanceof SanitizerError) {
     return mapSanitizerErrorToUserMessage(error);
+  }
+
+  if (error instanceof AnalyzeError) {
+    if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Backend not configured.';
+    if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Request timed out. Please try again.';
+    if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Cannot reach server. Check connection.';
+    if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Analysis failed. Please try again.';
+    if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Unexpected server response.';
+    if (error.code === ANALYZE_ERROR_CODES.INVALID_SHAPE) return 'Unexpected server response.';
+    return 'Analysis failed. Please try again.';
   }
 
   if (!(error instanceof DATBridgeError)) {
@@ -197,11 +226,16 @@ export async function startScan() {
     const sanitized = await sanitizeImageBeforeUpload(captured);
 
     setState(STATE.ANALYZING);
-    const response = await analyzeImage(sanitized);
+    const response = await analyzeImage(sanitized, {
+      onSlow: () => {
+        els.processingText.textContent = 'Waking up Fashion AI...';
+      },
+    });
 
     renderProducts(response);
     setState(STATE.SUCCESS);
     showScreen('results');
+    focusFirstInView('results');
   } catch (error) {
     showError(normalizeScanError(error));
   }

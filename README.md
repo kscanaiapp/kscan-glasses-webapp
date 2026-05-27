@@ -153,6 +153,54 @@ Asset setup commands:
 2. `npm run download:models` (uses official Google MediaPipe sample source URL)
 3. `npm run verify:models`
 
+## Phase 4 - Backend Analyze Integration
+
+- Required env var: `VITE_KSCAN_BACKEND_URL`
+- Example `.env` value:
+  `VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com`
+- Backend URL is normalized to remove trailing slashes before calling:
+  `${normalizedBackendUrl}/api/analyze`
+- If backend URL is missing/empty, request is not sent and user sees:
+  `Backend not configured.`
+
+Exact request contract:
+
+```json
+{ "image": "sanitizedBase64" }
+```
+
+Headers:
+
+```json
+{ "Content-Type": "application/json" }
+```
+
+Privacy rule in scan flow:
+
+`capturePhoto() -> sanitizeImageBeforeUpload() -> analyzeImage(sanitizedBase64) -> render results`
+
+Only sanitized images are sent to backend.
+
+Timeout behavior:
+
+- At 5s while waiting for backend: `Waking up Fashion AI...`
+- At 25s: request aborts and user sees `Request timed out. Please try again.`
+
+Error behavior:
+
+- Network/CORS failure: `Cannot reach server. Check connection.`
+- Non-2xx: `Analysis failed. Please try again.`
+- Invalid JSON/shape: `Unexpected server response.`
+
+Backend CORS note:
+
+- Backend must allow CORS from the deployed glasses web app origin.
+
+Results behavior:
+
+- Display limit is top 5 products.
+- Empty or missing products array renders friendly state: `No items identified`.
+
 Manual local-image test (browser only, no upload):
 
 1. Open app in dev
