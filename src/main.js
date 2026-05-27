@@ -1,7 +1,6 @@
 import { initNavigation, focusFirstInView, registerFocusMatrix, resetFocusIndex } from './navigation.js';
 import {
   capturePhoto,
-  getDatStatus,
   getDatDiagnostics,
   DATBridgeError,
   DAT_ERROR_CODES,
@@ -9,7 +8,6 @@ import {
 } from './datBridge.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
 import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
-import { initVoice } from './voice.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
 
 const STATE = FLOW_STATES;
@@ -28,8 +26,6 @@ const els = {
   processingText: document.getElementById('processing-text'),
   resultsList: document.getElementById('results-list'),
   resultsEmpty: document.getElementById('results-empty'),
-  datStatus: document.getElementById('dat-status'),
-  voiceStatus: document.getElementById('voice-status'),
   errorMessage: document.getElementById('error-message'),
   hud: null,
 };
@@ -294,18 +290,7 @@ function initStatus() {
     document.getElementById('app')?.appendChild(hud);
     els.hud = hud;
   }
-
-  els.datStatus.textContent = getDatStatus();
   updateHud();
-
-  const voice = initVoice({ onScan: startScan });
-  if (!voice.supported) {
-    els.voiceStatus.textContent = 'Voice: unavailable';
-    return;
-  }
-
-  els.voiceStatus.textContent = 'Voice: available';
-  voice.start();
 }
 
 function initSupabasePlaceholder() {
