@@ -837,3 +837,11 @@ Classifications remain in allowable categories:
 - PLAUSIBLE BUT UNSOURCED
 - REQUIRES DEVICE VALIDATION
 - HIGH PRIORITY ARCHITECTURAL RISK
+
+## Phase 8 - Visual Safe-Zone and Deployment Preview Readiness
+
+- Safe-zone hardening keeps critical controls and text away from the 600x600 edge with a 20px inner margin strategy.
+- Focus styling is tuned to reduce clipping risk in scroll panels while preserving the strict fixed-canvas boundary.
+- Dev diagnostic HUD remains development-only and is not appended to the DOM in production mode.
+- Production preview checklist: mocks off, 600x600 viewport preserved, no body scrollbars, controlled DAT-unavailable error on desktop.
+- Remaining device-validation risks: physical waveguide clipping, devicePixelRatio behavior, indoor/outdoor bloom, and real MRBD viewport behavior.
