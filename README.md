@@ -1,134 +1,134 @@
-# Meta Wearables Web App AI Toolkit
+# kscan-glasses-webapp
 
-An AI toolkit that helps you build Web Apps for Meta Ray-Ban Display glasses. It contains plugins for Claude Code, Codex, Cursor, and GitHub Copilot.
+Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. This repository is intentionally separate from the K Scan mobile app, backend API codebase, and marketing website so glasses-specific UX, runtime constraints, and release cadence can evolve independently.
 
-## What are Web Apps for Meta Ray-Ban Display glasses?
+## Overview
 
-Web Apps are standard HTML/CSS/JavaScript applications rendered on Meta Ray-Ban Display (MRBD) glasses — an easy and familiar way to build experiences for the glasses, especially with AI-assisted coding tools. See the full [Web Apps developer documentation](https://wearables.developer.meta.com/docs/develop/webapps) on the Wearables Developer Center for capabilities, design constraints, and best practices.
+This app targets a fixed `600x600` display with D-pad-only interaction and no global scrolling. It includes:
 
-## Quick Start
+- Multi-screen UI: Home, Processing, Results, Library, Settings, Error
+- State machine: `IDLE`, `CAPTURING`, `SANITIZING`, `ANALYZING`, `SUCCESS`, `ERROR`
+- DAT bridge wrapper with Meta runtime mode and browser mock mode
+- Privacy image sanitizer (canvas metadata strip, resize, JPEG re-encode)
+- Guarded backend analyzer client for `POST /api/analyze`
+- Optional voice trigger wrapper (feature-detected)
 
-### 1. Install AI Skills
+## Why Separate From Mobile App
 
-#### Option A — Plugin Marketplace (recommended for Claude Code and Codex)
+The glasses web app has unique requirements (fixed 600x600 viewport, D-pad focus model, additive-display visual constraints, DAT capture bridge, no direct `getUserMedia` usage). Keeping this in a standalone repo reduces coupling and avoids regressions in existing mobile, backend, and website projects.
 
-**Claude Code:**
+## Setup
 
-```bash
-# Add the marketplace (one-time)
-/plugin marketplace add https://github.com/facebookincubator/meta-wearables-webapp
-
-# Install the plugin
-/plugin install meta-wearables-webapp@meta-wearables
-
-# Update plugin
-/plugin marketplace update meta-wearables && /plugin update meta-wearables-webapp@meta-wearables
-```
-
-**Codex CLI:**
+1. Install dependencies:
 
 ```bash
-# Add the marketplace (one-time, run in your terminal)
-codex plugin marketplace add https://github.com/facebookincubator/meta-wearables-webapp
-
-# Install the plugin (run in your terminal)
-Start Codex, and type `/plugins` → tab to **[Meta Wearables]** → install.
-
-# Update plugin
-
-# Refresh the marketplace source
-codex plugin marketplace upgrade meta-wearables
-
-Then inside Codex: go to `/plugins` — if a newer version is available, select the option to update.
+npm install
 ```
 
-#### Option B — Install Script (all tools)
+2. Create local env file from example:
 
 ```bash
-# Clone this repo and Install for your preferred tool
-git clone https://github.com/facebookincubator/meta-wearables-webapp.git
-./install-skills.sh claude    # Claude Code
-./install-skills.sh cursor    # Cursor
-./install-skills.sh copilot   # GitHub Copilot
-./install-skills.sh all       # All tools + AGENTS.md
-
-# Or remote install (no clone needed)
-curl -sL https://raw.githubusercontent.com/facebookincubator/meta-wearables-webapp/main/install-skills.sh | bash
+cp .env.example .env
 ```
 
-### 2. Build a Web App
+3. Run development server:
 
-Open your project in an AI-assisted editor and describe what you want:
+```bash
+npm run dev
+```
 
-> "Create a weather app that shows the 5-day forecast with D-pad navigation"
+4. Build for production validation:
 
-The AI will scaffold `index.html`, `styles.css`, and `app.js` following the display glasses design system.
+```bash
+npm run build
+```
 
-### 3. Test in Browser
+## Environment Variables
 
-Start your web app locally however your project requires (e.g., open `index.html` directly, run a dev server, `npm run dev`, etc.) and open it in your desktop browser. Use arrow keys to simulate D-pad input.
+Use `.env` (see `.env.example`):
 
-To test sensor data like geolocation or IMU sensors:
+- `KSCAN_BACKEND_URL`: backend host, used as `${KSCAN_BACKEND_URL}/api/analyze`
+- `SUPABASE_URL`: placeholder only in this scaffold
+- `SUPABASE_ANON_KEY`: placeholder only in this scaffold
+- `META_APP_ID`: reserved for future Meta auth/runtime integration
+- `META_CLIENT_TOKEN`: reserved for future Meta auth/runtime integration
+- `MOCK_DAT`: `true` enables browser mock capture mode
 
-1. Open **Chrome DevTools** (F12)
-2. Click the **⋮** (three-dot menu) in the top-right of DevTools
-3. Go to **More tools** → **Sensors**
-4. Override **Location** with custom latitude/longitude and change **Orientation** as needed
+## Local Testing
 
-### 4. Deploy to Glasses
+### 600x600 Viewport
 
-Your web app must be hosted at a **publicly available HTTPS URL**. This plugin supports deploying to [Vercel](https://vercel.com), but Vercel is just one option — you can use any hosting provider as long as the result is a publicly accessible HTTPS URL.
+- The app enforces `600x600` body dimensions.
+- In desktop browser DevTools, verify viewport at `600 x 600` and confirm no outer scrollbars.
 
-Once deployed, add the web app to your glasses:
+### D-pad Navigation
 
-**Option A — QR code (recommended):**
+Use keyboard only:
 
-Use the plugin's publish skill to generate a QR code. Scan it with your phone to deep link directly into the Meta AI app and add the web app to your glasses.
+- `ArrowUp`: move focus up
+- `ArrowDown`: move focus down
+- `ArrowLeft`: back behavior
+- `ArrowRight`: move right in matrix or activate current item
+- `Enter`: activate focused item
+- `Escape`: optional desktop back behavior
 
-**Option B — Manual setup:**
+All handled keys are globally intercepted and call `preventDefault()`.
 
-1. Open the **Meta AI app** on your phone
-2. Go to **Devices** → **Display Glasses settings**
-3. Navigate to **App connections** → **Web apps**
-4. Tap **Add a web app**
-5. Enter the app name and your deployed URL
+### DAT Bridge Notes
 
-## Design Constraints
+- Browser mock mode (default with `MOCK_DAT=true`) returns a generated base64 JPEG test image.
+- Runtime capture request message:
 
-| Constraint | Reason |
-|-----------|--------|
-| 600x600px viewport | Display size |
-| D-pad navigation only | EMG wristband translates gestures to arrow keys |
-| Dark backgrounds | Black is transparent on the additive display |
-| High contrast elements | Readability on a small transparent display |
-| `.focusable` class on interactive elements | D-pad focus management |
+```json
+{ "type": "REQUEST_CAPTURE" }
+```
 
-## Skills Included
+- Expected capture response message:
 
-| Skill | Description |
-|-------|-------------|
-| `create-webapp` | Scaffold a new web app from scratch |
-| `add-screen` | Add a new screen or view to an existing app |
-| `add-button` | Add buttons and action handlers |
-| `connect-api` | Connect to REST/WebSocket APIs |
-| `add-sensors` | Accelerometer, gyroscope, compass |
+```json
+{
+  "type": "CAPTURE_RESPONSE",
+  "data": {
+    "base64Image": "..."
+  }
+}
+```
 
-## Examples
+- Legacy/test response also supported:
 
-See the `examples/` directory for sample apps:
+```json
+{ "type": "photo-captured", "base64": "..." }
+```
 
-- **Snake** — Classic snake game with D-pad controls and high scores
+### Privacy Sanitizer Notes
 
-## Multi-Tool Support
+- Captured image is always sanitized before upload.
+- Canvas redraw + JPEG re-encode strips metadata.
+- Longest side is resized to max `800px`.
+- Face masking hook exists (`detectFaces`, `maskFaceRegions`) and deterministic masking is implemented when face boxes are provided.
+- No raw image should be uploaded before sanitizer output.
 
-Skills are authored once in `plugins/meta-wearables-webapp/skills/` and distributed via:
+## Deployment Notes
 
-- **Claude Code** — Plugin marketplace (recommended) or `install-skills.sh claude`
-- **Codex CLI** — Plugin marketplace (recommended) or `install-skills.sh agents`
-- **Cursor** — Cursor plugin via `install-skills.sh cursor` (installs to `~/.cursor/plugins/local/`, single source of truth with Claude/Codex)
-- **GitHub Copilot** — `.github/copilot-instructions.md` via `install-skills.sh copilot`
-- **Gemini CLI / Windsurf / Devin** — `AGENTS.md` via `install-skills.sh agents`
+- Must be deployed to public `HTTPS` URL for device testing.
+- Vercel is recommended.
+- Do not push secrets, production keys, test photos, or real user data.
 
-## License
+## Known Limitations
 
-This project is licensed under the BSD License — see [LICENSE](LICENSE) for details.
+- Direct Web App camera access is not used (`getUserMedia` is intentionally not used).
+- Voice support depends on runtime/browser support and may be unavailable.
+- Production face detection library (MediaPipe/TensorFlow or equivalent) must be integrated before privacy claims are finalized.
+- Supabase auth/data flows are placeholders only.
+
+## Verification Checklist
+
+- [ ] 600x600 layout is enforced
+- [ ] No global scrollbars on body
+- [ ] All interactive elements use `.focusable`
+- [ ] Arrow keys + Enter control navigation/actions
+- [ ] DAT mock returns base64 image
+- [ ] Sanitizer returns a new base64 string
+- [ ] API request payload is exactly `{ "image": "base64-string" }`
+- [ ] Error and retry flow works
+- [ ] No secrets committed

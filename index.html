@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
+  <title>K Scan Glasses</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <section id="home" class="screen is-active" aria-label="Home">
+      <div class="home-center">
+        <button id="scan-btn" class="btn btn-primary focusable">K Scan</button>
+        <p class="subtitle">Voice or gesture</p>
+      </div>
+      <div class="status-row" id="status-row">
+        <span id="dat-status">DAT: checking...</span>
+        <span id="voice-status">Voice: checking...</span>
+      </div>
+      <nav class="home-nav">
+        <button id="library-btn" class="btn focusable">Library</button>
+        <button id="settings-btn" class="btn focusable">Settings</button>
+      </nav>
+    </section>
+
+    <section id="processing" class="screen hidden" aria-label="Processing">
+      <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
+      <div class="processing-center">
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="processing-text" class="processing-text">Capturing...</p>
+      </div>
+    </section>
+
+    <section id="results" class="screen hidden" aria-label="Results">
+      <header class="top-bar">
+        <button id="results-back-btn" class="btn btn-ghost focusable">Back</button>
+        <h1>Results</h1>
+      </header>
+      <div id="results-list" class="scroll-panel" aria-label="Products"></div>
+      <div id="results-empty" class="hidden empty-state">
+        <p>No matches found</p>
+        <button id="retry-empty-btn" class="btn btn-primary focusable">Retry</button>
+      </div>
+    </section>
+
+    <section id="library" class="screen hidden" aria-label="Library">
+      <header class="top-bar">
+        <button id="library-back-btn" class="btn btn-ghost focusable">Back</button>
+        <h1>Library</h1>
+      </header>
+      <div class="scroll-panel">
+        <h2>Saved Items</h2>
+        <button class="row focusable">Saved items placeholder</button>
+        <h2>Scan History</h2>
+        <button class="row focusable">History placeholder</button>
+      </div>
+    </section>
+
+    <section id="settings" class="screen hidden" aria-label="Settings">
+      <header class="top-bar">
+        <button id="settings-back-btn" class="btn btn-ghost focusable">Back</button>
+        <h1>Settings</h1>
+      </header>
+      <div class="scroll-panel settings-list">
+        <button class="row focusable">Account</button>
+        <button class="row focusable">Privacy &amp; Data</button>
+        <button class="row focusable">Voice</button>
+        <button class="row focusable row-danger">Sign Out</button>
+      </div>
+    </section>
+
+    <section id="error" class="screen hidden" aria-label="Error">
+      <div class="error-center">
+        <div class="error-symbol" aria-hidden="true">!</div>
+        <p id="error-message">Something went wrong.</p>
+        <button id="error-retry-btn" class="btn btn-primary focusable">Try Again</button>
+        <button id="error-home-btn" class="btn focusable">Back Home</button>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
