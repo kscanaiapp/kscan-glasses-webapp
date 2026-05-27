@@ -744,3 +744,96 @@ SOURCE CONFLICT — NEEDS META CONFIRMATION
 
 - Current adapter-based `src/datBridge.js` remains appropriate interim architecture pending source/device verification.
 - This phase does not treat `window.webkit.messageHandlers.*` or `window.DATBridge.*` as mandatory without direct Meta evidence.
+
+## Phase 7.2 - README Evidence Correction (Web App vs DAT Boundaries)
+
+This subsection supersedes conflicting/older classifications in earlier Phase 7 text when they differ.
+
+### Source Availability (This Phase)
+
+- Uploaded `Setup.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+- Uploaded `Build.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+- Uploaded `Test.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+- Uploaded `Core-Concept.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+- Uploaded `Master-Prompt.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+
+Authoritative sources used in this pass:
+- `facebookincubator/meta-wearables-webapp` README
+- `facebook/meta-wearables-dat-ios` README
+- `facebook/meta-wearables-dat-android` README
+- Meta Help page: https://www.meta.com/help/ai-glasses/621680547224505/ (accessible; page-level freshness noted as "updated" in page content)
+
+### Corrected Meta Web App Design Constraints
+
+- Fixed 600x600 viewport guidance: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- D-pad / arrow-key navigation model: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- `.focusable` class for interactive controls: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- Dark background guidance for additive display: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- "Black is transparent" display rationale: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- High-contrast elements guidance: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- HTTPS requirement for glasses-hosted web apps: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- Add-web-app path in Meta AI app (Devices -> Display Glasses settings -> App connections -> Web apps): VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+
+Implementation note:
+- Body/viewport scrolling is avoided in this app. Internal results scrolling remains a K Scan UI compromise pending real-device validation.
+
+### Corrected Web App Runtime Capability Boundaries
+
+Web App runtime vs native DAT SDK are separate evidence tracks:
+
+- Web App runtime camera access support details (beyond current project constraints): NOT DOCUMENTED IN PUBLIC SOURCE (from accessible sources in this phase)
+- Web App runtime microphone support details (beyond current project constraints): NOT DOCUMENTED IN PUBLIC SOURCE (from accessible sources in this phase)
+- Web App runtime notifications/offline/text-input support matrix: NOT DOCUMENTED IN PUBLIC SOURCE (from accessible sources in this phase)
+
+Native DAT capability (mobile SDK layer):
+- iOS DAT supports wearable integrations including video streaming and photo capture: VERIFIED [Source: facebook/meta-wearables-dat-ios README]
+- Android DAT supports wearable integrations including video streaming and photo capture: VERIFIED [Source: facebook/meta-wearables-dat-android README]
+
+Boundary statement:
+- Native DAT capture support does not prove standalone Web App runtime camera access.
+- K Scan keeps camera access behind `src/datBridge.js` as the integration boundary.
+
+### Web App Runtime vs Native DAT Capability Boundary
+
+- Web Apps for MRBD are standard HTML/CSS/JS apps: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+- Native DAT iOS/Android SDKs provide photo/video capability at native mobile SDK layer: VERIFIED [Source: DAT iOS/Android READMEs]
+- Native DAT capability must not be treated as automatic Web App runtime capability: ARCHITECTURAL INFERENCE — NON-BINDING
+- Exact native-to-web bridge object names/event envelopes remain UNKNOWN unless directly documented by Meta source or device-tested.
+- Do not treat `window.webkit.messageHandlers.DATBridge` or `window.DATBridge` as mandatory without direct Meta evidence.
+
+### Source Freshness and Authority Notes
+
+- Official Meta GitHub READMEs are authoritative for repository-scoped guidance and were accessible in this phase.
+- Meta Help page is consumer-facing and useful for setup context, but not sufficient alone for low-level runtime capability boundaries.
+- Developer Center pages may contain deeper capability details; where inaccessible, classification remains UNABLE TO VERIFY — ACCESS RESTRICTED.
+- If newer official developer documentation conflicts with older/help-level guidance, classify as SOURCE CONFLICT — NEEDS META CONFIRMATION.
+
+### Developer Mode and Version Requirements (Corrected)
+
+- Specific Developer Mode tap sequence in Meta AI app: UNABLE TO VERIFY — ACCESS RESTRICTED (or FILE NOT PRESENT for uploaded source dependency)
+- Minimum glasses firmware (e.g., v125+) requirement: UNABLE TO VERIFY — FILE NOT PRESENT
+- Minimum Meta AI app version (e.g., v272+) requirement: UNABLE TO VERIFY — FILE NOT PRESENT
+- HTTPS requirement for deployed web app URL: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
+
+### Voice and Microphone Wording Correction
+
+- Product vision may include future voice-first behavior: ARCHITECTURAL INFERENCE — NON-BINDING
+- Current Web App microphone support status is not confirmed by accessible official runtime matrix docs in this phase: NOT DOCUMENTED IN PUBLIC SOURCE / UNABLE TO VERIFY — ACCESS RESTRICTED
+- Do not treat generic Web Speech API behavior as Meta Web App platform evidence.
+- Native/mobile audio capability must be validated separately through official DAT/native docs and device testing.
+
+### Native-to-Web Bridge Evidence Protection (Reconfirmed)
+
+The following are NOT VERIFIED from accessible Meta public sources in this phase:
+- Mandatory `window.webkit.messageHandlers.DATBridge`
+- Mandatory `window.DATBridge`
+- Exact callback names
+- Exact request/response envelope names
+- Exact permission-denied payload schema
+
+Classifications remain in allowable categories:
+- UNKNOWN
+- NOT DOCUMENTED IN PUBLIC SOURCE
+- PLAUSIBLE BUT UNSOURCED
+- REQUIRES DEVICE VALIDATION
+- HIGH PRIORITY ARCHITECTURAL RISK

@@ -1,0 +1,39 @@
+Setup
+Updated: May 18, 2026
+Overview
+Setting up to build Web Apps for Meta Ray-Ban Display glasses (MRBD) takes three steps:
+1.	Check your hardware. Confirm your glasses, paired phone, and (optionally) Meta Neural Band meet the minimum requirements.
+2.	Check your Meta AI app and enable Developer Mode. Verify the app version on your phone, then put the app into Developer Mode so it can load Web Apps onto the glasses.
+3.	Prepare to host your Web App. Pick a hosting platform that serves your app over HTTPS so the glasses can load it.
+Requirements
+Hardware
+Web Apps are supported only on Meta Ray-Ban Display (MRBD) glasses. Meta Neural Band is optional, though recommended for an optimal experience.
+Software
+Download the Meta AI app from the App Store (iOS)⁠ or Play Store (Android)⁠ if you haven’t done so already.
+For the best experience, always update your glasses and Meta Neural Band with the latest software updates.
+Glasses
+The minimum glasses software version is v125+. To verify the glasses software version:
+1.	In the Meta AI app, tap Devices (the glasses icon), and select your device.
+2.	Tap the gear icon to open Device settings.
+3.	Tap General > About > Release Version.
+4.	Check for glasses software updates if your version is below v125.
+Meta AI App
+The minimum Meta AI app version is v272+. To verify Meta AI app version:
+1.	Open the Meta AI app.
+2.	Tap Settings > App Info.
+3.	Note the App version number. If it’s older than v272, update the Meta AI app from the App Store (iOS) or Play Store (Android).
+Enabling Developer Mode in the Meta AI app
+Developer Mode in the Meta AI app unlocks the menu options used to load and reload Web Apps on MRBD.
+1.	Open the Meta AI app on your paired iOS or Android device.
+2.	Select Settings > App Info, and then tap the App version number five times to display a pop-up that enables Developer Mode.
+3.	Click Enable to confirm.
+Note: Developer Mode persists across sessions, so you don’t need to re-enable it each time you open the Meta AI app.
+Hosting your Web App
+Your Web App must be hosted on a publicly accessible HTTPS URL so MRBD can load it.
+Common options include: Replit, Lovable, Vercel, GitHub Pages, Netlify, Cloudflare Pages, or any static site host that serves over HTTPS. You can also host from your own server, as long as it serves the app over HTTPS with a valid TLS certificate.
+While it’s possible to point MRBD at any website, most sites are not configured to work well within the platform’s display and input constraints. See the Build guide for the design and runtime constraints to keep in mind.
+Note:
+•	HTTP-only URLs are not supported. The glasses runtime requires HTTPS for every Web App URL it loads.
+•	Our AI Coding plugin⁠ includes skills that will help you deploy to Vercel.
+
+
