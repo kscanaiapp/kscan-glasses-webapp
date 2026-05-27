@@ -845,3 +845,63 @@ Classifications remain in allowable categories:
 - Dev diagnostic HUD remains development-only and is not appended to the DOM in production mode.
 - Production preview checklist: mocks off, 600x600 viewport preserved, no body scrollbars, controlled DAT-unavailable error on desktop.
 - Remaining device-validation risks: physical waveguide clipping, devicePixelRatio behavior, indoor/outdoor bloom, and real MRBD viewport behavior.
+
+## Phase 9 - Deployment Preview and Browser QA Matrix
+
+### Phase 9 Env Audit
+
+Required `VITE_*` keys used by source code:
+- `VITE_KSCAN_BACKEND_URL`
+- `VITE_MOCK_DAT`
+- `VITE_MOCK_ANALYZE`
+- `VITE_MOCK_ANALYZE_DELAY_MS`
+- `VITE_MOCK_ANALYZE_ERROR`
+- `VITE_SUPABASE_URL` (placeholder wiring)
+- `VITE_SUPABASE_ANON_KEY` (placeholder wiring)
+
+Recommended values:
+- Local full mock: `VITE_MOCK_DAT=true`, `VITE_MOCK_ANALYZE=true`
+- Local real backend: `VITE_MOCK_DAT=true`, `VITE_MOCK_ANALYZE=false`, `VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com`
+- Production preview: `VITE_MOCK_DAT=false`, `VITE_MOCK_ANALYZE=false`, `VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com`
+
+Notes:
+- Vite env vars are build-time values and are baked into the bundle.
+- Any env update requires a new `npm run build` and redeploy.
+- `.env` must remain untracked.
+
+### MRBD Add-Flow Checklist (Source-Backed)
+
+- [ ] Deploy app to a public HTTPS URL (HTTP-only is unsupported).
+- [ ] Confirm Meta AI app Developer Mode is enabled.
+- [ ] Open Meta AI app -> App Settings -> App Connections.
+- [ ] Select Web Apps -> Add a Web App.
+- [ ] Enter app name: `K Scan`.
+- [ ] Enter deployed HTTPS URL.
+- [ ] Tap Connect.
+- [ ] Confirm app appears in MRBD app grid and pin if desired.
+- [ ] Validate in-glasses navigation (swipes + pinch/tap mapped to Arrow/Enter behavior).
+- [ ] Validate universal Web App menu options (`Restart`, `Resume`, `Permissions`) if presented.
+- [ ] Use display recording flow if demo capture is needed.
+
+### Browser QA Matrix
+
+| Test Area | Mode | Env Vars | Expected Result | Status | Notes |
+|---|---|---|---|---|---|
+| Local dev full mock | `npm run dev` | `VITE_MOCK_DAT=true`, `VITE_MOCK_ANALYZE=true` | Scan completes with mock capture + mock analyze results | MANUAL QA REQUIRED | Requires interactive browser run |
+| Local dev real backend | `npm run dev` | `VITE_MOCK_DAT=true`, `VITE_MOCK_ANALYZE=false`, `VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com` | Mock capture -> sanitizer -> real backend, or controlled network/CORS error | MANUAL QA REQUIRED | Backend may cold start (30-60s) |
+| Production preview no native bridge | `npm run preview` | `VITE_MOCK_DAT=false`, `VITE_MOCK_ANALYZE=false` | Scan fails closed with friendly `Camera bridge unavailable.` error | MANUAL QA REQUIRED | Expected on desktop without DAT runtime |
+| Production preview layout | `npm run preview` | production env | 600x600 canvas, no body scrollbars, safe-zone intact, HUD absent | MANUAL QA REQUIRED | Requires viewport+keyboard verification in browser |
+| Production preview model assets | `npm run build` | production env | `dist/models/blaze_face_full_range.tflite` and `dist/mediapipe/wasm/*` present | PASS | Verified in local build output |
+| Backend CORS | deployed preview URL | deployed env | Backend accepts deployed HTTPS origin for `/api/analyze` | MANUAL QA REQUIRED | Must be tested from deployed origin |
+| MRBD add-flow | Meta AI app + MRBD | deployed HTTPS URL | App can be added via App Connections flow and launched on glasses | MANUAL QA REQUIRED | Physical device + companion app required |
+
+### Backend / CORS Readiness Notes
+
+- Frontend backend target: `https://kscan-app-1.onrender.com`
+- Analyze request: `POST /api/analyze`
+- Payload contract: `{ "image": sanitizedBase64 }`
+- Backend must allow CORS from:
+  - local dev origin (if local real-backend testing is needed)
+  - deployed production HTTPS origin
+- Render cold starts can add 30-60 second warm-up delay after inactivity; retry once after warm-up before concluding CORS/network failure.
+- UI already surfaces friendly network/timeout errors and a slow-state message (`Waking up Fashion AI...`).
