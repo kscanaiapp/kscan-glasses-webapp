@@ -425,3 +425,199 @@ Glasses readiness:
 - Additive-display legibility indoors/outdoors.
 - Real glasses web view dimensions/devicePixelRatio vs fixed 600x600 CSS.
 - Voice path should be source-verified later; do not rely on generic web speech assumptions for production platform behavior.
+
+## Phase 7 - Device Integration Readiness Report
+
+### Official Meta Setup Requirements
+
+VERIFIED
+- Web Apps for MRBD are standard HTML/CSS/JS apps and Meta points to Wearables Developer Center for constraints and setup (Meta toolkit README).
+- Browser testing with arrow keys is documented in toolkit README.
+- Public HTTPS hosting is required for glasses deployment (toolkit README).
+- App onboarding flow is documented in toolkit README:
+  Meta AI app -> Devices -> Display Glasses settings -> App connections -> Web apps -> Add a web app.
+
+UNKNOWN
+- None added in this subsection.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Exact mandatory minimum glasses firmware version number for Web Apps.
+- Exact mandatory minimum Meta AI phone app version number for Web Apps.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Wearables Developer Center pages with deeper setup details were login-gated in this environment.
+
+NEEDS DEVICE VALIDATION
+- End-to-end onboarding wording/UI may differ between iOS/Android app versions.
+
+### Meta Runtime Capability Matrix
+
+| Capability | Status | Evidence Class | Source/Note |
+|---|---|---|---|
+| 600x600 fixed viewport | Expected/implemented | VERIFIED | Meta toolkit README design constraints |
+| D-pad (Arrow keys) navigation | Expected/implemented | VERIFIED | Meta toolkit README browser testing + constraints |
+| `.focusable` on interactive controls | Expected/implemented | VERIFIED | Meta toolkit README design constraints |
+| Dark background / additive black guidance | Expected/implemented | VERIFIED | Meta toolkit README design constraints |
+| Internal list scrolling only | Implemented | PARTIALLY DOCUMENTED | project implementation + MRBD constraints context |
+| Safe-zone / eye-box exact px spec | Not confirmed | NOT DOCUMENTED IN PUBLIC SOURCE | no explicit numeric safe-zone found in accessible source |
+| devicePixelRatio behavior in MRBD runtime | Not confirmed | REQUIRES DEVICE VALIDATION | hardware/runtime specific |
+| Mouse/touch dependency requirement | Avoided | VERIFIED | D-pad-first guidance in toolkit docs |
+| Camera direct access in Web App | Not used here | PARTIALLY DOCUMENTED | project constraints + DAT model; exact Web App media API policy requires authenticated docs/device test |
+| Microphone/Web Speech support in Web Apps | Not confirmed | UNABLE TO VERIFY — ACCESS RESTRICTED | docs not accessible here |
+| Sensor/location support details | Not fully confirmed | UNABLE TO VERIFY — ACCESS RESTRICTED | docs mention sensor testing flow, detailed support matrix gated |
+| Storage support | Available in browser generally | PLAUSIBLE BUT UNSOURCED | no Meta-specific guarantee found in accessible source |
+| Notification/offline support | Not confirmed | UNKNOWN | no accessible Meta source found |
+
+### Permission UX Findings
+
+- Camera/media permission ownership model for DAT-enabled apps: PARTIALLY DOCUMENTED.
+: DAT repos mention permission flows/config simulation topics, but exact Web App prompt ownership (phone vs glasses vs browser) is not fully specified in accessible text.
+- Requirement that permission prompt must be triggered by `.focusable` action: NOT DOCUMENTED IN PUBLIC SOURCE.
+- D-pad interaction model for permission dialogs: REQUIRES DEVICE VALIDATION.
+- Sensor/location permission UX in MRBD Web Apps: UNABLE TO VERIFY — ACCESS RESTRICTED.
+
+### DAT iOS Findings
+
+VERIFIED
+- Official iOS DAT SDK repo exists and is active.
+- SDK supports wearable app integration including video streaming and photo capture (repo README).
+- Toolkit is developer preview.
+- Repo references MockDevice testing topics, session lifecycle, camera/photo capture, permissions.
+
+PARTIALLY DOCUMENTED
+- Detailed iOS runtime behavior is indicated via references/API docs links, but full API semantics are not fully visible from README alone.
+
+UNKNOWN
+- Exact photo payload schema returned to web content.
+- Exact bridge callback naming for native-to-web WebView transport.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Explicit mandatory WKWebView JS object name for DAT capture in Web Apps.
+- Publicly documented DAM/DAT App Model requirement for this web bridge layer.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Full Wearables Developer Center iOS reference pages in this environment.
+
+REQUIRES DEVICE VALIDATION
+- Permission-denied flow timing and UX.
+- Real capture payload sizes/latency on supported glasses.
+
+### DAT Android Findings
+
+VERIFIED
+- Official Android DAT SDK repo exists and is active.
+- SDK supports wearable integration including video streaming and photo capture (repo README).
+- Developer preview state is documented.
+- Artifacts listed include `mwdat-core`, `mwdat-camera`, `mwdat-mockdevice`.
+
+PARTIALLY DOCUMENTED
+- High-level camera/mock/session capabilities are documented, but native-to-web bridge details are not fully specified in accessible README text.
+
+UNKNOWN
+- Exact photo encoding/metadata details surfaced to web content.
+
+NOT DOCUMENTED IN PUBLIC SOURCE
+- Explicit mandatory Android WebView JS interface object name for DAT capture in Web Apps.
+- Publicly documented DAM/DAT App Model requirement for this web bridge layer.
+
+UNABLE TO VERIFY — ACCESS RESTRICTED
+- Full Wearables Developer Center Android reference pages in this environment.
+
+REQUIRES DEVICE VALIDATION
+- Permission UX and runtime callbacks on real phone+glasses pairing.
+
+### DAM / DAT App Model Findings
+
+- Term search target (`DAM`, `DAT App Model`, `app model`, `web container`, `bridge session`) was not confirmed in accessible official README materials.
+- Classification: NOT DOCUMENTED IN PUBLIC SOURCE (for public accessible source set used here).
+
+### Native-to-Web Bridge Evidence Matrix
+
+| Platform | Claim | Source | Evidence Strength | Status | Notes / Risk |
+|---|---|---|---|---|---|
+| iOS | `window.webkit.messageHandlers.*` is mandatory | No explicit Meta public proof found | Low | PLAUSIBLE BUT UNSOURCED | Common WKWebView pattern, not Meta-verified for DAT Web App bridge |
+| Android | `window.DATBridge` (or fixed JS interface name) is mandatory | No explicit Meta public proof found | Low | PLAUSIBLE BUT UNSOURCED | Common WebView patterns exist generally, not Meta-verified |
+| iOS+Android | A JS bridge exists in some form for native capture handoff | DAT repos + toolkit architecture context | Medium | PARTIALLY DOCUMENTED | Native SDK capability is verified; web bridge envelope naming/details are not |
+| iOS+Android | Same bridge contract/object name on both platforms | No Meta source confirming unification | Low | HIGH PRIORITY ARCHITECTURAL RISK | Do not force unification without verified source/device test |
+| Current app | Adapter-based fail-closed bridge is appropriate interim design | project code + lack of strict Meta bridge contract evidence | Medium | VERIFIED | Keeps platform differences isolated and safe |
+
+### Future Device Integration Plan
+
+Current Design Strengths
+- Capture->sanitize->analyze ordering is explicit.
+- DAT bridge is adapter-based with timeout/requestId/fail-closed behavior.
+- Desktop mock path is isolated by dev-only env gates.
+
+Known Risks
+- Native-to-web bridge envelope/object names are not Meta-verified publicly.
+- iOS/Android behavior may diverge in production runtime.
+
+Deferred Decisions
+- Platform-specific adapter hardening for iOS and Android bridge object/event schemas.
+- Permission UX handling decisions until verified on paired devices.
+
+Blocked By Missing Meta Evidence
+- Authoritative WebView bridge object naming/contract details.
+- Full capability/permission matrix from authenticated Meta docs.
+
+High Priority Architectural Risks
+- Forcing one bridge object/contract across iOS and Android before device verification.
+
+### Deployment Readiness
+
+Verified
+- HTTPS hosting requirement documented and implemented as assumption in current flow.
+- Build-time env behavior documented (Vite embeds env at build).
+- Manifest/icons now present in project.
+- Production path disables mock capture/analyze by env guards.
+
+Assumed
+- Final deployed origin CORS policy will permit backend analyze endpoint.
+
+Requires Validation
+- Real deployed onboarding flow in Meta AI app with target URL.
+- Real latency/cold-start UX with production backend.
+
+Unable to Verify
+- Any additional Meta policy gating for specific deployment modes from login-gated docs.
+
+### Physical Device Testing Matrix
+
+| Test Area | Platform | Test Case | Expected Behavior | Actual Device Result | Status | Notes |
+|---|---|---|---|---|---|---|
+| Desktop Browser | Desktop | Mock DAT + mock analyze | End-to-end results flow succeeds |  | Pending | Dev-only harness |
+| Desktop Browser | Desktop | Mock DAT + real backend | Sanitizer runs then backend call; result or controlled network/CORS error |  | Pending | CORS dependent |
+| Desktop Browser | Desktop | Mocks off production build | Controlled DAT unavailable error |  | Pending | expected on desktop |
+| Phone Companion | iOS/Android | Add app via Meta AI flow | App can be added from HTTPS URL |  | Pending | verify exact UI text/version |
+| Meta Glasses | MRBD | D-pad navigation in app | Arrow/Enter equivalents control focus/actions |  | Pending | device validation required |
+| iOS DAT | iOS + glasses | Native capture path | Capture returns payload to app-side bridge path |  | Pending | bridge schema unknown |
+| Android DAT | Android + glasses | Native capture path | Capture returns payload to app-side bridge path |  | Pending | bridge schema unknown |
+| Native-Web Bridge | iOS/Android | Request/response envelope | requestId correlation + timeout + error mapping |  | Pending | platform-specific verification needed |
+| Privacy/Sanitizer | All | Model missing | Fails closed before backend analyze |  | Pending | verify on deployed runtime |
+| Backend/CORS | Deployed HTTPS | Analyze call | Allowed CORS origin + expected response shape |  | Pending | backend config required |
+| Manifest/Icons | Deployed HTTPS + app grid | Icon/name display | K Scan name/icons appear correctly |  | Pending | platform rendering specifics |
+
+### Known Unknowns Requiring Meta Verification
+
+- Exact iOS bridge object/handler names.
+- Exact Android bridge object/interface names.
+- Exact bridge request/response payload contract for capture.
+- Camera permission-denied event shape and timing.
+- Real capture base64 format and size constraints.
+- MRBD runtime devicePixelRatio and viewport behavior details.
+- Whether permission prompts are phone-managed, glasses-managed, browser-managed, or mixed.
+- D-pad interaction behavior within permission dialogs.
+- Microphone/Web Speech support status for Web Apps.
+- Official voice/intent handoff path for Web Apps (if any).
+- App icon/manifest rendering behavior consistency in production app grid.
+
+### devicePixelRatio / Waveguide Bloom Risk Notes
+
+Classification: REQUIRES DEVICE VALIDATION.
+
+Candidate mitigations (documentation-only, not implemented in this phase):
+- Avoid 1px critical lines; prefer thicker outlines where readability is critical.
+- Keep focus outlines sufficiently thick and inset-safe near edges.
+- Tune glow radius/opacity if bloom/glare reduces clarity outdoors.
+- Prefer high-contrast cyan/chrome text and avoid low-contrast greys for primary info.
+
