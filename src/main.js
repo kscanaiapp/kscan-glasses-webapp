@@ -1,5 +1,12 @@
 import { initNavigation, focusFirstInView, registerFocusMatrix, resetFocusIndex } from './navigation.js';
-import { capturePhoto, getDatStatus } from './datBridge.js';
+import {
+  capturePhoto,
+  getDatStatus,
+  getDatDiagnostics,
+  DATBridgeError,
+  DAT_ERROR_CODES,
+  toUserFriendlyCaptureError,
+} from './datBridge.js';
 import { sanitizeImageBeforeUpload } from './privacyImageSanitizer.js';
 import { analyzeImage } from './api.js';
 import { initVoice } from './voice.js';
@@ -16,6 +23,7 @@ const STATE = {
 let appState = STATE.IDLE;
 let currentView = 'home';
 const screenHistory = [];
+let lastDatErrorCode = 'none';
 
 const els = {
   home: document.getElementById('home'),
@@ -30,15 +38,33 @@ const els = {
   datStatus: document.getElementById('dat-status'),
   voiceStatus: document.getElementById('voice-status'),
   errorMessage: document.getElementById('error-message'),
+  hudMock: document.getElementById('hud-mock'),
+  hudBridge: document.getElementById('hud-bridge'),
+  hudStatus: document.getElementById('hud-status'),
+  hudError: document.getElementById('hud-error'),
 };
 
 const screens = [els.home, els.processing, els.results, els.library, els.settings, els.error];
+
+function updateHud() {
+  const diagnostics = getDatDiagnostics();
+  if (els.hudMock) els.hudMock.textContent = `MOCK: ${diagnostics.mock ? 'ON' : 'OFF'}`;
+  if (els.hudBridge) {
+    const bridgeText = diagnostics.adapter === 'unavailable'
+      ? 'MISSING'
+      : 'READY';
+    els.hudBridge.textContent = `BRIDGE: ${bridgeText}`;
+  }
+  if (els.hudStatus) els.hudStatus.textContent = `STATUS: ${appState}`;
+  if (els.hudError) els.hudError.textContent = `LAST ERROR: ${lastDatErrorCode}`;
+}
 
 function setState(next) {
   appState = next;
   if (next === STATE.CAPTURING) els.processingText.textContent = 'Capturing...';
   if (next === STATE.SANITIZING) els.processingText.textContent = 'Sanitizing...';
   if (next === STATE.ANALYZING) els.processingText.textContent = 'Analyzing...';
+  updateHud();
 }
 
 function syncViewA11y(activeViewId) {
@@ -145,8 +171,19 @@ function showError(message) {
   showScreen('error');
 }
 
+function normalizeScanError(error) {
+  if (!(error instanceof DATBridgeError)) {
+    return safeText(error?.message, 'Scan failed. Please try again.');
+  }
+
+  lastDatErrorCode = error.code || DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE;
+  updateHud();
+  return toUserFriendlyCaptureError(error);
+}
+
 export async function startScan() {
   try {
+    lastDatErrorCode = 'none';
     showScreen('processing');
 
     setState(STATE.CAPTURING);
@@ -162,7 +199,7 @@ export async function startScan() {
     setState(STATE.SUCCESS);
     showScreen('results');
   } catch (error) {
-    showError(error?.message || 'Scan failed. Please try again.');
+    showError(normalizeScanError(error));
   }
 }
 
@@ -213,7 +250,12 @@ function registerMatrices() {
 }
 
 function initStatus() {
+  if (import.meta.env.PROD) {
+    document.body.classList.add('prod');
+  }
+
   els.datStatus.textContent = getDatStatus();
+  updateHud();
 
   const voice = initVoice({ onScan: startScan });
   if (!voice.supported) {

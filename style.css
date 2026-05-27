@@ -245,3 +245,31 @@ body {
     transform: rotate(360deg);
   }
 }
+
+#dat-hud {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 10px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.72);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: 8px;
+  color: var(--chrome);
+  font-size: 14px;
+  line-height: 1.2;
+  pointer-events: none;
+  z-index: 20;
+}
+
+#dat-hud span:nth-child(1),
+#dat-hud span:nth-child(2) {
+  color: var(--cyan-primary);
+}
+
+body.prod #dat-hud {
+  display: none;
+}

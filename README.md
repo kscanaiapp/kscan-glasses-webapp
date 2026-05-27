@@ -61,6 +61,54 @@ Use `.env` (see `.env.example`):
 - `VITE_META_CLIENT_TOKEN`: reserved for future Meta auth/runtime integration
 - `VITE_MOCK_DAT`: `true` enables browser mock capture mode in development only
 
+## Phase 2 — DAT Bridge Verification
+
+- Direct browser camera access is intentionally not used. No `getUserMedia` calls are used.
+- Camera capture stays behind `capturePhoto()` in `src/datBridge.js`.
+- Browser mock mode is enabled only when `VITE_MOCK_DAT=true` and the app is running in non-production mode.
+- To test mock mode:
+  1. Set `VITE_MOCK_DAT=true` in `.env`
+  2. Run `npm run dev`
+  3. Trigger scan and confirm capture proceeds with generated mock image
+- To test no-mock failure mode in desktop browser:
+  1. Set `VITE_MOCK_DAT=false` in `.env`
+  2. Run `npm run dev`
+  3. Trigger scan and expect: `Camera bridge unavailable.`
+
+Canonical message contract used by this app:
+
+Request:
+```json
+{
+  "type": "capture-photo",
+  "requestId": "capture_..."
+}
+```
+
+Success response:
+```json
+{
+  "type": "photo-captured",
+  "requestId": "capture_...",
+  "base64": "data:image/jpeg;base64,..."
+}
+```
+
+Error response:
+```json
+{
+  "type": "photo-capture-error",
+  "requestId": "capture_...",
+  "code": "PERMISSION_DENIED",
+  "message": "Permission denied"
+}
+```
+
+- `requestId` is a per-capture unique ID used to ensure stale messages/callbacks cannot resolve the wrong pending request.
+- Legacy compatibility is retained for `REQUEST_CAPTURE`/`CAPTURE_RESPONSE`.
+- Real DAT runtime behavior still requires official docs confirmation and physical device verification.
+- Optional diagnostic HUD is shown in development and hidden in production builds.
+
 ## Local Testing
 
 ### 600x600 Viewport
@@ -84,27 +132,48 @@ All handled keys are globally intercepted and call `preventDefault()`.
 ### DAT Bridge Notes
 
 - Browser mock mode (default with `VITE_MOCK_DAT=true`) returns a generated base64 JPEG test image.
-- Runtime capture request message:
+- Canonical runtime capture request message:
+
+```json
+{ "type": "capture-photo", "requestId": "capture_..." }
+```
+
+- Canonical success response message:
+
+```json
+{
+  "type": "photo-captured",
+  "requestId": "capture_...",
+  "base64": "..."
+}
+```
+
+- Canonical error response message:
+
+```json
+{
+  "type": "photo-capture-error",
+  "requestId": "capture_...",
+  "code": "PERMISSION_DENIED",
+  "message": "Permission denied"
+}
+```
+
+- Legacy compatibility is also supported:
 
 ```json
 { "type": "REQUEST_CAPTURE" }
 ```
 
-- Expected capture response message:
-
 ```json
 {
   "type": "CAPTURE_RESPONSE",
-  "data": {
-    "base64Image": "..."
-  }
+  "data": { "base64Image": "..." }
 }
 ```
 
-- Legacy/test response also supported:
-
 ```json
-{ "type": "photo-captured", "base64": "..." }
+{ "type": "CAPTURE_ERROR", "message": "..." }
 ```
 
 ### Privacy Sanitizer Notes

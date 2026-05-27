@@ -1,88 +1,289 @@
-function isMetaRuntime() {
-  return window !== window.parent;
+export const CAPTURE_TIMEOUT_MS = 10000;
+
+export const DAT_ERROR_CODES = {
+  BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
+  CAPTURE_TIMEOUT: 'CAPTURE_TIMEOUT',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  CAPTURE_CANCELLED: 'CAPTURE_CANCELLED',
+  INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE',
+  CAPTURE_IN_PROGRESS: 'CAPTURE_IN_PROGRESS',
+};
+
+export class DATBridgeError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'DATBridgeError';
+    this.code = code;
+  }
 }
+
+let pendingCapture = null;
 
 function isMockEnabled() {
   return String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true' && !import.meta.env.PROD;
 }
 
-function bridgeAvailable() {
-  return Boolean(window.parent && typeof window.parent.postMessage === 'function' && typeof window.addEventListener === 'function');
+function isMetaRuntime() {
+  return window !== window.parent;
+}
+
+function detectBridgeAdapter() {
+  if (isMetaRuntime() && window.parent && typeof window.parent.postMessage === 'function') {
+    return 'postMessage';
+  }
+
+  if (window.webkit?.messageHandlers?.DATBridge) {
+    return 'webkit';
+  }
+
+  return 'unavailable';
+}
+
+function createRequestId() {
+  const rand = Math.random().toString(36).slice(2, 10);
+  return `capture_${Date.now()}_${rand}`;
 }
 
 function generateMockImage() {
   const canvas = document.createElement('canvas');
-  canvas.width = 600;
-  canvas.height = 600;
+  canvas.width = 120;
+  canvas.height = 120;
   const ctx = canvas.getContext('2d');
 
-  if (!ctx) throw new Error('Unable to create mock canvas');
+  if (!ctx) {
+    throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Unable to create mock image');
+  }
 
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#00E5FF';
-  ctx.fillRect(60, 120, 480, 280);
-  ctx.fillStyle = '#001A22';
-  ctx.font = 'bold 42px sans-serif';
-  ctx.fillText('K Scan Mock', 130, 260);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = '24px sans-serif';
-  ctx.fillText(new Date().toISOString().slice(0, 19), 145, 320);
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, 120, 120);
+  ctx.strokeStyle = '#00E5FF';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(8, 8, 104, 104);
+  ctx.fillStyle = '#E0E0E0';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText('MOCK DAT', 20, 66);
 
-  return canvas.toDataURL('image/jpeg', 0.9);
+  return canvas.toDataURL('image/jpeg', 0.8);
 }
 
-export async function capturePhoto() {
-  if (isMockEnabled()) {
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return generateMockImage();
-  }
+function normalizeCapturePayload(payload, requestId) {
+  if (!payload || typeof payload !== 'object') return { matched: false };
 
-  if (!isMetaRuntime() || !bridgeAvailable()) {
-    throw new Error('DAT bridge unavailable and mock capture is disabled');
-  }
+  if (payload.type === 'photo-captured') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      window.removeEventListener('message', onMessage);
-      reject(new Error('Capture timeout after 10 seconds'));
-    }, 10000);
-
-    function cleanup() {
-      clearTimeout(timeout);
-      window.removeEventListener('message', onMessage);
+    if (typeof payload.base64 === 'string' && payload.base64.length > 16) {
+      return { matched: true, ok: true, base64: payload.base64 };
     }
 
-    function onMessage(event) {
-      const payload = event.data || {};
+    return {
+      matched: true,
+      ok: false,
+      error: new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.'),
+    };
+  }
 
-      if (payload.type === 'CAPTURE_RESPONSE') {
-        const image = payload?.data?.base64Image;
-        cleanup();
-        if (typeof image === 'string' && image.length > 16) resolve(image);
-        else reject(new Error('Invalid CAPTURE_RESPONSE payload'));
-      }
+  if (payload.type === 'photo-capture-error') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
 
-      if (payload.type === 'photo-captured') {
-        const image = payload?.base64;
-        cleanup();
-        if (typeof image === 'string' && image.length > 16) resolve(image);
-        else reject(new Error('Invalid photo-captured payload'));
-      }
-
-      if (payload.type === 'CAPTURE_ERROR') {
-        cleanup();
-        reject(new Error(payload?.message || 'Capture failed'));
-      }
+    const code = payload.code || DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE;
+    if (code === DAT_ERROR_CODES.PERMISSION_DENIED) {
+      return {
+        matched: true,
+        ok: false,
+        error: new DATBridgeError(DAT_ERROR_CODES.PERMISSION_DENIED, 'Camera permission denied.'),
+      };
     }
 
-    window.addEventListener('message', onMessage);
-    window.parent.postMessage({ type: 'REQUEST_CAPTURE' }, '*');
-  });
+    if (code === DAT_ERROR_CODES.CAPTURE_CANCELLED) {
+      return {
+        matched: true,
+        ok: false,
+        error: new DATBridgeError(DAT_ERROR_CODES.CAPTURE_CANCELLED, 'Capture cancelled.'),
+      };
+    }
+
+    return {
+      matched: true,
+      ok: false,
+      error: new DATBridgeError(code, payload.message || 'Capture failed.'),
+    };
+  }
+
+  // Legacy compatibility contract.
+  if (payload.type === 'CAPTURE_RESPONSE') {
+    const image = payload?.data?.base64Image;
+    if (typeof image === 'string' && image.length > 16) {
+      return { matched: true, ok: true, base64: image };
+    }
+
+    return {
+      matched: true,
+      ok: false,
+      error: new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid CAPTURE_RESPONSE payload.'),
+    };
+  }
+
+  if (payload.type === 'CAPTURE_ERROR') {
+    const message = String(payload?.message || '').toLowerCase();
+    if (message.includes('permission')) {
+      return {
+        matched: true,
+        ok: false,
+        error: new DATBridgeError(DAT_ERROR_CODES.PERMISSION_DENIED, 'Camera permission denied.'),
+      };
+    }
+
+    return {
+      matched: true,
+      ok: false,
+      error: new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Capture failed.'),
+    };
+  }
+
+  return { matched: false };
+}
+
+function mapUserFriendlyError(error) {
+  if (!(error instanceof DATBridgeError)) return 'Capture failed.';
+  if (error.code === DAT_ERROR_CODES.BRIDGE_UNAVAILABLE) return 'Camera bridge unavailable.';
+  if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Camera permission denied.';
+  if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Capture timed out.';
+  if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
+  if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
+  return 'Capture failed.';
+}
+
+function emitBridgeRequest(adapter, requestId) {
+  if (adapter === 'postMessage') {
+    const canonical = { type: 'capture-photo', requestId };
+    window.parent.postMessage(canonical, '*');
+    // Backward-compatible request for older hosts.
+    window.parent.postMessage({ type: 'REQUEST_CAPTURE', requestId }, '*');
+    return;
+  }
+
+  if (adapter === 'webkit') {
+    window.webkit.messageHandlers.DATBridge.postMessage({ type: 'capture-photo', requestId });
+    return;
+  }
+
+  throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Camera bridge unavailable.');
+}
+
+function installGlobalCompatibilityCallback(requestId, settle) {
+  const previous = window.onDATCaptureComplete;
+  const nextHandler = function onDATCaptureComplete(payload) {
+    const normalized = normalizeCapturePayload(payload, requestId);
+    if (!normalized.matched) {
+      if (typeof previous === 'function') previous(payload);
+      return;
+    }
+
+    settle(normalized);
+    if (typeof previous === 'function') previous(payload);
+  };
+
+  window.onDATCaptureComplete = nextHandler;
+
+  return () => {
+    if (window.onDATCaptureComplete === nextHandler) {
+      window.onDATCaptureComplete = previous;
+    }
+  };
+}
+
+export function getDatDiagnostics() {
+  const adapter = detectBridgeAdapter();
+  return {
+    mock: isMockEnabled(),
+    adapter,
+    bridgeReady: adapter !== 'unavailable',
+  };
 }
 
 export function getDatStatus() {
-  if (isMockEnabled()) return 'DAT: mock';
-  if (isMetaRuntime() && bridgeAvailable()) return 'DAT: ready';
+  const diagnostics = getDatDiagnostics();
+  if (diagnostics.mock) return 'DAT: mock';
+  if (diagnostics.bridgeReady) return 'DAT: ready';
   return 'DAT: unavailable';
+}
+
+export function toUserFriendlyCaptureError(error) {
+  return mapUserFriendlyError(error);
+}
+
+export async function capturePhoto() {
+  if (pendingCapture) {
+    throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_IN_PROGRESS, 'Capture already in progress.');
+  }
+
+  if (isMockEnabled()) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return generateMockImage();
+  }
+
+  const adapter = detectBridgeAdapter();
+  if (adapter === 'unavailable') {
+    throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Camera bridge unavailable.');
+  }
+
+  const requestId = createRequestId();
+
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    let timeoutId = null;
+    let removeCallback = null;
+
+    const cleanup = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      window.removeEventListener('message', onMessage);
+      if (typeof removeCallback === 'function') removeCallback();
+      pendingCapture = null;
+    };
+
+    const settle = (normalized) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+
+      if (!normalized.ok) {
+        reject(normalized.error);
+        return;
+      }
+
+      resolve(normalized.base64);
+    };
+
+    const onMessage = (event) => {
+      const normalized = normalizeCapturePayload(event.data, requestId);
+      if (!normalized.matched) return;
+      settle(normalized);
+    };
+
+    pendingCapture = { requestId };
+    removeCallback = installGlobalCompatibilityCallback(requestId, settle);
+
+    timeoutId = setTimeout(() => {
+      settle({
+        matched: true,
+        ok: false,
+        error: new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.'),
+      });
+    }, CAPTURE_TIMEOUT_MS);
+
+    window.addEventListener('message', onMessage);
+
+    try {
+      emitBridgeRequest(adapter, requestId);
+    } catch (error) {
+      settle({
+        matched: true,
+        ok: false,
+        error: error instanceof DATBridgeError
+          ? error
+          : new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Camera bridge unavailable.'),
+      });
+    }
+  });
 }
