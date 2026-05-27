@@ -8,6 +8,8 @@ export const ANALYZE_ERROR_CODES = {
   NON_2XX: 'NON_2XX',
   INVALID_JSON: 'INVALID_JSON',
   INVALID_SHAPE: 'INVALID_SHAPE',
+  MOCK_ERROR: 'MOCK_ERROR',
+  INVALID_INPUT: 'INVALID_INPUT',
 };
 
 export class AnalyzeError extends Error {
@@ -73,7 +75,75 @@ function mapAnalyzeError(error) {
   return new AnalyzeError(ANALYZE_ERROR_CODES.NETWORK, 'Cannot reach server. Check connection.');
 }
 
+function parseMockDelayMs() {
+  const raw = import.meta.env.VITE_MOCK_ANALYZE_DELAY_MS;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return 900;
+  }
+  const value = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value)) return 900;
+  return Math.max(0, Math.min(5000, value));
+}
+
+function buildMockProducts() {
+  return [
+    {
+      brand: 'Aether Loom',
+      name: 'Chrome Arc Jacket',
+      price: '$189',
+      priceRange: '$179-$209',
+      imageUrl: '/images/placeholder-item-1.png',
+      url: 'https://example.com/products/chrome-arc-jacket',
+    },
+    {
+      brand: 'Nova Thread',
+      name: 'Cyan Edge Utility Vest',
+      price: '$124',
+      imageUrl: '/images/placeholder-item-2.png',
+      url: 'https://example.com/products/cyan-edge-vest',
+    },
+    {
+      brand: 'Glassline',
+      name: 'Nightline Taper Pant',
+      price: '$98',
+      priceRange: '$89-$109',
+      url: 'https://example.com/products/nightline-pant',
+    },
+    {
+      brand: 'Orbit Form',
+      name: 'Signal Knit Top',
+      price: '$76',
+      imageUrl: '/images/placeholder-item-4.png',
+      url: 'https://example.com/products/signal-knit',
+    },
+  ];
+}
+
+async function runMockAnalyze(sanitizedBase64) {
+  if (typeof sanitizedBase64 !== 'string' || sanitizedBase64.trim().length < 16) {
+    throw new AnalyzeError(ANALYZE_ERROR_CODES.INVALID_INPUT, 'Analysis failed. Please try again.');
+  }
+
+  const delayMs = parseMockDelayMs();
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+  if (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true' && import.meta.env.VITE_MOCK_ANALYZE_ERROR === 'true') {
+    throw new AnalyzeError(ANALYZE_ERROR_CODES.MOCK_ERROR, 'Analysis failed. Please try again.');
+  }
+
+  const products = buildMockProducts().map(normalizeProduct).slice(0, 5);
+  return {
+    products,
+    style_metadata: { source: 'mock' },
+    raw: { mode: 'mock' },
+  };
+}
+
 export async function analyzeImage(sanitizedBase64, options = {}) {
+  if (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') {
+    return runMockAnalyze(sanitizedBase64);
+  }
+
   const backend = normalizeBackendUrl(import.meta.env.VITE_KSCAN_BACKEND_URL);
   if (!backend) {
     throw new AnalyzeError(ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED, 'Backend not configured.');

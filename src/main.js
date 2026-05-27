@@ -10,17 +10,10 @@ import {
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
 import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
 import { initVoice } from './voice.js';
+import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
 
-const STATE = {
-  IDLE: 'IDLE',
-  CAPTURING: 'CAPTURING',
-  SANITIZING: 'SANITIZING',
-  ANALYZING: 'ANALYZING',
-  SUCCESS: 'SUCCESS',
-  ERROR: 'ERROR',
-};
+const STATE = FLOW_STATES;
 
-let appState = STATE.IDLE;
 let currentView = 'home';
 const screenHistory = [];
 let lastDatErrorCode = 'none';
@@ -38,29 +31,25 @@ const els = {
   datStatus: document.getElementById('dat-status'),
   voiceStatus: document.getElementById('voice-status'),
   errorMessage: document.getElementById('error-message'),
-  hudMock: document.getElementById('hud-mock'),
-  hudBridge: document.getElementById('hud-bridge'),
-  hudStatus: document.getElementById('hud-status'),
-  hudError: document.getElementById('hud-error'),
+  hud: document.getElementById('dat-hud'),
 };
 
 const screens = [els.home, els.processing, els.results, els.library, els.settings, els.error];
 
 function updateHud() {
-  const diagnostics = getDatDiagnostics();
-  if (els.hudMock) els.hudMock.textContent = `MOCK: ${diagnostics.mock ? 'ON' : 'OFF'}`;
-  if (els.hudBridge) {
-    const bridgeText = diagnostics.adapter === 'unavailable'
-      ? 'MISSING'
-      : 'READY';
-    els.hudBridge.textContent = `BRIDGE: ${bridgeText}`;
-  }
-  if (els.hudStatus) els.hudStatus.textContent = `STATUS: ${appState}`;
-  if (els.hudError) els.hudError.textContent = `LAST ERROR: ${lastDatErrorCode}`;
+  if (!els.hud || !import.meta.env.DEV) return;
+
+  const datDiagnostics = getDatDiagnostics();
+  const datState = datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING');
+  const analyzeState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') ? 'MOCK' : 'REAL';
+  const backendState = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim() ? 'OK' : 'MISSING';
+  const flow = getFlowState();
+
+  els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | BACKEND: ${backendState} | FLOW: ${flow}`;
 }
 
 function setState(next) {
-  appState = next;
+  setFlowState(next);
   if (next === STATE.CAPTURING) els.processingText.textContent = 'Capturing...';
   if (next === STATE.SANITIZING) els.processingText.textContent = 'Protecting privacy...';
   if (next === STATE.ANALYZING) els.processingText.textContent = 'Analyzing...';
@@ -202,6 +191,8 @@ function normalizeScanError(error) {
     if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Analysis failed. Please try again.';
     if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Unexpected server response.';
     if (error.code === ANALYZE_ERROR_CODES.INVALID_SHAPE) return 'Unexpected server response.';
+    if (error.code === ANALYZE_ERROR_CODES.MOCK_ERROR) return 'Analysis failed. Please try again.';
+    if (error.code === ANALYZE_ERROR_CODES.INVALID_INPUT) return 'Analysis failed. Please try again.';
     return 'Analysis failed. Please try again.';
   }
 
@@ -216,6 +207,7 @@ function normalizeScanError(error) {
 
 export async function startScan() {
   try {
+    setState(STATE.IDLE);
     lastDatErrorCode = 'none';
     showScreen('processing');
 
@@ -258,8 +250,14 @@ function wireButtons() {
   document.getElementById('library-back-btn').addEventListener('click', onBack);
   document.getElementById('settings-back-btn').addEventListener('click', onBack);
   document.getElementById('results-back-btn').addEventListener('click', onBack);
-  document.getElementById('error-home-btn').addEventListener('click', () => showScreen('home'));
-  document.getElementById('cancel-btn').addEventListener('click', () => showScreen('home'));
+  document.getElementById('error-home-btn').addEventListener('click', () => {
+    setState(STATE.IDLE);
+    showScreen('home');
+  });
+  document.getElementById('cancel-btn').addEventListener('click', () => {
+    setState(STATE.IDLE);
+    showScreen('home');
+  });
 }
 
 function registerMatrices() {
@@ -288,8 +286,8 @@ function registerMatrices() {
 }
 
 function initStatus() {
-  if (import.meta.env.PROD) {
-    document.body.classList.add('prod');
+  if (!import.meta.env.DEV && els.hud) {
+    els.hud.remove();
   }
 
   els.datStatus.textContent = getDatStatus();

@@ -201,6 +201,85 @@ Results behavior:
 - Display limit is top 5 products.
 - Empty or missing products array renders friendly state: `No items identified`.
 
+## Phase 5 - Browser End-to-End Test Harness
+
+Purpose:
+
+- Provide desktop-browser test modes for full scan flow without requiring Meta hardware or always-on backend access.
+- Mock analyze is development-only and never bypasses sanitizer.
+
+Environment variables used:
+
+- `VITE_MOCK_DAT`
+- `VITE_MOCK_ANALYZE`
+- `VITE_MOCK_ANALYZE_DELAY_MS`
+- `VITE_MOCK_ANALYZE_ERROR`
+- `VITE_KSCAN_BACKEND_URL`
+
+Production safety:
+
+- Mock DAT is active only when `import.meta.env.PROD === false` and `VITE_MOCK_DAT === "true"`.
+- Mock analyze is active only when `import.meta.env.DEV === true` and `VITE_MOCK_ANALYZE === "true"`.
+- Production builds do not silently run mock DAT or mock analyze.
+
+Flow guarantee:
+
+`capturePhoto() -> sanitizeImageBeforeUpload() -> analyzeImage(sanitizedBase64) -> render results`
+
+Mock analyze validates sanitized input but does not decode/inspect/log/persist image contents.
+
+Run sequence:
+
+1. `npm run copy:wasm`
+2. `npm run verify:models`
+3. `npm run build`
+4. `npm run dev`
+
+Keyboard/D-pad test:
+
+- Keep viewport at 600x600.
+- Use Arrow keys + Enter for navigation and activation.
+
+Development HUD:
+
+- In dev only, HUD displays:
+  `DAT: [MOCK/READY/MISSING] | ANALYZE: [MOCK/REAL] | BACKEND: [OK/MISSING] | FLOW: [state]`
+- In production, HUD is removed from the DOM.
+
+Test matrix:
+
+A. Full local mock path
+- `VITE_MOCK_DAT=true`
+- `VITE_MOCK_ANALYZE=true`
+- Expected: full flow reaches results
+
+B. Real backend path
+- `VITE_MOCK_DAT=true`
+- `VITE_MOCK_ANALYZE=false`
+- `VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com`
+- Expected: sanitizer then real backend analyze
+- Note: CORS for `http://localhost:5173` may be required on backend (or dev proxy if explicitly added later)
+
+C. Backend missing
+- `VITE_MOCK_DAT=true`
+- `VITE_MOCK_ANALYZE=false`
+- `VITE_KSCAN_BACKEND_URL=` (empty)
+- Expected: `Backend not configured.`
+
+D. DAT unavailable in desktop browser
+- `VITE_MOCK_DAT=false`
+- Expected: controlled camera bridge unavailable error
+
+E. Model missing
+- Remove/rename local model file
+- Expected: `npm run verify:models` fails clearly and runtime sanitizer fails closed
+
+F. Forced mock analyze error
+- `VITE_MOCK_DAT=true`
+- `VITE_MOCK_ANALYZE=true`
+- `VITE_MOCK_ANALYZE_ERROR=true`
+- Expected: friendly analysis failure path
+
 Manual local-image test (browser only, no upload):
 
 1. Open app in dev
