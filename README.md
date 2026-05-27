@@ -1,28 +1,21 @@
 # kscan-glasses-webapp
 
-Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. This repository is intentionally separate from the K Scan mobile app, backend API codebase, and marketing website so glasses-specific UX, runtime constraints, and release cadence can evolve independently.
+Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. This repository is intentionally separate from the K Scan mobile app, backend API codebase, and marketing website.
 
-## ⚠️ Current Limitations
+## Current Limitations
 
 - DAT is scaffolded, not device-verified.
-- Privacy sanitizer strips metadata/resizes but real face detection is pending.
+- Privacy sanitizer is implemented, but final production packaging still requires physical-device verification.
 - Backend API client is scaffolded; production backend testing is pending.
 - Supabase sync is not implemented yet.
 
 ## Overview
 
-This app targets a fixed `600x600` display with D-pad-only interaction and no global scrolling. It includes:
-
-- Multi-screen UI: Home, Processing, Results, Library, Settings, Error
-- State machine: `IDLE`, `CAPTURING`, `SANITIZING`, `ANALYZING`, `SUCCESS`, `ERROR`
-- DAT bridge wrapper with Meta runtime mode and browser mock mode
-- Privacy image sanitizer (canvas metadata strip, resize, JPEG re-encode)
+- Fixed `600x600` viewport
+- D-pad-first navigation
+- DAT bridge capture abstraction
+- On-device privacy sanitizer before backend upload
 - Guarded backend analyzer client for `POST /api/analyze`
-- Optional voice trigger wrapper (feature-detected)
-
-## Why Separate From Mobile App
-
-The glasses web app has unique requirements (fixed 600x600 viewport, D-pad focus model, additive-display visual constraints, DAT capture bridge, no direct `getUserMedia` usage). Keeping this in a standalone repo reduces coupling and avoids regressions in existing mobile, backend, and website projects.
 
 ## Setup
 
@@ -44,7 +37,7 @@ cp .env.example .env
 npm run dev
 ```
 
-4. Build for production validation:
+4. Build:
 
 ```bash
 npm run build
@@ -52,46 +45,29 @@ npm run build
 
 ## Environment Variables
 
-Use `.env` (see `.env.example`):
+- `VITE_KSCAN_BACKEND_URL`
+- `VITE_SUPABASE_URL` (placeholder only)
+- `VITE_SUPABASE_ANON_KEY` (placeholder only)
+- `VITE_META_APP_ID` (reserved)
+- `VITE_META_CLIENT_TOKEN` (reserved)
+- `VITE_MOCK_DAT`
 
-- `VITE_KSCAN_BACKEND_URL`: backend host, used as `${VITE_KSCAN_BACKEND_URL}/api/analyze`
-- `VITE_SUPABASE_URL`: placeholder only in this scaffold
-- `VITE_SUPABASE_ANON_KEY`: placeholder only in this scaffold
-- `VITE_META_APP_ID`: reserved for future Meta auth/runtime integration
-- `VITE_META_CLIENT_TOKEN`: reserved for future Meta auth/runtime integration
-- `VITE_MOCK_DAT`: `true` enables browser mock capture mode in development only
+## Phase 2 - DAT Bridge Verification
 
-## Phase 2 — DAT Bridge Verification
+- Direct browser camera access is intentionally not used.
+- Capture stays behind `capturePhoto()` in `src/datBridge.js`.
+- Mock capture only runs when `VITE_MOCK_DAT=true` and not production.
 
-- Direct browser camera access is intentionally not used. No `getUserMedia` calls are used.
-- Camera capture stays behind `capturePhoto()` in `src/datBridge.js`.
-- Browser mock mode is enabled only when `VITE_MOCK_DAT=true` and the app is running in non-production mode.
-- To test mock mode:
-  1. Set `VITE_MOCK_DAT=true` in `.env`
-  2. Run `npm run dev`
-  3. Trigger scan and confirm capture proceeds with generated mock image
-- To test no-mock failure mode in desktop browser:
-  1. Set `VITE_MOCK_DAT=false` in `.env`
-  2. Run `npm run dev`
-  3. Trigger scan and expect: `Camera bridge unavailable.`
-
-Canonical message contract used by this app:
+Canonical contract:
 
 Request:
 ```json
-{
-  "type": "capture-photo",
-  "requestId": "capture_..."
-}
+{ "type": "capture-photo", "requestId": "capture_..." }
 ```
 
 Success response:
 ```json
-{
-  "type": "photo-captured",
-  "requestId": "capture_...",
-  "base64": "data:image/jpeg;base64,..."
-}
+{ "type": "photo-captured", "requestId": "capture_...", "base64": "..." }
 ```
 
 Error response:
@@ -104,107 +80,92 @@ Error response:
 }
 ```
 
-- `requestId` is a per-capture unique ID used to ensure stale messages/callbacks cannot resolve the wrong pending request.
-- Legacy compatibility is retained for `REQUEST_CAPTURE`/`CAPTURE_RESPONSE`.
-- Real DAT runtime behavior still requires official docs confirmation and physical device verification.
-- Optional diagnostic HUD is shown in development and hidden in production builds.
+Legacy compatibility is retained for `REQUEST_CAPTURE`/`CAPTURE_RESPONSE`.
 
-## Local Testing
+## Phase 3 - Privacy Sanitizer
 
-### 600x600 Viewport
+Sanitizer pipeline (always before backend upload):
 
-- The app enforces `600x600` body dimensions.
-- In desktop browser DevTools, verify viewport at `600 x 600` and confirm no outer scrollbars.
+`capturePhoto() -> sanitizeImageBeforeUpload() -> analyzeImage()`
 
-### D-pad Navigation
+Inside sanitizer:
 
-Use keyboard only:
+`decode -> canvas redraw -> resize -> face detect -> black mask -> JPEG re-encode`
 
-- `ArrowUp`: move focus up
-- `ArrowDown`: move focus down
-- `ArrowLeft`: back behavior
-- `ArrowRight`: move right in matrix or activate current item
-- `Enter`: activate focused item
-- `Escape`: optional desktop back behavior
+Implementation details:
 
-All handled keys are globally intercepted and call `preventDefault()`.
+- Package: `@mediapipe/tasks-vision`
+- WASM assets: `public/mediapipe/wasm/`
+- Model path expected by app: `public/models/blaze_face_full_range.tflite`
+- Model binary is stored at `public/models/blaze_face_full_range.tflite` and verified by `npm run verify:models`.
+- Face boxes/keypoints are not returned, stored, or logged.
+- Raw image/base64/face metadata must not be logged or stored.
 
-### DAT Bridge Notes
+MediaPipe output note:
 
-- Browser mock mode (default with `VITE_MOCK_DAT=true`) returns a generated base64 JPEG test image.
-- Canonical runtime capture request message:
+- MediaPipe Face Detector provides bounding boxes/keypoints; this app uses them in-memory for masking only and does not expose them outside `privacyImageSanitizer.js`.
 
-```json
-{ "type": "capture-photo", "requestId": "capture_..." }
-```
+Additive-display note:
 
-- Canonical success response message:
+- Black privacy masks protect backend upload privacy. On additive displays, black regions can appear transparent.
 
-```json
-{
-  "type": "photo-captured",
-  "requestId": "capture_...",
-  "base64": "..."
-}
-```
+### Model and Asset Source Notes
 
-- Canonical error response message:
+WASM/runtime assets:
 
-```json
-{
-  "type": "photo-capture-error",
-  "requestId": "capture_...",
-  "code": "PERMISSION_DENIED",
-  "message": "Permission denied"
-}
-```
+- Source: npm package `@mediapipe/tasks-vision` (Apache-2.0)
+- Copied into: `public/mediapipe/wasm/`
+- Copy command: `npm run copy:wasm` (also runs on `postinstall`)
 
-- Legacy compatibility is also supported:
+Model binary:
 
-```json
-{ "type": "REQUEST_CAPTURE" }
-```
+- Expected filename: `blaze_face_full_range.tflite`
+- Expected path: `public/models/blaze_face_full_range.tflite`
+- Official sample source URL:
+  `https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_full_range/float16/1/blaze_face_full_range.tflite`
+- Related model card:
+  `https://storage.googleapis.com/mediapipe-assets/MediaPipe%20BlazeFace%20Model%20Card%20%28Full%20Range%29.pdf`
+- Retrieval date: 2026-05-27
+- Retrieved file size: 1,083,786 bytes
+- Selection rationale: full-range is preferred for world-facing/glasses-style capture distance over short-range.
+- Model verification command: `npm run verify:models`
+- Distribution/license note: `@mediapipe/tasks-vision` package is Apache-2.0; model license details should be rechecked against official model documentation before production redistribution policy is finalized.
 
-```json
-{
-  "type": "CAPTURE_RESPONSE",
-  "data": { "base64Image": "..." }
-}
-```
+### Privacy Testing
 
-```json
-{ "type": "CAPTURE_ERROR", "message": "..." }
-```
+Test with mock DAT:
 
-### Privacy Sanitizer Notes
+1. Set `VITE_MOCK_DAT=true`
+2. Ensure model exists at `public/models/blaze_face_full_range.tflite` (or run `npm run download:models`)
+3. Run `npm run dev`
+4. Trigger scan
 
-- Captured image is always sanitized before upload.
-- Canvas redraw + JPEG re-encode strips metadata.
-- Longest side is resized to max `800px`.
-- Face masking hook exists (`detectFaces`, `maskFaceRegions`) and deterministic masking is implemented when face boxes are provided.
-- No raw image should be uploaded before sanitizer output.
+Test sanitizer failure:
 
-## Deployment Notes
+1. Set `VITE_MOCK_DAT=true`
+2. Remove/missing `public/models/blaze_face_full_range.tflite`
+3. Trigger scan
+4. App should show `Privacy scan failed. Try again.` and not call backend analyze
 
-- Must be deployed to public `HTTPS` URL for device testing.
-- Vercel is recommended.
-- Do not push secrets, production keys, test photos, or real user data.
+Asset setup commands:
 
-## Known Limitations
+1. `npm run copy:wasm`
+2. `npm run download:models` (uses official Google MediaPipe sample source URL)
+3. `npm run verify:models`
 
-- Direct Web App camera access is not used (`getUserMedia` is intentionally not used).
-- Voice support depends on runtime/browser support and may be unavailable.
-- Production face detection library (MediaPipe/TensorFlow or equivalent) must be integrated before privacy claims are finalized.
-- Supabase auth/data flows are placeholders only.
+Manual local-image test (browser only, no upload):
 
-## Verification Checklist
+1. Open app in dev
+2. In browser console, call sanitizer with a local image data URL
+3. Keep output local unless explicitly passed into app flow
 
-- [ ] 600x600 layout is enforced
-- [ ] No global scrollbars on body
-- [ ] All interactive elements use `.focusable`
-- [ ] Arrow keys + Enter control navigation/actions
-- [ ] DAT mock returns base64 image
-- [ ] Sanitizer returns a new base64 string
-- [ ] API request payload is exactly `{ "image": "base64-string" }`
-- [ ] Error and retry flow works
-- [ ] No secrets committed
+## Local Testing Checklist
+
+- 600x600 layout is enforced
+- No global body scrolling
+- All interactive controls use `.focusable`
+- Arrow keys + Enter navigation works
+- DAT mock returns base64
+- Sanitizer runs before analyze API call
+- Error/retry flow works
+- No secrets committed

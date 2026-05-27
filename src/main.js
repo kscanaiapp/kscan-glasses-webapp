@@ -7,7 +7,7 @@ import {
   DAT_ERROR_CODES,
   toUserFriendlyCaptureError,
 } from './datBridge.js';
-import { sanitizeImageBeforeUpload } from './privacyImageSanitizer.js';
+import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
 import { analyzeImage } from './api.js';
 import { initVoice } from './voice.js';
 
@@ -62,7 +62,7 @@ function updateHud() {
 function setState(next) {
   appState = next;
   if (next === STATE.CAPTURING) els.processingText.textContent = 'Capturing...';
-  if (next === STATE.SANITIZING) els.processingText.textContent = 'Sanitizing...';
+  if (next === STATE.SANITIZING) els.processingText.textContent = 'Protecting privacy...';
   if (next === STATE.ANALYZING) els.processingText.textContent = 'Analyzing...';
   updateHud();
 }
@@ -172,6 +172,10 @@ function showError(message) {
 }
 
 function normalizeScanError(error) {
+  if (error instanceof SanitizerError) {
+    return mapSanitizerErrorToUserMessage(error);
+  }
+
   if (!(error instanceof DATBridgeError)) {
     return safeText(error?.message, 'Scan failed. Please try again.');
   }
