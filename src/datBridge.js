@@ -1,4 +1,6 @@
 export const CAPTURE_TIMEOUT_MS = 10000;
+const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
+const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
 
 export const DAT_ERROR_CODES = {
   BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
@@ -20,7 +22,7 @@ export class DATBridgeError extends Error {
 let pendingCapture = null;
 
 function isMockEnabled() {
-  return String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true' && !import.meta.env.PROD;
+  return import.meta.env.DEV && String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true';
 }
 
 function isMetaRuntime() {
@@ -44,10 +46,48 @@ function createRequestId() {
   return `capture_${Date.now()}_${rand}`;
 }
 
-function generateMockImage() {
+function parseMockDelayMs() {
+  const raw = import.meta.env.VITE_MOCK_DAT_DELAY_MS;
+  if (raw === undefined || raw === null || String(raw).trim() === '') {
+    return MOCK_CAPTURE_DELAY_DEFAULT_MS;
+  }
+  const value = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value)) return MOCK_CAPTURE_DELAY_DEFAULT_MS;
+  return Math.max(0, Math.min(MOCK_CAPTURE_DELAY_MAX_MS, value));
+}
+
+function getMockScenario() {
+  const raw = String(import.meta.env.VITE_MOCK_DAT_SCENARIO || '').trim().toLowerCase();
+  if (!raw) return 'success';
+  const supported = new Set([
+    'success',
+    'permission-denied',
+    'cancelled',
+    'timeout',
+    'invalid-response',
+    'malformed-image',
+  ]);
+  return supported.has(raw) ? raw : 'success';
+}
+
+function getMockImageVariant() {
+  const raw = String(import.meta.env.VITE_MOCK_DAT_IMAGE_VARIANT || '').trim().toLowerCase();
+  if (raw === 'tiny' || raw === 'large') return raw;
+  return 'standard';
+}
+
+function generateMockImage(variant = 'standard') {
   const canvas = document.createElement('canvas');
-  canvas.width = 120;
-  canvas.height = 120;
+  if (variant === 'tiny') {
+    canvas.width = 24;
+    canvas.height = 24;
+  } else if (variant === 'large') {
+    canvas.width = 2000;
+    canvas.height = 1500;
+  } else {
+    canvas.width = 120;
+    canvas.height = 120;
+  }
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
@@ -55,15 +95,20 @@ function generateMockImage() {
   }
 
   ctx.fillStyle = '#000000';
-  ctx.fillRect(0, 0, 120, 120);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.strokeStyle = '#00E5FF';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(8, 8, 104, 104);
+  ctx.lineWidth = Math.max(2, Math.round(Math.min(canvas.width, canvas.height) * 0.04));
+  const inset = Math.max(4, Math.round(Math.min(canvas.width, canvas.height) * 0.08));
+  ctx.strokeRect(inset, inset, canvas.width - (inset * 2), canvas.height - (inset * 2));
   ctx.fillStyle = '#E0E0E0';
-  ctx.font = 'bold 14px sans-serif';
-  ctx.fillText('MOCK DAT', 20, 66);
+  ctx.font = `bold ${Math.max(8, Math.round(Math.min(canvas.width, canvas.height) * 0.12))}px sans-serif`;
+  ctx.fillText('MOCK DAT', inset + 8, Math.round(canvas.height * 0.55));
 
   return canvas.toDataURL('image/jpeg', 0.8);
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function normalizeCapturePayload(payload, requestId) {
@@ -150,6 +195,7 @@ function mapUserFriendlyError(error) {
   if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Camera permission denied.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Capture timed out.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
+  if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return 'Camera response invalid.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
   return 'Capture failed.';
 }
@@ -219,8 +265,40 @@ export async function capturePhoto() {
   }
 
   if (isMockEnabled()) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    return generateMockImage();
+    const scenario = getMockScenario();
+    const delayMs = parseMockDelayMs();
+    const requestId = createRequestId();
+    pendingCapture = { requestId, mode: 'mock', scenario };
+
+    try {
+      if (scenario === 'timeout') {
+        await waitMs(Math.max(delayMs, CAPTURE_TIMEOUT_MS + 100));
+        throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.');
+      }
+
+      await waitMs(delayMs);
+
+      if (scenario === 'permission-denied') {
+        throw new DATBridgeError(DAT_ERROR_CODES.PERMISSION_DENIED, 'Camera permission denied.');
+      }
+
+      if (scenario === 'cancelled') {
+        throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_CANCELLED, 'Capture cancelled.');
+      }
+
+      if (scenario === 'invalid-response') {
+        throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+      }
+
+      if (scenario === 'malformed-image') {
+        return 'data:text/plain;base64,bm90YW5pbWFnZQ==';
+      }
+
+      const variant = getMockImageVariant();
+      return generateMockImage(variant);
+    } finally {
+      pendingCapture = null;
+    }
   }
 
   const adapter = detectBridgeAdapter();

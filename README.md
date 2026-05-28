@@ -905,3 +905,47 @@ Notes:
   - deployed production HTTPS origin
 - Render cold starts can add 30-60 second warm-up delay after inactivity; retry once after warm-up before concluding CORS/network failure.
 - UI already surfaces friendly network/timeout errors and a slow-state message (`Waking up Fashion AI...`).
+
+## Phase 11 - Dev-Only Capture Simulator QA
+
+Purpose:
+- Provide a desktop-browser QA harness for capture lifecycle behavior without claiming real Meta native bridge behavior.
+- This simulator is internal dev tooling only and is not evidence of iOS/Android bridge contracts.
+
+Dev-only simulator env vars:
+- `VITE_MOCK_DAT=true`
+- `VITE_MOCK_DAT_SCENARIO=success|permission-denied|cancelled|timeout|invalid-response|malformed-image`
+- `VITE_MOCK_DAT_DELAY_MS=600` (clamped `0-10000`)
+- `VITE_MOCK_DAT_IMAGE_VARIANT=standard|tiny|large`
+- `VITE_MOCK_ANALYZE=true|false`
+- `VITE_MOCK_ANALYZE_DELAY_MS=900`
+- `VITE_MOCK_ANALYZE_ERROR=false`
+
+Important:
+- Simulator paths run only when `import.meta.env.DEV && import.meta.env.VITE_MOCK_DAT === 'true'`.
+- Production remains fail-closed when mocks are off.
+- Scenario/image/delay env changes require restarting `npm run dev` (or rebuilding).
+
+Expected flow by scenario:
+- `success`: `IDLE -> CAPTURING -> SANITIZING -> ANALYZING -> SUCCESS`
+- `permission-denied`: `IDLE -> CAPTURING -> ERROR`
+- `cancelled`: `IDLE -> CAPTURING -> ERROR`
+- `timeout`: `IDLE -> CAPTURING -> ERROR`
+- `invalid-response`: `IDLE -> CAPTURING -> ERROR`
+- `malformed-image`: `IDLE -> CAPTURING -> SANITIZING -> ERROR` (analyze must not run)
+
+Manual test checklist:
+- [ ] Start dev server with simulator env values.
+- [ ] Verify each scenario returns the expected friendly UI message.
+- [ ] Verify malformed image triggers sanitizer failure and blocks analyze.
+- [ ] Verify one active capture at a time (`CAPTURE_IN_PROGRESS` guard).
+- [ ] Verify keyboard-only D-pad flow remains usable.
+
+| Scenario | Env Vars | Expected Flow | Expected UI | Analyze Called? | Status |
+|---|---|---|---|---|---|
+| success | `VITE_MOCK_DAT_SCENARIO=success` + `VITE_MOCK_DAT_IMAGE_VARIANT=standard|tiny|large` | `IDLE -> CAPTURING -> SANITIZING -> ANALYZING -> SUCCESS` | Results view renders | Yes | MANUAL QA REQUIRED |
+| permission-denied | `VITE_MOCK_DAT_SCENARIO=permission-denied` | `IDLE -> CAPTURING -> ERROR` | `Camera permission denied.` | No | MANUAL QA REQUIRED |
+| cancelled | `VITE_MOCK_DAT_SCENARIO=cancelled` | `IDLE -> CAPTURING -> ERROR` | `Capture cancelled.` | No | MANUAL QA REQUIRED |
+| timeout | `VITE_MOCK_DAT_SCENARIO=timeout` | `IDLE -> CAPTURING -> ERROR` | `Capture timed out.` | No | MANUAL QA REQUIRED |
+| invalid-response | `VITE_MOCK_DAT_SCENARIO=invalid-response` | `IDLE -> CAPTURING -> ERROR` | `Camera response invalid.` | No | MANUAL QA REQUIRED |
+| malformed-image | `VITE_MOCK_DAT_SCENARIO=malformed-image` | `IDLE -> CAPTURING -> SANITIZING -> ERROR` | `Privacy scan failed. Try again.` | No | MANUAL QA REQUIRED |
