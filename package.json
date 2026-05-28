@@ -10,7 +10,9 @@
     "copy:wasm": "node scripts/copy-mediapipe-wasm.js",
     "verify:models": "node scripts/verify-models.js",
     "download:models": "node scripts/download-models.js",
-    "postinstall": "node scripts/copy-mediapipe-wasm.js"
+    "postinstall": "node scripts/copy-mediapipe-wasm.js",
+    "test:static": "node scripts/static-tests.js",
+    "test": "npm run verify:models && npm run build && npm run test:static"
   },
   "devDependencies": {
     "vite": "^7.1.0"
