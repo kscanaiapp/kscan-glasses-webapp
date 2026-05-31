@@ -444,7 +444,7 @@ NOT DOCUMENTED IN PUBLIC SOURCE
 - Exact mandatory minimum glasses firmware version number for Web Apps.
 - Exact mandatory minimum Meta AI phone app version number for Web Apps.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Wearables Developer Center pages with deeper setup details were login-gated in this environment.
 
 NEEDS DEVICE VALIDATION
@@ -463,8 +463,8 @@ NEEDS DEVICE VALIDATION
 | devicePixelRatio behavior in MRBD runtime | Not confirmed | REQUIRES DEVICE VALIDATION | hardware/runtime specific |
 | Mouse/touch dependency requirement | Avoided | VERIFIED | D-pad-first guidance in toolkit docs |
 | Camera direct access in Web App | Not used here | PARTIALLY DOCUMENTED | project constraints + DAT model; exact Web App media API policy requires authenticated docs/device test |
-| Microphone/Web Speech support in Web Apps | Not confirmed | UNABLE TO VERIFY — ACCESS RESTRICTED | docs not accessible here |
-| Sensor/location support details | Not fully confirmed | UNABLE TO VERIFY — ACCESS RESTRICTED | docs mention sensor testing flow, detailed support matrix gated |
+| Microphone/Web Speech support in Web Apps | Not confirmed | UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED | docs not accessible here |
+| Sensor/location support details | Not fully confirmed | UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED | docs mention sensor testing flow, detailed support matrix gated |
 | Storage support | Available in browser generally | PLAUSIBLE BUT UNSOURCED | no Meta-specific guarantee found in accessible source |
 | Notification/offline support | Not confirmed | UNKNOWN | no accessible Meta source found |
 
@@ -474,7 +474,7 @@ NEEDS DEVICE VALIDATION
 : DAT repos mention permission flows/config simulation topics, but exact Web App prompt ownership (phone vs glasses vs browser) is not fully specified in accessible text.
 - Requirement that permission prompt must be triggered by `.focusable` action: NOT DOCUMENTED IN PUBLIC SOURCE.
 - D-pad interaction model for permission dialogs: REQUIRES DEVICE VALIDATION.
-- Sensor/location permission UX in MRBD Web Apps: UNABLE TO VERIFY — ACCESS RESTRICTED.
+- Sensor/location permission UX in MRBD Web Apps: UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED.
 
 ### DAT iOS Findings
 
@@ -495,7 +495,7 @@ NOT DOCUMENTED IN PUBLIC SOURCE
 - Explicit mandatory WKWebView JS object name for DAT capture in Web Apps.
 - Publicly documented DAM/DAT App Model requirement for this web bridge layer.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Full Wearables Developer Center iOS reference pages in this environment.
 
 REQUIRES DEVICE VALIDATION
@@ -520,7 +520,7 @@ NOT DOCUMENTED IN PUBLIC SOURCE
 - Explicit mandatory Android WebView JS interface object name for DAT capture in Web Apps.
 - Publicly documented DAM/DAT App Model requirement for this web bridge layer.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Full Wearables Developer Center Android reference pages in this environment.
 
 REQUIRES DEVICE VALIDATION
@@ -658,7 +658,7 @@ NOT DOCUMENTED IN PUBLIC SOURCE
 - Exact mandatory minimum glasses firmware version number.
 - Exact mandatory minimum Meta AI app version number.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Developer Center pages referenced by GitHub READMEs that may contain detailed versioning/Developer Mode nuance.
 
 REQUIRES DEVICE VALIDATION
@@ -690,7 +690,7 @@ PARTIALLY DOCUMENTED
 NOT DOCUMENTED IN PUBLIC SOURCE
 - Public, explicit Web App runtime statement in accessible sources confirming exact support/unsupported status for microphone, notifications, offline, and text input.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Developer Center capability matrix details referenced by READMEs but not accessible here.
 
 REQUIRES DEVICE VALIDATION
@@ -731,12 +731,12 @@ VERIFIED
 PARTIALLY DOCUMENTED
 - Native DAT capability does not automatically imply equivalent Web App microphone support.
 
-UNABLE TO VERIFY — ACCESS RESTRICTED
+UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Definitive current MRBD Web App microphone support statement from Developer Center capability docs in this environment.
 
 ### Source Conflicts
 
-SOURCE CONFLICT — NEEDS META CONFIRMATION
+SOURCE CONFLICT ï¿½ NEEDS META CONFIRMATION
 - No direct contradiction found between the accessible Meta Help setup article and accessible official GitHub READMEs for setup flow at high level.
 - Potential conflict candidates (version minimums, Developer Mode specifics, capability exclusions) remain unresolved due restricted access to deeper official docs.
 
@@ -751,11 +751,11 @@ This subsection supersedes conflicting/older classifications in earlier Phase 7 
 
 ### Source Availability (This Phase)
 
-- Uploaded `Setup.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
-- Uploaded `Build.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
-- Uploaded `Test.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
-- Uploaded `Core-Concept.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
-- Uploaded `Master-Prompt.txt`: UNABLE TO VERIFY — FILE NOT PRESENT
+- Uploaded `Setup.txt`: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
+- Uploaded `Build.txt`: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
+- Uploaded `Test.txt`: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
+- Uploaded `Core-Concept.txt`: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
+- Uploaded `Master-Prompt.txt`: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
 
 Authoritative sources used in this pass:
 - `facebookincubator/meta-wearables-webapp` README
@@ -797,7 +797,7 @@ Boundary statement:
 
 - Web Apps for MRBD are standard HTML/CSS/JS apps: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
 - Native DAT iOS/Android SDKs provide photo/video capability at native mobile SDK layer: VERIFIED [Source: DAT iOS/Android READMEs]
-- Native DAT capability must not be treated as automatic Web App runtime capability: ARCHITECTURAL INFERENCE — NON-BINDING
+- Native DAT capability must not be treated as automatic Web App runtime capability: ARCHITECTURAL INFERENCE ï¿½ NON-BINDING
 - Exact native-to-web bridge object names/event envelopes remain UNKNOWN unless directly documented by Meta source or device-tested.
 - Do not treat `window.webkit.messageHandlers.DATBridge` or `window.DATBridge` as mandatory without direct Meta evidence.
 
@@ -805,20 +805,20 @@ Boundary statement:
 
 - Official Meta GitHub READMEs are authoritative for repository-scoped guidance and were accessible in this phase.
 - Meta Help page is consumer-facing and useful for setup context, but not sufficient alone for low-level runtime capability boundaries.
-- Developer Center pages may contain deeper capability details; where inaccessible, classification remains UNABLE TO VERIFY — ACCESS RESTRICTED.
-- If newer official developer documentation conflicts with older/help-level guidance, classify as SOURCE CONFLICT — NEEDS META CONFIRMATION.
+- Developer Center pages may contain deeper capability details; where inaccessible, classification remains UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED.
+- If newer official developer documentation conflicts with older/help-level guidance, classify as SOURCE CONFLICT ï¿½ NEEDS META CONFIRMATION.
 
 ### Developer Mode and Version Requirements (Corrected)
 
-- Specific Developer Mode tap sequence in Meta AI app: UNABLE TO VERIFY — ACCESS RESTRICTED (or FILE NOT PRESENT for uploaded source dependency)
-- Minimum glasses firmware (e.g., v125+) requirement: UNABLE TO VERIFY — FILE NOT PRESENT
-- Minimum Meta AI app version (e.g., v272+) requirement: UNABLE TO VERIFY — FILE NOT PRESENT
+- Specific Developer Mode tap sequence in Meta AI app: UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED (or FILE NOT PRESENT for uploaded source dependency)
+- Minimum glasses firmware (e.g., v125+) requirement: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
+- Minimum Meta AI app version (e.g., v272+) requirement: UNABLE TO VERIFY ï¿½ FILE NOT PRESENT
 - HTTPS requirement for deployed web app URL: VERIFIED [Source: facebookincubator/meta-wearables-webapp README]
 
 ### Voice and Microphone Wording Correction
 
-- Product vision may include future voice-first behavior: ARCHITECTURAL INFERENCE — NON-BINDING
-- Current Web App microphone support status is not confirmed by accessible official runtime matrix docs in this phase: NOT DOCUMENTED IN PUBLIC SOURCE / UNABLE TO VERIFY — ACCESS RESTRICTED
+- Product vision may include future voice-first behavior: ARCHITECTURAL INFERENCE ï¿½ NON-BINDING
+- Current Web App microphone support status is not confirmed by accessible official runtime matrix docs in this phase: NOT DOCUMENTED IN PUBLIC SOURCE / UNABLE TO VERIFY ï¿½ ACCESS RESTRICTED
 - Do not treat generic Web Speech API behavior as Meta Web App platform evidence.
 - Native/mobile audio capability must be validated separately through official DAT/native docs and device testing.
 
@@ -905,6 +905,20 @@ Notes:
   - deployed production HTTPS origin
 - Render cold starts can add 30-60 second warm-up delay after inactivity; retry once after warm-up before concluding CORS/network failure.
 - UI already surfaces friendly network/timeout errors and a slow-state message (`Waking up Fashion AI...`).
+
+## Phase 12 - DAT Source Reconnaissance
+
+Phase 12 completed source-backed reconnaissance of the Meta Wearables Device Access Toolkit (DAT) iOS and Android SDKs and the WebApp platform. Findings are documented in [BRIDGE_RESEARCH.md](BRIDGE_RESEARCH.md).
+
+Key findings:
+- iOS and Android DAT SDKs are native-only (Swift/Kotlin). No native-to-web JavaScript bridge is documented in any accessible source.
+- Camera is explicitly unsupported as a Web API on MRBD. DAT capture runs in the companion phone app, not the Web App.
+- `src/datBridge.js` postMessage/webkit adapter boundary is the correct interim design. No bridge object names are verified.
+- Next hardware step: Phase 14 iOS native spike â†’ Phase 15 Android native spike â†’ Phase 16 verified native-to-web handoff.
+
+See [BRIDGE_RESEARCH.md](BRIDGE_RESEARCH.md) for full capability matrix, risks, and staged implementation plan.
+
+---
 
 ## Phase 11 - Dev-Only Capture Simulator QA
 
