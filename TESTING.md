@@ -283,3 +283,113 @@ https://kscan-app-1.onrender.com
 - Real sanitizer pipeline validation (face detection, masking, JPEG re-encode) is manual browser QA only.
 - Do not add real user images or external image assets to the repo.
 - Future browser-automation testing (Playwright) would require explicit approval.
+
+---
+
+## Phase 11.3 — Manual Capture Simulator QA
+
+> **Scope:** Browser-only manual testing of each DAT capture simulator scenario.
+> Claude/Cursor cannot perform visual or keyboard QA. All scenario statuses below remain **MANUAL QA REQUIRED** until a human tester follows the steps and records results.
+
+### Base `.env` block
+
+Copy this into your `.env` before running any scenario. Only `VITE_MOCK_DAT_SCENARIO` changes between scenarios.
+
+```
+VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com
+VITE_MOCK_DAT=true
+VITE_MOCK_DAT_DELAY_MS=600
+VITE_MOCK_DAT_IMAGE_VARIANT=standard
+VITE_MOCK_ANALYZE=true
+VITE_MOCK_ANALYZE_DELAY_MS=900
+VITE_MOCK_ANALYZE_ERROR=false
+```
+
+> **Important:** After every `.env` change, fully stop the dev server and restart it (`npm run dev`). If env changes do not appear to take effect, kill the terminal, open a fresh terminal, and start again. Clearing Vite cache (`npx vite --force`) is a fallback only if the restart alone does not resolve it.
+
+---
+
+### Manual execution loop
+
+Repeat these steps for each scenario:
+
+1. Stop the dev server (`Ctrl-C`).
+2. Edit `.env` — set `VITE_MOCK_DAT_SCENARIO=<scenario>` (and optionally `VITE_MOCK_DAT_IMAGE_VARIANT`).
+3. Save `.env`.
+4. Start `npm run dev` — wait for **"Local: http://localhost:5173/"** in the terminal.
+5. Open `http://localhost:5173/` in the browser.
+6. Confirm initial focus lands on the **K Scan** button.
+7. Use keyboard where possible:
+   - `ArrowDown` / `ArrowUp` — navigate between buttons.
+   - `Enter` — activate focused button (trigger K Scan).
+   - `ArrowLeft` / `Escape` — navigate back.
+8. Trigger the K Scan.
+9. Observe the UI result (loading state, error message, results screen).
+10. Record PASS / FAIL / BLOCKED in the **Status** column below.
+11. Note any unexpected console errors or network calls in the **Notes** column.
+12. Stop the dev server before moving to the next scenario.
+
+---
+
+### Status definitions
+
+| Status | Meaning |
+|---|---|
+| **PASS** | Tester personally observed the expected behavior by following the exact steps. |
+| **FAIL** | Tester observed behavior that differs from expected. |
+| **BLOCKED** | Test could not run due to a setup, server, or tooling issue. |
+| **MANUAL QA REQUIRED** | Not yet tested by a human tester. |
+
+---
+
+### Scenario quick reference table
+
+| # | Scenario | `VITE_MOCK_DAT_SCENARIO=` | Expected UI | Expected Analyze Behavior | Processing State Check | Status | Notes |
+|---|---|---|---|---|---|---|---|
+| 1 | success | `success` | Results screen appears; product cards render; keyboard navigation works through cards | Analyze called after sanitizer success | Loading/processing indicator clears before results appear | MANUAL QA REQUIRED | |
+| 2 | permission-denied | `permission-denied` | Error message: `Camera permission denied.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
+| 3 | cancelled | `cancelled` | Error message: `Capture cancelled.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
+| 4 | timeout | `timeout` | Error message: `Capture timed out.` (appears after ~10s) | Analyze NOT called | Processing does not spin forever; error appears and clears state | MANUAL QA REQUIRED | Delay intentionally ≥ CAPTURE_TIMEOUT_MS + 100ms |
+| 5 | invalid-response | `invalid-response` | Error message: `Camera response invalid.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
+| 6 | malformed-image | `malformed-image` | Error message: `Privacy scan failed. Try again.` | Analyze NOT called — backend must NOT be reached | Sanitizer fails closed; loading clears | MANUAL QA REQUIRED | Critical: confirm no `/api/analyze` request in DevTools Network tab |
+
+---
+
+### Optional image variants (run only after `success` passes)
+
+| Variant | `.env` additions | Expected Behavior | Status | Notes |
+|---|---|---|---|---|
+| success + tiny | `VITE_MOCK_DAT_IMAGE_VARIANT=tiny` | 24×24 mock image; no crash; result or friendly fail-closed privacy error; no raw stack trace | MANUAL QA REQUIRED | |
+| success + large | `VITE_MOCK_DAT_IMAGE_VARIANT=large` | 2000×1500 mock image; sanitizer resizes; no crash; no raw stack trace | MANUAL QA REQUIRED | |
+
+---
+
+### Console / Network optional observations
+
+If browser DevTools is available, record per-scenario:
+
+| Observation | What to check |
+|---|---|
+| Red console errors | Any uncaught exceptions or unhandled promise rejections? |
+| Raw stack traces visible in UI | Should never appear; error messages should be user-friendly |
+| `/api/analyze` request fired | Expected only on `success` path after sanitizer passes |
+| `malformed-image` does NOT reach `/api/analyze` | Critical — verify no network request to backend |
+
+If DevTools is unavailable, mark all console/network observations as **MANUAL QA REQUIRED**.
+
+---
+
+### Cleanup after manual QA
+
+After completing all scenarios:
+
+1. Restore `.env` to your preferred local default (re-add `VITE_MOCK_DAT_SCENARIO=success` or remove it).
+2. Do not commit `.env`.
+3. Run `npm test` — confirm `FAIL: 0`.
+4. Run `git status --short` — confirm only `TESTING.md` (or `README.md`) changed; no `src/`, no `.env`, no `package.json`.
+
+---
+
+### Dev server health check
+
+> **MANUAL QA REQUIRED** — Automated dev server startup was not practical in this environment. Tester must start `npm run dev` manually and confirm `http://localhost:5173/` returns the app shell before beginning scenario testing.
