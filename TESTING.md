@@ -286,10 +286,10 @@ https://kscan-app-1.onrender.com
 
 ---
 
-## Phase 11.3 — Manual Capture Simulator QA
+## Phase 11.3 / 11.4 — Manual Capture Simulator QA
 
 > **Scope:** Browser-only manual testing of each DAT capture simulator scenario.
-> Claude/Cursor cannot perform visual or keyboard QA. All scenario statuses below remain **MANUAL QA REQUIRED** until a human tester follows the steps and records results.
+> Phase 11.4 results recorded 2026-05-31. All 6 core scenarios tested and PASS by human tester. Console/network not checked via DevTools — see per-scenario notes.
 
 ### Base `.env` block
 
@@ -346,12 +346,12 @@ Repeat these steps for each scenario:
 
 | # | Scenario | `VITE_MOCK_DAT_SCENARIO=` | Expected UI | Expected Analyze Behavior | Processing State Check | Status | Notes |
 |---|---|---|---|---|---|---|---|
-| 1 | success | `success` | Results screen appears; product cards render; keyboard navigation works through cards | Analyze called after sanitizer success | Loading/processing indicator clears before results appear | MANUAL QA REQUIRED | |
-| 2 | permission-denied | `permission-denied` | Error message: `Camera permission denied.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
-| 3 | cancelled | `cancelled` | Error message: `Capture cancelled.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
-| 4 | timeout | `timeout` | Error message: `Capture timed out.` (appears after ~10s) | Analyze NOT called | Processing does not spin forever; error appears and clears state | MANUAL QA REQUIRED | Delay intentionally ≥ CAPTURE_TIMEOUT_MS + 100ms |
-| 5 | invalid-response | `invalid-response` | Error message: `Camera response invalid.` | Analyze NOT called | Loading/processing indicator clears | MANUAL QA REQUIRED | |
-| 6 | malformed-image | `malformed-image` | Error message: `Privacy scan failed. Try again.` | Analyze NOT called — backend must NOT be reached | Sanitizer fails closed; loading clears | MANUAL QA REQUIRED | Critical: confirm no `/api/analyze` request in DevTools Network tab |
+| 1 | success | `success` | Results screen appears; product cards render; keyboard navigation works through cards | Analyze called after sanitizer success | Loading/processing indicator clears before results appear | **PASS** | Results screen shown with mock products; keyboard worked; processing cleared. Analyze/network not checked via DevTools — UNKNOWN. |
+| 2 | permission-denied | `permission-denied` | Error message: `Camera permission denied.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Camera permission denied." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
+| 3 | cancelled | `cancelled` | Error message: `Capture cancelled.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Capture cancelled." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
+| 4 | timeout | `timeout` | Error message: `Capture timed out.` (appears after ~10s) | Analyze NOT called | Processing does not spin forever; error appears and clears state | **PASS** | "Capture timed out." error shown; UI did not hang; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. Delay intentionally ≥ CAPTURE_TIMEOUT_MS + 100ms. |
+| 5 | invalid-response | `invalid-response` | Error message: `Camera response invalid.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Camera response invalid." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
+| 6 | malformed-image | `malformed-image` | Error message: `Privacy scan failed. Try again.` | Analyze NOT called — backend must NOT be reached | Sanitizer fails closed; loading clears | **PASS** | "Privacy scan failed. Try again." error shown; no products; processing cleared; keyboard worked. Network NOT checked via DevTools — `/api/analyze` call status UNKNOWN. Fail-closed UI confirmed by observation only. |
 
 ---
 
@@ -359,8 +359,8 @@ Repeat these steps for each scenario:
 
 | Variant | `.env` additions | Expected Behavior | Status | Notes |
 |---|---|---|---|---|
-| success + tiny | `VITE_MOCK_DAT_IMAGE_VARIANT=tiny` | 24×24 mock image; no crash; result or friendly fail-closed privacy error; no raw stack trace | MANUAL QA REQUIRED | |
-| success + large | `VITE_MOCK_DAT_IMAGE_VARIANT=large` | 2000×1500 mock image; sanitizer resizes; no crash; no raw stack trace | MANUAL QA REQUIRED | |
+| success + tiny | `VITE_MOCK_DAT_IMAGE_VARIANT=tiny` | 24×24 mock image; no crash; result or friendly fail-closed privacy error; no raw stack trace | MANUAL QA REQUIRED | Not tested in Phase 11.4. |
+| success + large | `VITE_MOCK_DAT_IMAGE_VARIANT=large` | 2000×1500 mock image; sanitizer resizes; no crash; no raw stack trace | MANUAL QA REQUIRED | Not tested in Phase 11.4. |
 
 ---
 
@@ -393,3 +393,30 @@ After completing all scenarios:
 ### Dev server health check
 
 > **MANUAL QA REQUIRED** — Automated dev server startup was not practical in this environment. Tester must start `npm run dev` manually and confirm `http://localhost:5173/` returns the app shell before beginning scenario testing.
+
+---
+
+## Phase 11.4 — Simulator QA Results Summary
+
+**Date tested:** 2026-05-31
+**Tester:** Human (browser, keyboard, visual observation)
+**DevTools console/network:** Not checked — all analyze/network statuses recorded as UNKNOWN.
+
+| Scenario | Status | UI Observed | Processing Cleared | Keyboard Worked |
+|---|---|---|---|---|
+| success | **PASS** | Results screen with mock products | YES | YES |
+| permission-denied | **PASS** | "Camera permission denied." | YES | YES |
+| cancelled | **PASS** | "Capture cancelled." | YES | YES |
+| timeout | **PASS** | "Capture timed out." — UI did not hang | YES | YES |
+| invalid-response | **PASS** | "Camera response invalid." | YES | YES |
+| malformed-image | **PASS** | "Privacy scan failed. Try again." | YES | YES |
+| success + tiny | MANUAL QA REQUIRED | — | — | — |
+| success + large | MANUAL QA REQUIRED | — | — | — |
+
+**Issues found:** None.
+
+**Remaining open items:**
+- DevTools console/network verification for all scenarios (analyze call and `/api/analyze` network check not confirmed).
+- `malformed-image` fail-closed guarantee requires DevTools Network tab confirmation that `/api/analyze` was NOT called.
+- Optional image variants (`tiny`, `large`) not yet tested.
+- All MRBD hardware scenarios remain REQUIRES DEVICE VALIDATION.
