@@ -34,6 +34,14 @@ npm test
 
 Expected clean output: `FAIL: 0`. Review WARNs — one expected WARN is `data:image/jpeg;base64,` in the minified sanitizer bundle (production code, not a leak).
 
+### Phase 13 validation note
+
+- The capture payload boundary now requires the exact case-sensitive prefix `data:image/jpeg;base64,`.
+- `invalid-response` is expected to fail at the capture boundary with `Camera response invalid.`
+- `malformed-image` intentionally uses `data:image/jpeg;base64,bm90YW5pbWFnZQ==` so payload validation passes and the sanitizer can fail closed with `Privacy scan failed. Try again.`
+- Manual retest is recommended for `success`, `invalid-response`, and `malformed-image`.
+- Console and Network tab verification still matter for confirming `malformed-image` does not reach `/api/analyze`.
+
 ---
 
 ## 3. Static Test Coverage
@@ -82,8 +90,9 @@ Assumes `npm run build` has already run.
 - `VITE_MOCK_*` env var name strings
 - Dev scenario enum literals: `permission-denied`, `malformed-image`, `invalid-response`
 - `data:image/jpeg;base64,` — expected in the production sanitizer code (not a real leak)
-- `data:text/plain;base64,bm90YW5pbWFnZQ==` — malformed-image mock literal (should be dead code)
 - `console.log(`, `console.debug(` — debug logging
+
+**FAIL** if `data:text/plain;base64,bm90YW5pbWFnZQ==` appears in source or production `dist/`; the malformed-image simulator must use the JPEG-prefixed literal instead.
 
 `voice.js/SpeechRecognition` absent from the app bundle is also verified (PASS = not bundled).
 
@@ -142,7 +151,7 @@ Set `VITE_MOCK_DAT=true` and restart `npm run dev` for each scenario.
 | DAT simulator | permission-denied | `VITE_MOCK_DAT_SCENARIO=permission-denied`, press K Scan | Error view shows `Camera permission denied.`; analyze NOT called | MANUAL QA REQUIRED | |
 | DAT simulator | cancelled | `VITE_MOCK_DAT_SCENARIO=cancelled`, press K Scan | Error view shows `Capture cancelled.`; analyze NOT called | MANUAL QA REQUIRED | |
 | DAT simulator | timeout | `VITE_MOCK_DAT_SCENARIO=timeout`, press K Scan | Error view shows `Capture timed out.`; analyze NOT called | MANUAL QA REQUIRED | |
-| DAT simulator | invalid-response | `VITE_MOCK_DAT_SCENARIO=invalid-response`, press K Scan | Error view shows `Camera response invalid.`; analyze NOT called | MANUAL QA REQUIRED | |
+| DAT simulator | invalid-response | `VITE_MOCK_DAT_SCENARIO=invalid-response`, press K Scan | Error view shows `Camera response invalid.`; capture boundary rejects before sanitizer/analyze | MANUAL QA REQUIRED | |
 | DAT simulator | malformed-image | `VITE_MOCK_DAT_SCENARIO=malformed-image`, press K Scan | Flow reaches SANITIZING, then fails closed; error shows `Privacy scan failed. Try again.`; analyze NOT called | MANUAL QA REQUIRED | Critical: backend must not be reached |
 | DAT simulator | concurrent capture | Press K Scan twice quickly | Second press blocked; error shows `Capture already in progress.` | MANUAL QA REQUIRED | |
 
@@ -350,8 +359,8 @@ Repeat these steps for each scenario:
 | 2 | permission-denied | `permission-denied` | Error message: `Camera permission denied.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Camera permission denied." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
 | 3 | cancelled | `cancelled` | Error message: `Capture cancelled.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Capture cancelled." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
 | 4 | timeout | `timeout` | Error message: `Capture timed out.` (appears after ~10s) | Analyze NOT called | Processing does not spin forever; error appears and clears state | **PASS** | "Capture timed out." error shown; UI did not hang; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. Delay intentionally ≥ CAPTURE_TIMEOUT_MS + 100ms. |
-| 5 | invalid-response | `invalid-response` | Error message: `Camera response invalid.` | Analyze NOT called | Loading/processing indicator clears | **PASS** | "Camera response invalid." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
-| 6 | malformed-image | `malformed-image` | Error message: `Privacy scan failed. Try again.` | Analyze NOT called — backend must NOT be reached | Sanitizer fails closed; loading clears | **PASS** | "Privacy scan failed. Try again." error shown; no products; processing cleared; keyboard worked. Network NOT checked via DevTools — `/api/analyze` call status UNKNOWN. Fail-closed UI confirmed by observation only. |
+| 5 | invalid-response | `invalid-response` | Error message: `Camera response invalid.` | Analyze NOT called; capture boundary should reject before sanitizer | Loading/processing indicator clears | **PASS** | "Camera response invalid." error shown; no products; processing cleared; keyboard worked. Network not checked — analyze call status UNKNOWN. |
+| 6 | malformed-image | `malformed-image` | Error message: `Privacy scan failed. Try again.` | Analyze NOT called — backend must NOT be reached | Sanitizer fails closed after JPEG-prefix payload validation | **PASS** | "Privacy scan failed. Try again." error shown; no products; processing cleared; keyboard worked. Network NOT checked via DevTools — `/api/analyze` call status UNKNOWN. Fail-closed UI confirmed by observation only. |
 
 ---
 

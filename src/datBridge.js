@@ -1,6 +1,7 @@
 export const CAPTURE_TIMEOUT_MS = 10000;
 const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
+const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
 
 export const DAT_ERROR_CODES = {
   BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
@@ -111,21 +112,41 @@ function waitMs(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function validateCapturePayload(payload) {
+  if (typeof payload !== 'string') {
+    throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+  }
+
+  const trimmed = payload.trim();
+  if (!trimmed.startsWith(CAPTURE_DATA_URL_PREFIX)) {
+    throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+  }
+
+  const encodedPayload = trimmed.slice(CAPTURE_DATA_URL_PREFIX.length);
+  if (!encodedPayload) {
+    throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+  }
+
+  return trimmed;
+}
+
 function normalizeCapturePayload(payload, requestId) {
   if (!payload || typeof payload !== 'object') return { matched: false };
 
   if (payload.type === 'photo-captured') {
     if (payload.requestId && payload.requestId !== requestId) return { matched: false };
 
-    if (typeof payload.base64 === 'string' && payload.base64.length > 16) {
-      return { matched: true, ok: true, base64: payload.base64 };
+    try {
+      return { matched: true, ok: true, base64: validateCapturePayload(payload.base64) };
+    } catch (error) {
+      return {
+        matched: true,
+        ok: false,
+        error: error instanceof DATBridgeError
+          ? error
+          : new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.'),
+      };
     }
-
-    return {
-      matched: true,
-      ok: false,
-      error: new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.'),
-    };
   }
 
   if (payload.type === 'photo-capture-error') {
@@ -158,15 +179,17 @@ function normalizeCapturePayload(payload, requestId) {
   // Legacy compatibility contract.
   if (payload.type === 'CAPTURE_RESPONSE') {
     const image = payload?.data?.base64Image;
-    if (typeof image === 'string' && image.length > 16) {
-      return { matched: true, ok: true, base64: image };
+    try {
+      return { matched: true, ok: true, base64: validateCapturePayload(image) };
+    } catch (error) {
+      return {
+        matched: true,
+        ok: false,
+        error: error instanceof DATBridgeError
+          ? error
+          : new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid CAPTURE_RESPONSE payload.'),
+      };
     }
-
-    return {
-      matched: true,
-      ok: false,
-      error: new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid CAPTURE_RESPONSE payload.'),
-    };
   }
 
   if (payload.type === 'CAPTURE_ERROR') {
@@ -287,15 +310,15 @@ export async function capturePhoto() {
       }
 
       if (scenario === 'invalid-response') {
-        throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+        return validateCapturePayload('invalid-response');
       }
 
       if (scenario === 'malformed-image') {
-        return 'data:text/plain;base64,bm90YW5pbWFnZQ==';
+        return validateCapturePayload('data:image/jpeg;base64,bm90YW5pbWFnZQ==');
       }
 
       const variant = getMockImageVariant();
-      return generateMockImage(variant);
+      return validateCapturePayload(generateMockImage(variant));
     } finally {
       pendingCapture = null;
     }

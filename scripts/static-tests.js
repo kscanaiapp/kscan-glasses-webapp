@@ -273,6 +273,34 @@ missingScenarios.length === 0
   ? pass('E.datBridge:all-6-scenarios', 'all scenario strings present', 'found')
   : fail('E.datBridge:all-6-scenarios', 'all 6 scenarios', `missing: ${missingScenarios.join(', ')}`);
 
+datContent.includes("const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,'")
+  ? pass('E.datBridge:jpeg-prefix-constant', "exact JPEG data URL prefix constant present", 'found')
+  : fail('E.datBridge:jpeg-prefix-constant', "const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,'", 'NOT found');
+
+datContent.includes("function validateCapturePayload(payload)")
+  ? pass('E.datBridge:payload-validator', 'validateCapturePayload helper present', 'found')
+  : fail('E.datBridge:payload-validator', 'validateCapturePayload helper', 'NOT found');
+
+datContent.includes('trimmed.startsWith(CAPTURE_DATA_URL_PREFIX)')
+  ? pass('E.datBridge:prefix-validation', 'trimmed payload checked against exact prefix', 'found')
+  : fail('E.datBridge:prefix-validation', 'trimmed.startsWith(CAPTURE_DATA_URL_PREFIX)', 'NOT found');
+
+datContent.includes("INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE'")
+  ? pass('E.datBridge:invalid-response-code', 'INVALID_CAPTURE_RESPONSE exists', 'found')
+  : fail('E.datBridge:invalid-response-code', 'INVALID_CAPTURE_RESPONSE exists', 'NOT found');
+
+datContent.includes("return validateCapturePayload(generateMockImage(variant));")
+  ? pass('E.datBridge:success-mock-jpeg', 'success mock payload validated as JPEG data URL', 'found')
+  : fail('E.datBridge:success-mock-jpeg', 'success mock payload uses JPEG data URL validation', 'NOT found');
+
+datContent.includes("return validateCapturePayload('data:image/jpeg;base64,bm90YW5pbWFnZQ==');")
+  ? pass('E.datBridge:malformed-image-mock', "malformed-image mock uses exact JPEG literal", 'found')
+  : fail('E.datBridge:malformed-image-mock', "data:image/jpeg;base64,bm90YW5pbWFnZQ==", 'NOT found');
+
+datContent.includes('data:text/plain;base64,bm90YW5pbWFnZQ==')
+  ? fail('E.datBridge:no-text-plain-malformed-image', 'text/plain malformed-image mock absent from source', 'FOUND')
+  : pass('E.datBridge:no-text-plain-malformed-image', 'text/plain malformed-image mock absent from source', 'absent');
+
 // No explicit claim of verified iOS/Android bridge object names
 const verifiedClaims = ['verified iOS bridge', 'verified Android bridge', 'mandatory bridge object', 'confirmed bridge'];
 const foundClaims = verifiedClaims.filter((c) => datContent.toLowerCase().includes(c.toLowerCase()));

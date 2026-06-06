@@ -308,6 +308,10 @@ The current `datBridge.js` already implements both adapter paths and both legacy
 
 ## 10. Recommended Next Phases
 
+### Phase 13 validation note
+- Phase 13 hardens K Scan's inbound capture payload validation as an app-level defensive contract.
+- This is not a verified Meta native bridge contract and does not validate any real iOS or Android bridge object names.
+
 ### Phase 13 — Bridge Adapter Dry Run *(no native code)*
 - Review `datBridge.js` message shapes against any newly surfaced Meta documentation.
 - Add stricter input validation for the inbound base64 payload (MIME prefix check).
