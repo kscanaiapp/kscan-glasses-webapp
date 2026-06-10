@@ -1,3 +1,10 @@
+import {
+  isMobileBridgeEnabled,
+  getMobileBridgeUrl,
+  getMobileBridgeDebugConfig,
+} from './mobileBridgeConfig.js';
+import { MobileBridgeClient } from './mobileBridgeClient.js';
+
 export const CAPTURE_TIMEOUT_MS = 10000;
 const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
@@ -10,6 +17,17 @@ export const DAT_ERROR_CODES = {
   CAPTURE_CANCELLED: 'CAPTURE_CANCELLED',
   INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE',
   CAPTURE_IN_PROGRESS: 'CAPTURE_IN_PROGRESS',
+};
+
+// Last mobile-bridge capture metadata (safe fields only) for the dev status
+// surface. Never holds image payloads.
+let lastMobileBridgeMeta = {
+  mode: 'inactive',
+  connectionState: 'idle',
+  lastMessageType: null,
+  lastErrorCode: null,
+  activeRequestId: null,
+  updatedAt: null,
 };
 
 export class DATBridgeError extends Error {
@@ -282,9 +300,93 @@ export function toUserFriendlyCaptureError(error) {
   return mapUserFriendlyError(error);
 }
 
+// Safe metadata snapshot of the most recent mobile-bridge capture attempt.
+export function getMobileBridgeStatus() {
+  const config = getMobileBridgeDebugConfig();
+  return {
+    bridgeMode: config.enabled ? 'mobile' : (isMockEnabled() ? 'simulator' : 'dat'),
+    enabled: config.enabled,
+    url: config.url,
+    configError: config.error,
+    connectionState: lastMobileBridgeMeta.connectionState,
+    lastMessageType: lastMobileBridgeMeta.lastMessageType,
+    lastErrorCode: lastMobileBridgeMeta.lastErrorCode,
+    activeRequestId: lastMobileBridgeMeta.activeRequestId,
+    updatedAt: lastMobileBridgeMeta.updatedAt,
+  };
+}
+
+// Mobile bridge capture provider (dev-only). Selected atomically per capture
+// when mobile bridge mode is enabled; never runs alongside the DAT/mock path.
+// On any failure it returns a controlled bridge error — it does NOT silently
+// fall back to the DAT/mock provider.
+async function captureViaMobileBridgeProvider() {
+  const url = getMobileBridgeUrl();
+  const requestId = createRequestId();
+  pendingCapture = { requestId, mode: 'mobile' };
+  lastMobileBridgeMeta = {
+    mode: 'mobile',
+    connectionState: 'connecting',
+    lastMessageType: 'capture.request',
+    lastErrorCode: null,
+    activeRequestId: requestId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!url) {
+    pendingCapture = null;
+    lastMobileBridgeMeta = {
+      ...lastMobileBridgeMeta,
+      connectionState: 'error',
+      lastErrorCode: DAT_ERROR_CODES.BRIDGE_UNAVAILABLE,
+      updatedAt: new Date().toISOString(),
+    };
+    throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Mobile bridge URL is not configured.');
+  }
+
+  const client = new MobileBridgeClient(url, { timeoutMs: CAPTURE_TIMEOUT_MS });
+  try {
+    const image = await client.requestCapture();
+    const snapshot = client.getDebugSnapshot();
+    lastMobileBridgeMeta = {
+      mode: 'mobile',
+      connectionState: snapshot.connectionState,
+      lastMessageType: snapshot.lastMessageType,
+      lastErrorCode: snapshot.lastErrorCode,
+      activeRequestId: snapshot.activeRequestId,
+      updatedAt: new Date().toISOString(),
+    };
+    // validateCapturePayload remains the final gate (whitespace-normalized).
+    return validateCapturePayload(image);
+  } catch (error) {
+    const snapshot = client.getDebugSnapshot();
+    const code = error?.code || DAT_ERROR_CODES.BRIDGE_UNAVAILABLE;
+    lastMobileBridgeMeta = {
+      mode: 'mobile',
+      connectionState: snapshot.connectionState,
+      lastMessageType: snapshot.lastMessageType,
+      lastErrorCode: code,
+      activeRequestId: snapshot.activeRequestId,
+      updatedAt: new Date().toISOString(),
+    };
+    // Surface a controlled bridge error through the existing DAT error path.
+    if (error instanceof DATBridgeError) throw error;
+    throw new DATBridgeError(code, 'Capture failed.');
+  } finally {
+    client.close();
+    pendingCapture = null;
+  }
+}
+
 export async function capturePhoto() {
   if (pendingCapture) {
     throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_IN_PROGRESS, 'Capture already in progress.');
+  }
+
+  // Provider selection is atomic and per-capture. Mobile bridge dev mode,
+  // when explicitly enabled, takes priority and never coexists with DAT/mock.
+  if (isMobileBridgeEnabled()) {
+    return captureViaMobileBridgeProvider();
   }
 
   if (isMockEnabled()) {

@@ -435,6 +435,271 @@ device('QA.dat:android-bridge',        'Android native bridge captures real phot
 device('QA.mrbd:devpixelratio',        'devicePixelRatio matches MRBD runtime',    'requires physical device');
 
 // ═══════════════════════════════════════════════════════════════════
+// G. MOBILE BRIDGE DEV CLIENT (Phase 17)
+// ═══════════════════════════════════════════════════════════════════
+console.log('\n=== G. Mobile Bridge Dev Client (Phase 17) ===');
+
+const configPath = path.join(srcDir, 'mobileBridgeConfig.js');
+const clientPath = path.join(srcDir, 'mobileBridgeClient.js');
+const configSrc = readFile(configPath);
+const clientSrc = readFile(clientPath);
+const datSrc = readFile(path.join(srcDir, 'datBridge.js'));
+const mainSrc = readFile(path.join(srcDir, 'main.js'));
+
+fileExists(configPath)
+  ? pass('G.file:mobileBridgeConfig.js', 'exists', 'exists')
+  : fail('G.file:mobileBridgeConfig.js', 'exists', 'MISSING');
+fileExists(clientPath)
+  ? pass('G.file:mobileBridgeClient.js', 'exists', 'exists')
+  : fail('G.file:mobileBridgeClient.js', 'exists', 'MISSING');
+
+// Config exports
+for (const fn of ['isMobileBridgeEnabled', 'getMobileBridgeUrl', 'getMobileBridgeDebugConfig', 'parseMobileBridgeConfig']) {
+  configSrc.includes(`export function ${fn}`)
+    ? pass(`G.config:export:${fn}`, 'exported', 'found')
+    : fail(`G.config:export:${fn}`, 'exported', 'NOT found');
+}
+
+// Only ws/wss schemes accepted
+(configSrc.includes("'ws:'") && configSrc.includes("'wss:'"))
+  ? pass('G.config:ws-wss-only', 'accepts ws:// and wss:// only', 'found')
+  : fail('G.config:ws-wss-only', "ACCEPTED_WS_SCHEMES = ws:/wss:", 'NOT found');
+
+// Provider selection wired into capturePhoto, mobile bridge takes priority
+datSrc.includes('if (isMobileBridgeEnabled())')
+  ? pass('G.datBridge:provider-selection', 'capturePhoto checks isMobileBridgeEnabled()', 'found')
+  : fail('G.datBridge:provider-selection', 'if (isMobileBridgeEnabled())', 'NOT found');
+
+// Existing DAT/mock simulator path preserved
+(datSrc.includes('isMockEnabled()') && datSrc.includes('detectBridgeAdapter()'))
+  ? pass('G.datBridge:dat-mock-preserved', 'DAT/mock path still present', 'found')
+  : fail('G.datBridge:dat-mock-preserved', 'isMockEnabled + detectBridgeAdapter retained', 'NOT found');
+
+// validateCapturePayload remains the final gate on the bridge path
+datSrc.includes('return validateCapturePayload(image);')
+  ? pass('G.datBridge:final-gate', 'bridge payload passes through validateCapturePayload', 'found')
+  : fail('G.datBridge:final-gate', 'validateCapturePayload(image) final gate', 'NOT found');
+
+// Dev status surface gated by DEV && isMobileBridgeEnabled, window function only
+(/import\.meta\.env\.DEV[^]*isMobileBridgeEnabled\(\)/.test(mainSrc) && mainSrc.includes('window.__kscanBridgeDebug'))
+  ? pass('G.main:debug-surface-gated', 'window.__kscanBridgeDebug gated by DEV && enabled', 'found')
+  : fail('G.main:debug-surface-gated', 'DEV && isMobileBridgeEnabled() + window.__kscanBridgeDebug', 'NOT found');
+
+// No raw image / base64 / payload logging in mobile bridge source
+for (const [label, src] of [['config', configSrc], ['client', clientSrc]]) {
+  /console\.log\([^)]*image|console\.log\([^)]*base64/i.test(src)
+    ? fail(`G.${label}:no-image-log`, 'no console.log(image/base64)', 'FOUND')
+    : pass(`G.${label}:no-image-log`, 'no console.log(image/base64)', 'absent');
+}
+// Client must not stringify a full message that may carry image
+/JSON\.stringify\(\s*message/.test(clientSrc)
+  ? fail('G.client:no-stringify-message', 'no JSON.stringify(message)', 'FOUND')
+  : pass('G.client:no-stringify-message', 'no JSON.stringify(message)', 'absent');
+
+// No hardcoded private LAN IPs in new source or new docs (localhost/127.0.0.1 ok)
+const privateIpRx = /192\.168\.\d+\.\d+|\b10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+/;
+const ipScanTargets = [
+  'src/mobileBridgeConfig.js',
+  'src/mobileBridgeClient.js',
+  'src/datBridge.js',
+  'src/main.js',
+  'BRIDGE_DEV_MODE.md',
+  'BRIDGE_CONTRACT.md',
+];
+let ipHits = [];
+for (const rel of ipScanTargets) {
+  const content = readFile(path.join(root, rel));
+  if (privateIpRx.test(content)) ipHits.push(rel);
+}
+ipHits.length === 0
+  ? pass('G.no-hardcoded-private-ip', 'no private LAN IPs in source/docs', 'clean')
+  : fail('G.no-hardcoded-private-ip', 'no private LAN IPs', `FOUND in: ${ipHits.join(', ')}`);
+
+// ── Behavioral checks (import pure parser + client with a mock socket) ──
+const expectEq = (name, expected, actual) =>
+  expected === actual ? pass(name, String(expected), String(actual)) : fail(name, String(expected), String(actual));
+
+try {
+  const cfg = await import('../src/mobileBridgeConfig.js');
+
+  // Production default: nothing enabled.
+  expectEq('G.behav:default-disabled', false, cfg.parseMobileBridgeConfig({}, {}).enabled);
+
+  // Normal query param activation.
+  const q = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:query-enabled', true, q.enabled);
+  expectEq('G.behav:query-url', 'ws://localhost:8787/', q.url);
+  expectEq('G.behav:query-no-error', true, q.error === null);
+
+  // Hash-appended query param activation (SPA fallback).
+  const h = cfg.parseMobileBridgeConfig({ hash: '#/?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:hash-enabled', true, h.enabled);
+  expectEq('G.behav:hash-url', 'ws://localhost:8787/', h.url);
+
+  // Hash without slash.
+  const h2 = cfg.parseMobileBridgeConfig({ hash: '#?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:hash-noslash-enabled', true, h2.enabled);
+
+  // Env activation (URL optional → default applies).
+  const e = cfg.parseMobileBridgeConfig({}, { VITE_ENABLE_MOBILE_BRIDGE: 'true' });
+  expectEq('G.behav:env-enabled', true, e.enabled);
+  expectEq('G.behav:env-default-url', true, e.url === 'ws://localhost:8787/');
+
+  // Missing bridge URL (bare query) fails safely.
+  const miss = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile' }, {});
+  expectEq('G.behav:missing-url-enabled', true, miss.enabled);
+  expectEq('G.behav:missing-url-error', 'BRIDGE_UNAVAILABLE', miss.error);
+
+  // Invalid scheme fails safely.
+  for (const bad of ['http://localhost:8787', 'https://localhost', 'javascript:alert(1)', 'data:text/plain,x', 'file:///x', 'localhost:8787', '']) {
+    const r = cfg.parseMobileBridgeConfig({ search: `?bridge=mobile&bridgeWs=${encodeURIComponent(bad)}` }, {});
+    r.error === 'BRIDGE_UNAVAILABLE' && r.url === null
+      ? pass(`G.behav:reject-scheme:${bad || '(empty)'}`, 'BRIDGE_UNAVAILABLE', 'rejected')
+      : fail(`G.behav:reject-scheme:${bad || '(empty)'}`, 'BRIDGE_UNAVAILABLE', `enabled=${r.enabled} url=${r.url} error=${r.error}`);
+  }
+
+  // wss:// accepted.
+  const wss = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=wss://example.test:8787' }, {});
+  expectEq('G.behav:wss-accepted', true, wss.error === null && typeof wss.url === 'string');
+
+  // Query overrides env for the enable decision.
+  const ovr = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=ws://localhost:9999' }, { VITE_ENABLE_MOBILE_BRIDGE: 'false' });
+  expectEq('G.behav:query-overrides-env', true, ovr.enabled && ovr.url === 'ws://localhost:9999/');
+} catch (err) {
+  fail('G.behav:config-import', 'mobileBridgeConfig importable + behavioral checks pass', `threw: ${err.message}`);
+}
+
+try {
+  const { MobileBridgeClient, MobileBridgeError } = await import('../src/mobileBridgeClient.js');
+
+  // Minimal mock WebSocket that opens on next microtask and records sends.
+  let liveSocket = null;
+  class MockSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null; this.onclose = null; this.onerror = null; this.onmessage = null;
+      liveSocket = this;
+      Promise.resolve().then(() => { if (this.onopen) this.onopen(); });
+    }
+    send(data) { this.sent.push(data); }
+    close() { if (this.onclose) this.onclose(); }
+  }
+
+  const withTimeout = (p, ms, label) =>
+    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} hung`)), ms))]);
+  // Let the mock socket open and the client send its request (macrotask).
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+
+  // Success path.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const reqStr = liveSocket.sent[0];
+    const req = JSON.parse(reqStr);
+    (req.type === 'capture.request' && req.source === 'glasses-web' && typeof req.requestId === 'string')
+      ? pass('G.client:request-shape', 'capture.request shape correct', 'ok')
+      : fail('G.client:request-shape', 'capture.request {type,requestId,source}', JSON.stringify({ type: req.type, source: req.source }));
+
+    liveSocket.onmessage({ data: JSON.stringify({
+      type: 'capture.success', requestId: req.requestId,
+      image: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2Q==',
+      mime: 'image/jpeg', encoding: 'data-url', createdAt: new Date().toISOString(),
+    }) });
+    const image = await withTimeout(promise, 2000, 'success');
+    image.startsWith('data:image/jpeg;base64,')
+      ? pass('G.client:success-validates', 'returns validated JPEG data URL', 'ok')
+      : fail('G.client:success-validates', 'data:image/jpeg;base64,...', 'unexpected');
+  }
+
+  // requestId mismatch is ignored, then matching success resolves.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: 'WRONG', image: 'data:image/jpeg;base64,AAAA' }) });
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==' }) });
+    const image = await withTimeout(promise, 2000, 'mismatch');
+    image.startsWith('data:image/jpeg;base64,')
+      ? pass('G.client:requestid-match', 'mismatched requestId ignored, match resolves', 'ok')
+      : fail('G.client:requestid-match', 'match by requestId', 'unexpected');
+  }
+
+  // capture.error mapping.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.error', requestId: req.requestId, code: 'DAT_NOT_CONFIGURED', message: 'blocked' }) });
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'error'); } catch (e) { caught = e; }
+    (caught && caught.code === 'DAT_NOT_CONFIGURED')
+      ? pass('G.client:error-mapping', 'capture.error maps to MobileBridgeError code', 'ok')
+      : fail('G.client:error-mapping', 'DAT_NOT_CONFIGURED', caught ? caught.code : 'no throw');
+  }
+
+  // Timeout cleanup → CAPTURE_TIMEOUT and pending cleared.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false, timeoutMs: 60 });
+    const promise = client.requestCapture();
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'timeout'); } catch (e) { caught = e; }
+    (caught && caught.code === 'CAPTURE_TIMEOUT' && client.pending === null)
+      ? pass('G.client:timeout-cleanup', 'timeout rejects CAPTURE_TIMEOUT and clears pending', 'ok')
+      : fail('G.client:timeout-cleanup', 'CAPTURE_TIMEOUT + pending cleared', caught ? caught.code : 'no throw');
+  }
+
+  // Socket close while pending → BRIDGE_UNAVAILABLE.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    liveSocket.onclose();
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'close'); } catch (e) { caught = e; }
+    (caught && caught.code === 'BRIDGE_UNAVAILABLE')
+      ? pass('G.client:close-cleanup', 'close while pending rejects BRIDGE_UNAVAILABLE', 'ok')
+      : fail('G.client:close-cleanup', 'BRIDGE_UNAVAILABLE', caught ? caught.code : 'no throw');
+  }
+
+  // One active request at a time → CAPTURE_ALREADY_PENDING.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const first = client.requestCapture();
+    await tick();
+    let caught = null;
+    try { await client.requestCapture(); } catch (e) { caught = e; }
+    (caught && caught.code === 'CAPTURE_ALREADY_PENDING')
+      ? pass('G.client:already-pending', 'second concurrent capture rejects CAPTURE_ALREADY_PENDING', 'ok')
+      : fail('G.client:already-pending', 'CAPTURE_ALREADY_PENDING', caught ? caught.code : 'no throw');
+    // settle the first to avoid a dangling timer
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'data:image/jpeg;base64,/9j/AAAA' }) });
+    await withTimeout(first, 2000, 'settle-first').catch(() => {});
+    client.close();
+  }
+
+  // Invalid success payload → INVALID_CAPTURE_RESPONSE.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'not-a-data-url' }) });
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'invalid'); } catch (e) { caught = e; }
+    (caught && caught.code === 'INVALID_CAPTURE_RESPONSE')
+      ? pass('G.client:invalid-payload', 'invalid success payload rejects INVALID_CAPTURE_RESPONSE', 'ok')
+      : fail('G.client:invalid-payload', 'INVALID_CAPTURE_RESPONSE', caught ? caught.code : 'no throw');
+  }
+} catch (err) {
+  fail('G.client:behavioral', 'mobileBridgeClient behavioral checks pass', `threw: ${err.message}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SUMMARY
 // ═══════════════════════════════════════════════════════════════════
 console.log('\n=== Summary ===');

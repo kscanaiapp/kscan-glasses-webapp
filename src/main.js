@@ -2,10 +2,12 @@ import { initNavigation, focusFirstInView, registerFocusMatrix, resetFocusIndex 
 import {
   capturePhoto,
   getDatDiagnostics,
+  getMobileBridgeStatus,
   DATBridgeError,
   DAT_ERROR_CODES,
   toUserFriendlyCaptureError,
 } from './datBridge.js';
+import { isMobileBridgeEnabled } from './mobileBridgeConfig.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
 import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
@@ -293,6 +295,15 @@ function initStatus() {
   updateHud();
 }
 
+function initMobileBridgeDebug() {
+  // Dev-only, opt-in safe metadata surface. Exposed as a window function
+  // (no production DOM) and only when DEV build AND mobile bridge mode is
+  // explicitly enabled. Returns safe metadata only — never image/base64.
+  if (!import.meta.env.DEV || !isMobileBridgeEnabled()) return;
+  if (typeof window === 'undefined') return;
+  window.__kscanBridgeDebug = () => getMobileBridgeStatus();
+}
+
 function initSupabasePlaceholder() {
   const url = import.meta.env.VITE_SUPABASE_URL || '';
   const anon = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -304,6 +315,7 @@ function init() {
   registerMatrices();
   wireButtons();
   initStatus();
+  initMobileBridgeDebug();
   initSupabasePlaceholder();
   showScreen('home', false);
   setState(STATE.IDLE);
