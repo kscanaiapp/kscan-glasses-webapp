@@ -963,3 +963,123 @@ Manual test checklist:
 | timeout | `VITE_MOCK_DAT_SCENARIO=timeout` | `IDLE -> CAPTURING -> ERROR` | `Capture timed out.` | No | MANUAL QA REQUIRED |
 | invalid-response | `VITE_MOCK_DAT_SCENARIO=invalid-response` | `IDLE -> CAPTURING -> ERROR` | `Camera response invalid.` | No | MANUAL QA REQUIRED |
 | malformed-image | `VITE_MOCK_DAT_SCENARIO=malformed-image` | `IDLE -> CAPTURING -> SANITIZING -> ERROR` | `Privacy scan failed. Try again.` | No | MANUAL QA REQUIRED |
+
+---
+
+# Phase 11 — Virtual-Alpha Infrastructure (2026-06-11)
+
+Branch `phase-11-virtual-alpha-infra`. Desktop-Chrome virtual prototype:
+the full scan flow runs without physical glasses. **Not validated on real
+Meta Ray-Ban Display hardware.** See `QA_REPORT.md` for the test matrix.
+
+## Quick start (virtual alpha)
+
+```
+npm install            # once, on your machine
+npm run dev            # Vite dev server
+# App:        http://localhost:5173/
+# Simulator:  http://localhost:5173/simulator.html
+npm test               # verify models + build + static + contract tests
+```
+
+## New env vars (see .env.example)
+
+| Var | Purpose |
+|---|---|
+| `VITE_ENABLE_SIMULATOR` | `true` allows simulator features in a staging build. Never set in production. |
+| `VITE_DAT_PARENT_ORIGIN` | Comma-separated allowlist of parent-frame origins for capture responses. Own origin is always trusted. |
+
+## Scan pipeline
+
+`src/scanPipeline.js` structurally enforces capture → sanitize → analyze.
+The backend can only ever receive the sanitizer's output (JPEG data URL);
+a non-JPEG sanitizer result blocks the upload. Contract-tested.
+
+## DAT bridge contract (`src/datBridge.js`)
+
+- App sends `{ type: "capture-photo", requestId }` (plus legacy
+  `REQUEST_CAPTURE`) to the parent frame.
+- Runtime/simulator responds `{ type: "photo-captured", base64 }` or
+  `{ type: "photo-capture-error", code }` (legacy `CAPTURE_RESPONSE` /
+  `CAPTURE_ERROR` still accepted).
+- Promise-based `capturePhoto()`, 10 s timeout, listener cleanup after every
+  attempt, duplicate/stale messages ignored.
+- Payload must be a `data:image/jpeg;base64,` data URL; hard cap 8 MB chars
+  at the bridge. The sanitizer then downsamples (max side 800 px) and caps
+  output at ~1 MB (lower-quality retry, then fail closed).
+- **Origin validation**: `event.origin === "null"` never processed; trusted
+  = own origin or `VITE_DAT_PARENT_ORIGIN` allowlist; otherwise the message
+  must come from the direct parent window (`event.source`) — a documented
+  fallback until the real MRBD host origin is observed on hardware.
+  Wildcards are ignored. UI screens never call `postMessage` directly.
+
+## Simulator mode
+
+- Gated: only in DEV builds or when `VITE_ENABLE_SIMULATOR=true`. Inert in
+  production (contract-tested).
+- Gold **SIM** badge top-right on all screens whenever simulation is active.
+- `?mockAnalyze=success|empty|http-400|http-500|timeout|malformed|offline`
+  overrides the analyze call (gated as above).
+- `?dat=parent` forces the real postMessage bridge path in dev (used by the
+  parent-frame simulator). `?sim=1` shows the badge explicitly.
+
+## Parent-frame simulator (`simulator.html`)
+
+Dev-only (repo root — served by `npm run dev`, never built into `dist/`).
+Loads the app in a 600×600 iframe and answers capture requests with
+canvas-generated synthetic fixtures (no real photos/faces): success,
+oversized (>1 MB), invalid payload, cancelled, permission denied, generic
+error, timeout. Backend scenarios reload the iframe with `?mockAnalyze=`.
+Message log shows types/sizes only — never payloads.
+
+## Privacy sanitizer
+
+Canvas re-encode (strips EXIF/GPS, converts PNG→JPEG), downsamples to
+800 px max side, MediaPipe BlazeFace (lazy-loaded local WASM/model) solid-
+masks detected faces with 25% margin. **Conservative failure mode**: any
+detector failure blocks the upload ("We couldn't verify this image is safe
+to upload. Please try again."); raw captures are never uploaded.
+`__setMaskEngineForTests` injects a mock detector for tests — no real face
+imagery in the repo.
+
+## Backend client retry policy (`src/api.js`)
+
+Contract unchanged: `POST {VITE_KSCAN_BACKEND_URL}/api/analyze` with body
+exactly `{ image: <sanitized JPEG data URL> }`. First attempt 10 s timeout;
+retry **once** only on timeout/5xx after 2 s, second attempt 15 s; never on
+4xx/malformed JSON/network error. Live smoke testing is manual-only.
+
+## Auth & Library (virtual alpha)
+
+- Scanning always works as guest; guest scans are never sent to Supabase.
+- Guest history/saved items: localStorage, schema v1, small whitelisted
+  metadata only (never images/base64), capped 20 scans / 50 items, hard
+  privacy gate refuses any payload containing `base64,`.
+- Supabase env missing → offline stub mode: fixed `dev@virtual-alpha.local`
+  stub session, example library rows, visible banner
+  "Supabase stub – virtual-alpha only.", zero network calls.
+- `@supabase/supabase-js` is intentionally NOT installed yet (dependency
+  approval required); `src/authSession.js` is the seam for the real client.
+- Guest data is preserved on sign-in (migration strategy TODO).
+
+## D-pad / 600×600 QA
+
+Keyboard map: ArrowUp/Down move focus (wrap), Enter/ArrowRight activate,
+Escape/ArrowLeft back. Focus = 3 px cyan outline + glow. Fixed 600×600
+shell, no page overflow; results/library panels are the only scroll areas.
+In Chrome DevTools set viewport 600×600.
+
+## Staging readiness (docs only — no deploy performed)
+
+- Vercel/Netlify static deploy of `dist/` works; HTTPS public URL required
+  by MRBD Web Apps. Set `VITE_KSCAN_BACKEND_URL` (and optionally
+  `VITE_ENABLE_SIMULATOR=true` for a staging-only build) in the host's env.
+- Do not set mock/simulator flags on production deploys.
+- QR/deeplink: once staged, add the HTTPS URL as a Web App in the Meta AI
+  app (Developer Mode) — see `docs/meta/Test.txt`. Blocked until hardware.
+
+## Blocked until physical glasses
+
+Real camera capture, real MRBD runtime origin (strict postMessage pinning),
+Neural Band latency/gesture feel, additive display brightness/readability,
+microphone/voice runtime, QR/deeplink launch, device `devicePixelRatio`.

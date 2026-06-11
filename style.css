@@ -6,6 +6,7 @@
   --cyan-hot: #00FFFF;
   --purple-deep: #6D35FF;
   --red-danger: #FF6B6B;
+  --gold-sim: #FFD54A;
   --panel: rgba(8, 12, 18, 0.82);
   --safe-zone: 20px;
   --focus-outline: 3px;
@@ -144,7 +145,8 @@ body {
 }
 
 .settings-list,
-#results-list {
+#results-list,
+#library-panel {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -156,6 +158,10 @@ body {
   gap: 10px;
   align-items: start;
   min-height: 110px;
+}
+
+.product-card.saved {
+  border-color: rgba(0, 229, 255, 0.6);
 }
 
 .product-thumb {
@@ -202,6 +208,22 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 14px;
+}
+
+.empty-note {
+  color: var(--chrome);
+  font-size: 16px;
+  padding: 4px 0;
+}
+
+.stub-banner {
+  border: 1px solid var(--gold-sim);
+  border-radius: 8px;
+  color: var(--gold-sim);
+  background: rgba(255, 213, 74, 0.08);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 6px 10px;
 }
 
 .spinner {
@@ -255,6 +277,29 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Dev/staging simulator badge — top-right, never overlaps the scan button
+   (home content is centered) or results text (list is inset). */
+#sim-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 30;
+  min-width: 44px;
+  min-height: 24px;
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--gold-sim);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.78);
+  color: var(--gold-sim);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  pointer-events: none;
 }
 
 #dat-hud {

@@ -11,6 +11,10 @@ import { isMobileBridgeEnabled } from './mobileBridgeConfig.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
 import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
+import { runScanPipeline, PIPELINE_STAGES, PipelineInvariantError } from './scanPipeline.js';
+import { mountSimulatorBadge } from './simulatorMode.js';
+import { getSession, signInStub, signOut, isStubMode } from './authSession.js';
+import { loadGuestLibrary, recordGuestScan, saveGuestItem, getStubLibraryExamples } from './libraryStore.js';
 
 const STATE = FLOW_STATES;
 
@@ -76,6 +80,9 @@ function showScreen(viewId, pushHistory = true) {
   currentView = viewId;
   syncViewA11y(viewId);
 
+  if (viewId === 'library') renderLibrary();
+  if (viewId === 'settings') renderSettings();
+
   if (viewId === 'results') {
     const firstCard = els.resultsList.querySelector('.product-card.focusable');
     if (firstCard) {
@@ -136,10 +143,28 @@ function createProductCard(product) {
 
   const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
   meta.appendChild(createText('p', 'price', priceText));
-  meta.appendChild(createText('p', 'link', product.url ? 'Open product' : 'No link available'));
+
+  const action = createText('p', 'link', 'Press Enter to save');
+  meta.appendChild(action);
   card.appendChild(meta);
 
-  card.addEventListener('click', () => {});
+  // Enter/click on a result card saves metadata (brand/name/price only —
+  // never images) to the guest library.
+  card.addEventListener('click', () => {
+    const result = saveGuestItem({
+      brand: safeText(product.brand, 'Unknown Brand'),
+      name: safeText(product.name, 'Unnamed Product'),
+      price: safeText(product.priceRange || product.price, 'Price unavailable'),
+    });
+    if (result.saved) {
+      action.textContent = 'Saved to Library';
+      card.classList.add('saved');
+    } else if (result.reason === 'duplicate') {
+      action.textContent = 'Already in Library';
+    } else {
+      action.textContent = 'Could not save';
+    }
+  });
   return card;
 }
 
@@ -182,6 +207,10 @@ function normalizeScanError(error) {
     return mapSanitizerErrorToUserMessage(error);
   }
 
+  if (error instanceof PipelineInvariantError) {
+    return "We couldn't verify this image is safe to upload. Please try again.";
+  }
+
   if (error instanceof AnalyzeError) {
     if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Backend not configured.';
     if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Request timed out. Please try again.';
@@ -189,8 +218,6 @@ function normalizeScanError(error) {
     if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Analysis failed. Please try again.';
     if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Unexpected server response.';
     if (error.code === ANALYZE_ERROR_CODES.INVALID_SHAPE) return 'Unexpected server response.';
-    if (error.code === ANALYZE_ERROR_CODES.MOCK_ERROR) return 'Analysis failed. Please try again.';
-    if (error.code === ANALYZE_ERROR_CODES.INVALID_INPUT) return 'Analysis failed. Please try again.';
     return 'Analysis failed. Please try again.';
   }
 
@@ -209,17 +236,27 @@ export async function startScan() {
     lastDatErrorCode = 'none';
     showScreen('processing');
 
-    setState(STATE.CAPTURING);
-    const captured = await capturePhoto();
-
-    setState(STATE.SANITIZING);
-    const sanitized = await sanitizeImageBeforeUpload(captured);
-
-    setState(STATE.ANALYZING);
-    const response = await analyzeImage(sanitized, {
-      onSlow: () => {
-        els.processingText.textContent = 'Waking up Fashion AI...';
+    const { response } = await runScanPipeline({
+      capture: () => capturePhoto(),
+      sanitize: (captured) => sanitizeImageBeforeUpload(captured),
+      analyze: (sanitized) => analyzeImage(sanitized, {
+        onSlow: () => {
+          els.processingText.textContent = 'Waking up Fashion AI...';
+        },
+      }),
+      onStage: (stage) => {
+        if (stage === PIPELINE_STAGES.CAPTURING) setState(STATE.CAPTURING);
+        if (stage === PIPELINE_STAGES.SANITIZING) setState(STATE.SANITIZING);
+        if (stage === PIPELINE_STAGES.ANALYZING) setState(STATE.ANALYZING);
       },
+    });
+
+    // Guest scan history: small metadata only — never images or payloads.
+    const products = Array.isArray(response?.products) ? response.products : [];
+    recordGuestScan({
+      productCount: products.length,
+      topBrand: products[0]?.brand || '',
+      topName: products[0]?.name || '',
     });
 
     renderProducts(response);
@@ -237,6 +274,121 @@ function onBack() {
   showScreen(previous, false);
 }
 
+// ─── Library screen ──────────────────────────────────────────────────
+
+function formatScanRow(scan, isExample) {
+  const date = typeof scan.capturedAt === 'string' ? scan.capturedAt.slice(0, 10) : '';
+  const count = Number.isFinite(scan.productCount) ? scan.productCount : 0;
+  const top = scan.topBrand ? ` · ${scan.topBrand}` : '';
+  const prefix = isExample ? 'Example: ' : '';
+  return count > 0
+    ? `${prefix}${date} · ${count} match${count === 1 ? '' : 'es'}${top}`
+    : `${prefix}${date} · No matches`;
+}
+
+function appendStubBanner(panel) {
+  if (!isStubMode()) return;
+  const banner = document.createElement('p');
+  banner.className = 'stub-banner';
+  banner.textContent = 'Supabase stub – virtual-alpha only.';
+  panel.appendChild(banner);
+}
+
+function renderLibrary() {
+  const panel = document.getElementById('library-panel');
+  if (!panel) return;
+  panel.innerHTML = '';
+
+  appendStubBanner(panel);
+
+  const guest = loadGuestLibrary();
+  const examples = isStubMode() ? getStubLibraryExamples() : { scans: [], savedItems: [] };
+
+  const rows = [];
+
+  panel.appendChild(createText('h2', null, 'Saved Items'));
+  const savedItems = [
+    ...guest.savedItems.map((item) => ({ item, isExample: false })),
+    ...examples.savedItems.map((item) => ({ item, isExample: true })),
+  ];
+  if (!savedItems.length) {
+    panel.appendChild(createText('p', 'empty-note', 'No saved items yet. Save one from scan results.'));
+  }
+  savedItems.forEach(({ item, isExample }) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'row focusable';
+    row.textContent = `${isExample ? 'Example: ' : ''}${item.brand} — ${item.name} (${item.price})`;
+    panel.appendChild(row);
+    rows.push(row);
+  });
+
+  panel.appendChild(createText('h2', null, 'Scan History'));
+  const scans = [
+    ...guest.scans.map((scan) => ({ scan, isExample: false })),
+    ...examples.scans.map((scan) => ({ scan, isExample: true })),
+  ];
+  if (!scans.length) {
+    panel.appendChild(createText('p', 'empty-note', 'No scans yet.'));
+  }
+  scans.forEach(({ scan, isExample }) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'row focusable';
+    row.textContent = formatScanRow(scan, isExample);
+    panel.appendChild(row);
+    rows.push(row);
+  });
+
+  registerFocusMatrix('library', [
+    [document.getElementById('library-back-btn')],
+    ...rows.map((el) => [el]),
+  ]);
+}
+
+// ─── Settings screen ─────────────────────────────────────────────────
+
+function renderSettings() {
+  const panel = document.getElementById('settings-panel');
+  if (!panel) return;
+
+  const session = getSession();
+  const accountRow = document.getElementById('settings-account-row');
+  const authBtn = document.getElementById('settings-auth-btn');
+
+  if (accountRow) {
+    accountRow.textContent = session ? `Account: ${session.user.email}` : 'Account: Guest';
+  }
+  if (authBtn) {
+    authBtn.textContent = session ? 'Sign Out' : 'Sign In (stub)';
+    authBtn.classList.toggle('row-danger', Boolean(session));
+  }
+
+  let banner = panel.querySelector('.stub-banner');
+  if (isStubMode() && !banner) {
+    banner = document.createElement('p');
+    banner.className = 'stub-banner';
+    banner.textContent = 'Supabase stub – virtual-alpha only.';
+    panel.prepend(banner);
+  }
+
+  registerFocusMatrix('settings', [
+    [document.getElementById('settings-back-btn')],
+    ...Array.from(panel.querySelectorAll('.row.focusable')).map((el) => [el]),
+  ]);
+}
+
+function onAuthToggle() {
+  const session = getSession();
+  if (session) {
+    signOut();
+  } else {
+    signInStub();
+  }
+  renderSettings();
+  focusFirstInView('settings');
+}
+
 function wireButtons() {
   document.getElementById('scan-btn').addEventListener('click', startScan);
   document.getElementById('retry-empty-btn').addEventListener('click', startScan);
@@ -248,6 +400,7 @@ function wireButtons() {
   document.getElementById('library-back-btn').addEventListener('click', onBack);
   document.getElementById('settings-back-btn').addEventListener('click', onBack);
   document.getElementById('results-back-btn').addEventListener('click', onBack);
+  document.getElementById('settings-auth-btn').addEventListener('click', onAuthToggle);
   document.getElementById('error-home-btn').addEventListener('click', () => {
     setState(STATE.IDLE);
     showScreen('home');
@@ -266,16 +419,6 @@ function registerMatrices() {
   ]);
 
   registerFocusMatrix('processing', [[document.getElementById('cancel-btn')]]);
-
-  registerFocusMatrix('library', [
-    [document.getElementById('library-back-btn')],
-    ...Array.from(document.querySelectorAll('#library .row')).map((el) => [el]),
-  ]);
-
-  registerFocusMatrix('settings', [
-    [document.getElementById('settings-back-btn')],
-    ...Array.from(document.querySelectorAll('#settings .row')).map((el) => [el]),
-  ]);
 
   registerFocusMatrix('error', [
     [document.getElementById('error-retry-btn')],
@@ -304,19 +447,13 @@ function initMobileBridgeDebug() {
   window.__kscanBridgeDebug = () => getMobileBridgeStatus();
 }
 
-function initSupabasePlaceholder() {
-  const url = import.meta.env.VITE_SUPABASE_URL || '';
-  const anon = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-  void { configured: Boolean(url && anon) };
-}
-
 function init() {
   initNavigation({ onBack });
   registerMatrices();
   wireButtons();
   initStatus();
   initMobileBridgeDebug();
-  initSupabasePlaceholder();
+  mountSimulatorBadge(document.getElementById('app'));
   showScreen('home', false);
   setState(STATE.IDLE);
 }

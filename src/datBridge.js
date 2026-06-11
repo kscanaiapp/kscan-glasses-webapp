@@ -10,6 +10,11 @@ const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
 const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
 
+// Hard sanity cap on incoming capture payloads (characters of the data URL).
+// The privacy sanitizer downsamples before upload; this cap only rejects
+// absurd payloads at the bridge boundary. Documented in BRIDGE_CONTRACT.md.
+export const MAX_CAPTURE_PAYLOAD_CHARS = 8 * 1024 * 1024;
+
 export const DAT_ERROR_CODES = {
   BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
   CAPTURE_TIMEOUT: 'CAPTURE_TIMEOUT',
@@ -17,7 +22,89 @@ export const DAT_ERROR_CODES = {
   CAPTURE_CANCELLED: 'CAPTURE_CANCELLED',
   INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE',
   CAPTURE_IN_PROGRESS: 'CAPTURE_IN_PROGRESS',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
 };
+
+// ─── Origin validation (Phase 11) ────────────────────────────────────
+// postMessage capture responses are accepted only from:
+//   1. An allowlisted origin: our own origin (same-origin simulator) or
+//      a comma-separated VITE_DAT_PARENT_ORIGIN env allowlist, OR
+//   2. The direct parent window (event.source === window.parent) when the
+//      Meta runtime's host origin is unknown. This fallback is documented
+//      in BRIDGE_CONTRACT.md / QA_REPORT.md as a known MRBD limitation —
+//      strict origin pinning is impossible until the real runtime origin
+//      is observed on physical glasses.
+// Messages with event.origin === 'null' are NEVER processed.
+// Wildcard entries in the allowlist are ignored.
+
+function readDatEnv() {
+  try {
+    return { VITE_DAT_PARENT_ORIGIN: import.meta.env.VITE_DAT_PARENT_ORIGIN };
+  } catch {
+    return {};
+  }
+}
+
+export function buildOriginAllowlist(envLike = {}, selfOrigin = '') {
+  const allowlist = new Set();
+  if (typeof selfOrigin === 'string' && selfOrigin && selfOrigin !== 'null') {
+    allowlist.add(selfOrigin);
+  }
+  const raw = typeof envLike.VITE_DAT_PARENT_ORIGIN === 'string' ? envLike.VITE_DAT_PARENT_ORIGIN : '';
+  for (const entry of raw.split(',')) {
+    const trimmed = entry.trim().replace(/\/+$/, '');
+    if (trimmed && trimmed !== 'null' && trimmed !== '*') allowlist.add(trimmed);
+  }
+  return allowlist;
+}
+
+export function evaluateMessageTrust(eventLike, { allowlist, parentRef } = {}) {
+  const origin = eventLike?.origin;
+  if (origin === 'null') return { trusted: false, reason: 'NULL_ORIGIN' };
+  if (typeof origin === 'string' && allowlist instanceof Set && allowlist.has(origin)) {
+    return { trusted: true, reason: 'ORIGIN_ALLOWLISTED' };
+  }
+  if (parentRef && eventLike?.source === parentRef) {
+    return { trusted: true, reason: 'PARENT_SOURCE' };
+  }
+  return { trusted: false, reason: 'UNTRUSTED' };
+}
+
+let cachedAllowlist = null;
+function getOriginAllowlist() {
+  if (!cachedAllowlist) {
+    const selfOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    cachedAllowlist = buildOriginAllowlist(readDatEnv(), selfOrigin);
+  }
+  return cachedAllowlist;
+}
+
+let warnedUntrusted = false;
+function warnUntrustedOnce() {
+  if (warnedUntrusted) return;
+  warnedUntrusted = true;
+  // Generic warning only — never log origins, payloads, or message bodies.
+  console.warn('[datBridge] Ignored capture message from untrusted source.');
+}
+
+// Dev-only override: `?dat=parent` forces the postMessage adapter even when
+// VITE_MOCK_DAT=true, so the parent-frame simulator (simulator.html) can
+// exercise the real bridge path during local dev. Parsed once.
+export function parseDatModeOverride(locationLike = {}) {
+  const search = typeof locationLike.search === 'string' ? locationLike.search : '';
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  return params.get('dat') === 'parent' ? 'parent' : null;
+}
+
+let cachedModeOverride;
+function getDatModeOverride() {
+  if (cachedModeOverride === undefined) {
+    cachedModeOverride = typeof window !== 'undefined' && window.location
+      ? parseDatModeOverride(window.location)
+      : null;
+  }
+  return cachedModeOverride;
+}
 
 // Last mobile-bridge capture metadata (safe fields only) for the dev status
 // surface. Never holds image payloads.
@@ -41,7 +128,12 @@ export class DATBridgeError extends Error {
 let pendingCapture = null;
 
 function isMockEnabled() {
-  return import.meta.env.DEV && String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true';
+  if (getDatModeOverride() === 'parent') return false;
+  try {
+    return import.meta.env.DEV === true && String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
 }
 
 function isMetaRuntime() {
@@ -145,6 +237,10 @@ function validateCapturePayload(payload) {
     throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
   }
 
+  if (trimmed.length > MAX_CAPTURE_PAYLOAD_CHARS) {
+    throw new DATBridgeError(DAT_ERROR_CODES.PAYLOAD_TOO_LARGE, 'Capture payload too large.');
+  }
+
   return trimmed;
 }
 
@@ -238,15 +334,27 @@ function mapUserFriendlyError(error) {
   if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
   if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return 'Camera response invalid.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
+  if (error.code === DAT_ERROR_CODES.PAYLOAD_TOO_LARGE) return 'Camera response invalid.';
   return 'Capture failed.';
+}
+
+function getRequestTargetOrigin() {
+  // If exactly one parent origin is configured via env, pin outbound requests
+  // to it. Otherwise '*' — acceptable because the request carries only
+  // {type, requestId}, never image data or secrets. The MRBD host origin is
+  // unknown until physical-device testing (documented limitation).
+  const raw = typeof readDatEnv().VITE_DAT_PARENT_ORIGIN === 'string' ? readDatEnv().VITE_DAT_PARENT_ORIGIN : '';
+  const entries = raw.split(',').map((s) => s.trim().replace(/\/+$/, '')).filter((s) => s && s !== '*' && s !== 'null');
+  return entries.length === 1 ? entries[0] : '*';
 }
 
 function emitBridgeRequest(adapter, requestId) {
   if (adapter === 'postMessage') {
+    const targetOrigin = getRequestTargetOrigin();
     const canonical = { type: 'capture-photo', requestId };
-    window.parent.postMessage(canonical, '*');
+    window.parent.postMessage(canonical, targetOrigin);
     // Backward-compatible request for older hosts.
-    window.parent.postMessage({ type: 'REQUEST_CAPTURE', requestId }, '*');
+    window.parent.postMessage({ type: 'REQUEST_CAPTURE', requestId }, targetOrigin);
     return;
   }
 
@@ -378,10 +486,14 @@ async function captureViaMobileBridgeProvider() {
   }
 }
 
-export async function capturePhoto() {
+export async function capturePhoto(options = {}) {
   if (pendingCapture) {
     throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_IN_PROGRESS, 'Capture already in progress.');
   }
+
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : CAPTURE_TIMEOUT_MS;
 
   // Provider selection is atomic and per-capture. Mobile bridge dev mode,
   // when explicitly enabled, takes priority and never coexists with DAT/mock.
@@ -459,6 +571,15 @@ export async function capturePhoto() {
     };
 
     const onMessage = (event) => {
+      const trust = evaluateMessageTrust(event, {
+        allowlist: getOriginAllowlist(),
+        parentRef: window.parent !== window ? window.parent : null,
+      });
+      if (!trust.trusted) {
+        warnUntrustedOnce();
+        return;
+      }
+
       const normalized = normalizeCapturePayload(event.data, requestId);
       if (!normalized.matched) return;
       settle(normalized);
@@ -473,7 +594,7 @@ export async function capturePhoto() {
         ok: false,
         error: new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.'),
       });
-    }, CAPTURE_TIMEOUT_MS);
+    }, timeoutMs);
 
     window.addEventListener('message', onMessage);
 

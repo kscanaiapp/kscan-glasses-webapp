@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>K Scan — Parent-Frame DAT Simulator (dev only)</title>
+<!--
+  DEV-ONLY parent-frame DAT bridge simulator.
+
+  Lives at the repo root on purpose: the Vite dev server serves it at
+  /simulator.html, but `vite build` only bundles index.html, so this file
+  NEVER ships in dist/ or production.
+
+  It loads the app in a 600×600 iframe with ?dat=parent (forces the real
+  postMessage bridge path even when VITE_MOCK_DAT=true) and answers the
+  app's { type: "capture-photo" } requests according to the selected
+  scenario, using synthetic canvas-generated fixtures only.
+
+  PRIVACY: the message log records message TYPES and sizes only — never
+  base64, image contents, tokens, or scan results. No real photos and no
+  real faces are used anywhere.
+-->
+<style>
+  body { margin: 0; background: #0a0e14; color: #e0e0e0; font-family: system-ui, sans-serif; font-size: 14px; }
+  .layout { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+  .frame-wrap { border: 2px solid #FFD54A; border-radius: 8px; width: 604px; }
+  .frame-head { background: #FFD54A; color: #14110a; font-weight: 800; padding: 3px 8px; font-size: 12px; letter-spacing: 1px; }
+  iframe { width: 600px; height: 600px; border: 0; display: block; background: #000; }
+  .panel { flex: 1; max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
+  fieldset { border: 1px solid #2a3442; border-radius: 8px; padding: 10px; }
+  legend { color: #00E5FF; font-weight: 700; padding: 0 6px; }
+  label { display: block; margin: 6px 0 2px; color: #9fb0c3; }
+  select, button { background: #141b26; color: #e0e0e0; border: 1px solid #2a3442; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+  button { cursor: pointer; }
+  button:hover, button:focus { border-color: #00E5FF; outline: none; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  #scenario-now { color: #FFD54A; font-weight: 700; }
+  #log { background: #05070b; border: 1px solid #2a3442; border-radius: 8px; padding: 8px; height: 220px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
+  .note { color: #9fb0c3; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="layout">
+  <div class="frame-wrap">
+    <div class="frame-head">SIMULATOR — K SCAN GLASSES APP (600×600)</div>
+    <iframe id="app-frame" title="K Scan app under simulation"></iframe>
+  </div>
+
+  <div class="panel">
+    <fieldset>
+      <legend>Capture scenario</legend>
+      <p>Active: <span id="scenario-now">success</span></p>
+      <label for="capture-scenario">Respond to capture-photo with:</label>
+      <select id="capture-scenario">
+        <option value="success">success — synthetic fashion fixture</option>
+        <option value="oversized">oversized — &gt;1MB noise image (downsample/reject path)</option>
+        <option value="invalid">invalid payload — not a data URL</option>
+        <option value="cancel">cancelled capture</option>
+        <option value="error">generic capture error</option>
+        <option value="permission">permission denied</option>
+        <option value="timeout">timeout — never respond</option>
+      </select>
+      <div class="btn-row">
+        <button id="trigger-success">Send success now</button>
+        <button id="trigger-error">Send error now</button>
+        <button id="trigger-invalid">Send invalid now</button>
+        <button id="trigger-oversized">Send oversized now</button>
+      </div>
+      <p class="note">Manual buttons answer the most recent pending request.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Backend scenario (reloads app iframe)</legend>
+      <label for="backend-scenario">Analyze behavior via ?mockAnalyze=</label>
+      <select id="backend-scenario">
+        <option value="">default (app env: mock or live)</option>
+        <option value="success">success — products</option>
+        <option value="empty">empty products</option>
+        <option value="http-400">HTTP 400</option>
+        <option value="http-500">HTTP 500</option>
+        <option value="timeout">timeout</option>
+        <option value="malformed">malformed JSON</option>
+        <option value="offline">offline / unreachable</option>
+      </select>
+      <div class="btn-row"><button id="reload-app">Reload app with scenario</button></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Message log (types only — never payloads)</legend>
+      <div id="log" aria-live="polite"></div>
+      <div class="btn-row"><button id="clear-log">Clear log</button></div>
+    </fieldset>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var frame = document.getElementById('app-frame');
+  var logEl = document.getElementById('log');
+  var captureSelect = document.getElementById('capture-scenario');
+  var backendSelect = document.getElementById('backend-scenario');
+  var scenarioNow = document.getElementById('scenario-now');
+
+  var pendingRequestId = null;
+  var answeredRequestIds = {}; // dedupe: app sends canonical + legacy request
+
+  function log(line) {
+    var time = new Date().toISOString().slice(11, 19);
+    logEl.textContent += '[' + time + '] ' + line + '\n';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function appUrl() {
+    var params = new URLSearchParams();
+    params.set('dat', 'parent');
+    params.set('sim', '1');
+    var backend = backendSelect.value;
+    if (backend) params.set('mockAnalyze', backend);
+    return '/?' + params.toString();
+  }
+
+  function loadApp() {
+    frame.src = appUrl();
+    log('app iframe loaded: dat=parent sim=1' + (backendSelect.value ? ' mockAnalyze=' + backendSelect.value : ''));
+  }
+
+  // ── Synthetic fixtures (canvas-generated, no real photos/faces) ──
+  function makeFixture(kind) {
+    var canvas = document.createElement('canvas');
+    if (kind === 'oversized') {
+      canvas.width = 2600; canvas.height = 2600;
+    } else {
+      canvas.width = 640; canvas.height = 640;
+    }
+    var ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#10151d';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (kind === 'oversized') {
+      // Random noise compresses poorly → guaranteed >1MB data URL.
+      var img = ctx.createImageData(canvas.width, canvas.height);
+      for (var i = 0; i < img.data.length; i += 1) img.data[i] = Math.floor(Math.random() * 256);
+      ctx.putImageData(img, 0, 0);
+      return canvas.toDataURL('image/jpeg', 0.98);
+    }
+
+    // Stylized synthetic "jacket" silhouette — clearly not a real photo.
+    ctx.fillStyle = '#27445c';
+    ctx.fillRect(170, 140, 300, 380); // torso
+    ctx.fillRect(90, 160, 90, 280);   // left sleeve
+    ctx.fillRect(460, 160, 90, 280);  // right sleeve
+    ctx.strokeStyle = '#00E5FF';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(320, 140); ctx.lineTo(320, 520); // zipper
+    ctx.stroke();
+    ctx.fillStyle = '#E0E0E0';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText('SYNTHETIC FIXTURE', 150, 80);
+    return canvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  function post(message) {
+    if (!frame.contentWindow) return;
+    frame.contentWindow.postMessage(message, window.location.origin);
+  }
+
+  function sizeClass(str) {
+    if (typeof str !== 'string') return 'n/a';
+    if (str.length > 1024 * 1024) return '>1MB';
+    if (str.length > 100 * 1024) return '>100KB';
+    return '<100KB';
+  }
+
+  function respond(requestId, scenario) {
+    if (scenario === 'timeout') {
+      log('capture-photo received → scenario=timeout → not responding');
+      return;
+    }
+    if (scenario === 'cancel') {
+      post({ type: 'photo-capture-error', requestId: requestId, code: 'CAPTURE_CANCELLED' });
+      log('sent photo-capture-error (CAPTURE_CANCELLED)');
+      return;
+    }
+    if (scenario === 'permission') {
+      post({ type: 'photo-capture-error', requestId: requestId, code: 'PERMISSION_DENIED' });
+      log('sent photo-capture-error (PERMISSION_DENIED)');
+      return;
+    }
+    if (scenario === 'error') {
+      post({ type: 'photo-capture-error', requestId: requestId, code: 'INVALID_CAPTURE_RESPONSE', message: 'Simulated failure' });
+      log('sent photo-capture-error (generic)');
+      return;
+    }
+    if (scenario === 'invalid') {
+      post({ type: 'photo-captured', requestId: requestId, base64: 'not-a-data-url' });
+      log('sent photo-captured (INVALID payload)');
+      return;
+    }
+    var kind = scenario === 'oversized' ? 'oversized' : 'success';
+    var fixture = makeFixture(kind);
+    post({ type: 'photo-captured', requestId: requestId, base64: fixture });
+    log('sent photo-captured (' + kind + ', ' + sizeClass(fixture) + ')');
+  }
+
+  window.addEventListener('message', function (event) {
+    // Only accept messages from our own iframe, same origin.
+    if (event.origin !== window.location.origin) return;
+    if (!frame.contentWindow || event.source !== frame.contentWindow) return;
+
+    var data = event.data;
+    if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+
+    if (data.type === 'capture-photo' || data.type === 'REQUEST_CAPTURE') {
+      var requestId = typeof data.requestId === 'string' ? data.requestId : 'unknown';
+      log('received ' + data.type + ' (requestId present: ' + (requestId !== 'unknown') + ')');
+      if (answeredRequestIds[requestId]) return; // dedupe canonical+legacy pair
+      answeredRequestIds[requestId] = true;
+      pendingRequestId = requestId;
+      respond(requestId, captureSelect.value);
+    }
+  });
+
+  captureSelect.addEventListener('change', function () {
+    scenarioNow.textContent = captureSelect.value;
+    log('capture scenario set: ' + captureSelect.value);
+  });
+
+  document.getElementById('reload-app').addEventListener('click', loadApp);
+  document.getElementById('clear-log').addEventListener('click', function () { logEl.textContent = ''; });
+
+  document.getElementById('trigger-success').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'success');
+    else log('no pending capture request');
+  });
+  document.getElementById('trigger-error').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'error');
+    else log('no pending capture request');
+  });
+  document.getElementById('trigger-invalid').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'invalid');
+    else log('no pending capture request');
+  });
+  document.getElementById('trigger-oversized').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'oversized');
+    else log('no pending capture request');
+  });
+
+  loadApp();
+})();
+</script>
+</body>
+</html>
