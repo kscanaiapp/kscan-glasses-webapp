@@ -470,13 +470,13 @@ function wireButtons() {
   document.getElementById('settings-auth-btn').addEventListener('click', onAuthToggle);
   document.getElementById('error-home-btn').addEventListener('click', () => {
     setState(STATE.IDLE);
-    showScreen('home');
+    showScreen('home', false);
   });
   document.getElementById('cancel-btn').addEventListener('click', () => {
     scanToken += 1; // invalidate any in-flight scan
     scanInFlight = false;
     setState(STATE.IDLE);
-    showScreen('home');
+    showScreen('home', false);
   });
 }
 
