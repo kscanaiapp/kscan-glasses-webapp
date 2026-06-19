@@ -110,3 +110,68 @@ Re-run `npm test` on Windows to confirm locally.
 - Guest history: schema-versioned localStorage, whitelisted scalar fields,
   hard gate refusing anything containing `base64,`. ✔
 - No production deploy performed. ✔
+
+---
+
+# Phase 12 — Browser Demo Hardening (2026-06-11)
+
+## What changed
+
+- `simulator.html` is now the demo control room: header, demo instructions,
+  Start Scan / Focus App buttons (same-origin), capture + backend scenario
+  selectors, and a directional message log
+  (`[HH:MM:SS] app → simulator: capture-photo (scenario)`).
+  Log policy tightened: timestamp, direction, message type, and scenario/
+  status label only — payload size classes were removed.
+- Oversized scenario now exceeds the bridge's 8M-char cap, so the app
+  rejects it before sanitize/analyze and shows "Image too large. Try again."
+- User-facing copy aligned to spec: empty = "No matches found. Try another
+  angle."; 5xx/malformed = "Something went wrong. Try again."; network =
+  "Unable to connect. Try again." (labeled simulated); invalid capture =
+  "Couldn't read image. Try again."; oversized = "Image too large. Try
+  again."; library empty = "No saved items yet."
+- Settings now shows plain-text status rows (Simulator / Backend / Supabase
+  / Auth) — hostname at most, never URLs with params, keys, or tokens.
+- Scan flow is single-flight: duplicate triggers ignored while processing;
+  Cancel invalidates the in-flight pipeline (stale results/errors/stage
+  text are discarded via a scan token).
+
+## Manual QA checklist (keyboard-only, 600×600)
+
+- [ ] `npm run dev`; open `/` and `/simulator.html` — both load, no console
+      errors, no 404s (app JS, style.css, manifest, WASM, model).
+- [ ] App shell stays 600×600; no page scrollbars; only results/library
+      panels scroll.
+- [ ] Home: focus starts on "K Scan"; ArrowUp/Down wraps through
+      K Scan → Library → Settings; Enter activates.
+- [ ] Scan (success): processing spinner + staged text; results render;
+      first card focused; focused cards scroll into view.
+- [ ] Enter on a card → "Saved to Library"; Enter again → "Already in
+      Library". Library shows item + history, newest first.
+- [ ] All 10 scenarios in the README matrix produce the listed copy; the
+      app never freezes; Try Again recovers.
+- [ ] Press Enter rapidly on "K Scan" — only one scan starts.
+- [ ] Cancel during processing → Home; no late jump to results; next scan
+      works normally.
+- [ ] Settings: status rows show simulator/backend/supabase/auth; stub
+      sign-in/out toggles; no secrets anywhere.
+- [ ] Simulator log never shows base64/payload/size/dimensions.
+
+## Console check
+
+Expected clean. Known acceptable: Vite dev-mode messages; a single generic
+"[datBridge] Ignored capture message from untrusted source." warning if a
+non-simulator window posts messages (by design, no payload logged).
+
+## Validation status (sandbox)
+
+`npm test` (verify-models + build + static + contract suites) — see final
+session report for exact results. Static-suite WARNs (6) are pre-existing
+and warn-by-design (dev-gated strings visible in the minified bundle).
+
+## Hardware blockers (unchanged — no physical-glasses readiness claimed)
+
+Real MRBD display readability, real Neural Band latency, real DAT capture
+on iOS/Android with paired glasses, real camera capture, real voice/
+microphone runtime (not implemented), QR/deeplink launch on glasses, real
+devicePixelRatio/display behavior.

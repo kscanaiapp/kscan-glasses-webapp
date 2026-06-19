@@ -300,7 +300,7 @@ export async function sanitizeImageBeforeUpload(base64Image, options = {}) {
 
 export function mapSanitizerErrorToUserMessage(error) {
   if (error instanceof SanitizerError && error.code === SANITIZER_ERROR_CODES.OUTPUT_TOO_LARGE) {
-    return 'Image too large to upload safely. Please try again.';
+    return 'Image too large. Try again.';
   }
   if (error instanceof SanitizerError && (
     error.code === SANITIZER_ERROR_CODES.FACE_DETECTION_FAILED

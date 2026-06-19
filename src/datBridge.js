@@ -332,9 +332,9 @@ function mapUserFriendlyError(error) {
   if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Camera permission denied.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Capture timed out.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
-  if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return 'Camera response invalid.';
+  if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return "Couldn't read image. Try again.";
   if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
-  if (error.code === DAT_ERROR_CODES.PAYLOAD_TOO_LARGE) return 'Camera response invalid.';
+  if (error.code === DAT_ERROR_CODES.PAYLOAD_TOO_LARGE) return 'Image too large. Try again.';
   return 'Capture failed.';
 }
 

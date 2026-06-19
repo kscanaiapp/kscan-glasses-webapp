@@ -1083,3 +1083,54 @@ In Chrome DevTools set viewport 600×600.
 Real camera capture, real MRBD runtime origin (strict postMessage pinning),
 Neural Band latency/gesture feel, additive display brightness/readability,
 microphone/voice runtime, QR/deeplink launch, device `devicePixelRatio`.
+
+---
+
+# Phase 12 — Virtual Demo Script (2026-06-11)
+
+A tester can prove the full glasses flow in desktop Chrome, keyboard only,
+no glasses required.
+
+## Run the demo
+
+1. `npm run dev`
+2. Open `http://localhost:5173/simulator.html` (the demo control room).
+   - The app loads inside a 600×600 frame with the SIM badge active.
+   - For the bare app, open `http://localhost:5173/` and set the DevTools
+     viewport to 600×600.
+3. Click **Start Scan** (or click into the app and press **Enter** on
+   "K Scan").
+4. Watch: Capturing → Protecting privacy → Analyzing → Results.
+5. Arrow keys move through result cards; **Enter** saves one
+   ("Saved to Library").
+6. **Escape** back Home → **Library** shows the saved item and scan history
+   (newest first).
+7. Home → **Settings** shows plain-text status: Simulator, Backend
+   (hostname at most), Supabase (stub), Auth (guest/stub session). Sign
+   In (stub) / Sign Out toggles the virtual-alpha session.
+8. Repeat with failure scenarios (below), pressing **Start Scan** after
+   each scenario change.
+
+## Scenario matrix
+
+| Scenario | Where | Expected app result |
+|---|---|---|
+| Success with products | Capture: success | Results list with product cards |
+| Empty products | Backend: empty (reloads app) | "No matches found. Try another angle." + Retry |
+| Backend 500 | Backend: http-500 | "Something went wrong. Try again." |
+| Backend timeout | Backend: timeout | "Request timed out. Try again." |
+| Simulated network failure | Backend: offline | "Unable to connect. Try again." (demo label — not production offline support) |
+| Invalid capture payload | Capture: invalid | "Couldn't read image. Try again." |
+| Capture cancel | Capture: cancel | "Capture cancelled." + retry |
+| Capture timeout | Capture: timeout | "Capture timed out." after 10 s |
+| Permission denied | Capture: permission | "Camera permission denied." |
+| Oversized image | Capture: oversized | "Image too large. Try again." — rejected at the bridge, never reaches sanitizer/analyze |
+
+Notes:
+- Backend scenarios reload the app iframe with `?mockAnalyze=<scenario>`
+  (dev/staging-gated; inert in production builds).
+- Scanning is single-flight: extra Enter presses during processing are
+  ignored; Cancel invalidates the in-flight scan so a stale result can't
+  hijack the screen.
+- Scan/result state is in-memory by design; only library metadata persists
+  across reloads (guest localStorage, metadata only).

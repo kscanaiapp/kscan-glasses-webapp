@@ -322,3 +322,15 @@ body {
 body.prod #dat-hud {
   display: none;
 }
+
+#settings-status {
+  margin-top: 10px;
+  border-top: 1px solid rgba(224, 224, 224, 0.25);
+  padding-top: 8px;
+}
+
+.status-row {
+  color: var(--chrome);
+  font-size: 16px;
+  padding: 2px 0;
+}

@@ -12,7 +12,7 @@ import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessa
 import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
 import { runScanPipeline, PIPELINE_STAGES, PipelineInvariantError } from './scanPipeline.js';
-import { mountSimulatorBadge } from './simulatorMode.js';
+import { mountSimulatorBadge, getSimulatorState } from './simulatorMode.js';
 import { getSession, signInStub, signOut, isStubMode } from './authSession.js';
 import { loadGuestLibrary, recordGuestScan, saveGuestItem, getStubLibraryExamples } from './libraryStore.js';
 
@@ -21,6 +21,8 @@ const STATE = FLOW_STATES;
 let currentView = 'home';
 const screenHistory = [];
 let lastDatErrorCode = 'none';
+let scanInFlight = false;
+let scanToken = 0;
 
 const els = {
   home: document.getElementById('home'),
@@ -174,7 +176,7 @@ function renderProducts(data) {
 
   if (!products.length) {
     const empty = els.resultsEmpty.querySelector('p');
-    if (empty) empty.textContent = 'No items identified';
+    if (empty) empty.textContent = 'No matches found. Try another angle.';
     els.resultsEmpty.classList.remove('hidden');
     registerFocusMatrix('results', [
       [document.getElementById('results-back-btn')],
@@ -213,12 +215,12 @@ function normalizeScanError(error) {
 
   if (error instanceof AnalyzeError) {
     if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Backend not configured.';
-    if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Request timed out. Please try again.';
-    if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Cannot reach server. Check connection.';
-    if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Analysis failed. Please try again.';
-    if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Unexpected server response.';
-    if (error.code === ANALYZE_ERROR_CODES.INVALID_SHAPE) return 'Unexpected server response.';
-    return 'Analysis failed. Please try again.';
+    if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Request timed out. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Unable to connect. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Something went wrong. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Something went wrong. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.INVALID_SHAPE) return 'Something went wrong. Try again.';
+    return 'Something went wrong. Try again.';
   }
 
   if (!(error instanceof DATBridgeError)) {
@@ -231,6 +233,9 @@ function normalizeScanError(error) {
 }
 
 export async function startScan() {
+  if (scanInFlight) return; // prevent duplicate scan triggers while processing
+  scanInFlight = true;
+  const token = ++scanToken;
   try {
     setState(STATE.IDLE);
     lastDatErrorCode = 'none';
@@ -245,11 +250,14 @@ export async function startScan() {
         },
       }),
       onStage: (stage) => {
+        if (token !== scanToken) return; // cancelled — ignore stale stage updates
         if (stage === PIPELINE_STAGES.CAPTURING) setState(STATE.CAPTURING);
         if (stage === PIPELINE_STAGES.SANITIZING) setState(STATE.SANITIZING);
         if (stage === PIPELINE_STAGES.ANALYZING) setState(STATE.ANALYZING);
       },
     });
+
+    if (token !== scanToken) return; // cancelled mid-flight — discard stale result
 
     // Guest scan history: small metadata only — never images or payloads.
     const products = Array.isArray(response?.products) ? response.products : [];
@@ -264,7 +272,10 @@ export async function startScan() {
     showScreen('results');
     focusFirstInView('results');
   } catch (error) {
+    if (token !== scanToken) return; // cancelled — suppress stale error
     showError(normalizeScanError(error));
+  } finally {
+    if (token === scanToken) scanInFlight = false;
   }
 }
 
@@ -312,7 +323,7 @@ function renderLibrary() {
     ...examples.savedItems.map((item) => ({ item, isExample: true })),
   ];
   if (!savedItems.length) {
-    panel.appendChild(createText('p', 'empty-note', 'No saved items yet. Save one from scan results.'));
+    panel.appendChild(createText('p', 'empty-note', 'No saved items yet.'));
   }
   savedItems.forEach(({ item, isExample }) => {
     const row = document.createElement('button');
@@ -348,6 +359,55 @@ function renderLibrary() {
 
 // ─── Settings screen ─────────────────────────────────────────────────
 
+// Plain-text status rows. Shows hostname at most — never full URLs,
+// query params, keys, tokens, or raw env values.
+function renderSettingsStatus(panel) {
+  let status = panel.querySelector('#settings-status');
+  if (!status) {
+    status = document.createElement('div');
+    status.id = 'settings-status';
+    panel.appendChild(status);
+  }
+  status.innerHTML = '';
+
+  const sim = getSimulatorState();
+  const session = getSession();
+  const params = new URLSearchParams(window.location.search);
+  const scenario = sim.allowed ? params.get('mockAnalyze') : null;
+  const mockAnalyze = import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true';
+
+  let backendText;
+  if (scenario) {
+    backendText = `mock (${scenario})`;
+  } else if (mockAnalyze) {
+    backendText = 'mock';
+  } else {
+    const raw = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim();
+    if (!raw) {
+      backendText = 'unavailable';
+    } else {
+      try {
+        backendText = `configured (${new URL(raw).hostname})`;
+      } catch {
+        backendText = 'configured';
+      }
+    }
+  }
+
+  const rows = [
+    `Simulator: ${sim.active ? 'enabled' : 'disabled'}`,
+    `Backend: ${backendText}`,
+    `Supabase: ${isStubMode() ? 'stub' : 'configured'}`,
+    `Auth: ${session ? 'stub session' : 'guest'}`,
+  ];
+  rows.forEach((text) => {
+    const row = document.createElement('p');
+    row.className = 'status-row';
+    row.textContent = text;
+    status.appendChild(row);
+  });
+}
+
 function renderSettings() {
   const panel = document.getElementById('settings-panel');
   if (!panel) return;
@@ -363,6 +423,8 @@ function renderSettings() {
     authBtn.textContent = session ? 'Sign Out' : 'Sign In (stub)';
     authBtn.classList.toggle('row-danger', Boolean(session));
   }
+
+  renderSettingsStatus(panel);
 
   let banner = panel.querySelector('.stub-banner');
   if (isStubMode() && !banner) {
@@ -406,6 +468,8 @@ function wireButtons() {
     showScreen('home');
   });
   document.getElementById('cancel-btn').addEventListener('click', () => {
+    scanToken += 1; // invalidate any in-flight scan
+    scanInFlight = false;
     setState(STATE.IDLE);
     showScreen('home');
   });
