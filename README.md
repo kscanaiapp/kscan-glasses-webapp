@@ -1025,7 +1025,7 @@ a non-JPEG sanitizer result blocks the upload. Contract-tested.
 
 ## Parent-frame simulator (`simulator.html`)
 
-Dev-only (repo root — served by `npm run dev`, never built into `dist/`).
+Dev-only parent-frame simulator (repo root — served by `npm run dev`, now also built into `dist/` via `vite.config.js` for staging access).
 Loads the app in a 600×600 iframe and answers capture requests with
 canvas-generated synthetic fixtures (no real photos/faces): success,
 oversized (>1 MB), invalid payload, cancelled, permission denied, generic
@@ -1083,6 +1083,162 @@ In Chrome DevTools set viewport 600×600.
 Real camera capture, real MRBD runtime origin (strict postMessage pinning),
 Neural Band latency/gesture feel, additive display brightness/readability,
 microphone/voice runtime, QR/deeplink launch, device `devicePixelRatio`.
+
+---
+
+# Phase 14 — Staging Deployment Readiness (2026-06-18)
+
+## Objective
+
+Prepare the virtual alpha for safe staging deployment and future Meta AI
+companion app Web App loading. No production deployment. No physical device
+changes.
+
+## What changed
+
+- `vite.config.js` added with Multi-Page Application (MPA) config so
+  `simulator.html` is now built into `dist/` alongside `index.html`.
+  Testers can access the simulator control room from a deployed staging URL.
+- `.env.example` reorganized with clear sections:
+  Required for staging/production, dev-only, staging-only, mobile bridge dev,
+  and reserved/future.
+- README updated with staging checklist, QR/deeplink prep, and browser demo
+  staging script.
+
+## Vite MPA build
+
+`vite.config.js` uses `build.rollupOptions.input` with two entries:
+
+| Entry | File | Output | Purpose |
+|---|---|---|---|
+| `main` | `index.html` | `dist/index.html` | App shell (600×600 HUD) |
+| `simulator` | `simulator.html` | `dist/simulator.html` | Demo control room for testers |
+
+Both pages are served from the same static host. No additional dependencies.
+
+## Staging deployment checklist
+
+Before deploying to any staging host:
+
+- [ ] Branch is `phase-11-virtual-alpha-infra` (or approved descendant).
+- [ ] Working tree is clean; only intended files changed.
+- [ ] `npm test` passes (75 contract PASS / 0 FAIL).
+- [ ] `npm run build` passes; `dist/` contains both `index.html` and `simulator.html`.
+- [ ] No secrets in source (scan with `grep -r "sk-" src/` or similar).
+- [ ] No base64/image payloads in source or logs.
+- [ ] `dist/` is not committed to git (gitignored).
+- [ ] Model + WASM assets are present in `dist/`.
+- [ ] Simulator page is safe: no secrets, no payload logging, no real images.
+- [ ] Backend endpoint points to the staging/approved backend.
+- [ ] Supabase behavior is either configured or intentionally stubbed.
+- [ ] No physical-glasses readiness is claimed in docs or UI.
+- [ ] Public HTTPS URL is available before Meta AI app Web App loading.
+- [ ] HTTP-only URLs are not used. Meta runtime requires HTTPS.
+
+## Required staging environment variables
+
+| Variable | Required | Staging value | Notes |
+|---|---|---|---|
+| `VITE_KSCAN_BACKEND_URL` | **Yes** | `https://kscan-app-1.onrender.com` | No trailing slash. HTTPS only. |
+| `VITE_SUPABASE_URL` | No | (empty) | Stub mode if absent. |
+| `VITE_SUPABASE_ANON_KEY` | No | (empty) | Stub mode if absent. |
+| `VITE_ENABLE_SIMULATOR` | No | `true` for staging demo | Never `true` in production. |
+| `VITE_DAT_PARENT_ORIGIN` | No | (empty) | Set only after MRBD host origin is known. |
+
+**Dev-only variables** (must be `false` or absent in staging/production):
+- `VITE_MOCK_DAT`, `VITE_MOCK_ANALYZE`, `VITE_MOCK_DAT_SCENARIO`, `VITE_MOCK_ANALYZE_ERROR`, etc.
+
+## Staging env segmentation
+
+| Environment | Mocks | Simulator | Backend | Supabase |
+|---|---|---|---|---|
+| Local dev | `true` | Dev badge auto | Real or mock | Stub |
+| Staging preview | `false` | `VITE_ENABLE_SIMULATOR=true` | Real | Stub or real |
+| Production | `false` | Inert | Real | Real (when wired) |
+
+## QR / deeplink launch prep
+
+**Blocked until a public HTTPS staging URL exists.**
+
+Meta AI app Web App flow:
+
+1. Deploy app to a public HTTPS URL.
+2. Enable Developer Mode in the Meta AI app (tap app version 5× in Settings).
+3. Open Meta AI app → Devices → Display Glasses settings → App connections → Web apps.
+4. Tap **Add a Web App**.
+5. Enter app name: `K Scan`.
+6. Enter deployed HTTPS URL.
+7. Tap **Connect**.
+8. App appears in the MRBD app grid.
+
+**QR code:** The QR/deeplink is for the **tester's phone** — the companion app
+tests the URL, not the glasses. The QR can be generated from the staging URL
+via any standard QR generator. No QR package is added to this repo.
+
+**Security rule:** The QR URL must be a clean public HTTPS URL without embedded
+credentials, tokens, or private query parameters.
+
+## Browser/demo staging script
+
+A tester can validate the staging deploy in desktop Chrome/Edge without glasses:
+
+1. Open the staging HTTPS URL.
+2. Set DevTools viewport to 600×600.
+3. Open `/simulator.html` (if `VITE_ENABLE_SIMULATOR=true` in staging).
+4. Test **Success** scenario → results appear.
+5. Arrow keys to a product card → **Enter** saves it.
+6. **Escape** → **Library** → saved item appears.
+7. **Settings** → status rows show simulator/backend/Supabase/auth.
+8. Test failure scenarios: Empty, Error, Timeout, Network, Invalid, Cancel, Oversized.
+9. Confirm no console errors or asset 404s.
+10. Confirm no payload/secret logging in console or simulator log.
+11. Document any remaining hardware blockers.
+
+## HTTPS readiness
+
+| Requirement | Status | Notes |
+|---|---|---|
+| Meta Web Apps require HTTPS | VERIFIED | Official toolkit README |
+| HTTP-only URLs rejected | Expected | Meta runtime enforcement |
+| Localhost dev allowed | Yes | For `npm run dev` only |
+| Staging must be HTTPS | Yes | Required before Meta AI app loading |
+
+## Remaining hardware blockers
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast calibration.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode (URL-dependent).
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Safe to stage deploy?
+
+**Yes — for browser/virtual-alpha staging only.** The app is not validated on
+physical Meta Ray-Ban Display glasses. The staging deploy is for:
+
+- Browser QA at 600×600.
+- Simulator scenario testing from a public HTTPS URL.
+- Backend CORS verification.
+- Meta AI app Web App loading preparation (once hardware is available).
+
+**Not safe for:** Production end-user deployment without physical device QA.
+
+## Suggested next steps
+
+1. **Push the Phase 14 changes** (vite.config.js, .env.example, README.md, simulator.html comment).
+2. **Manual browser walkthrough** on local machine with `npm run preview`.
+3. **Staging deploy** to a static host (Vercel, Netlify, or similar) with the
+   required env vars set in the host dashboard.
+4. **Verify** `/` and `/simulator.html` load from the staging HTTPS URL.
+5. **Generate QR** from the staging URL for later Meta AI app testing.
+6. **Physical glasses validation** as a separate effort when hardware and
+   Developer Mode access are available.
+
+---
 
 ---
 

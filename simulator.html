@@ -7,8 +7,8 @@
   DEV-ONLY parent-frame DAT bridge simulator — the demo control room.
 
   Lives at the repo root on purpose: the Vite dev server serves it at
-  /simulator.html, but `vite build` only bundles index.html, so this file
-  NEVER ships in dist/ or production.
+  /simulator.html, and `vite build` now bundles it into dist/ via
+  vite.config.js so testers can access it from a deployed staging URL.
 
   It loads the app in a 600×600 iframe with ?dat=parent (forces the real
   postMessage bridge path even when VITE_MOCK_DAT=true) and answers the

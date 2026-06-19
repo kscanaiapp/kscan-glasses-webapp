@@ -361,3 +361,141 @@ Voice:
 4. **Staging deploy** once manual walkthrough is confirmed.
 5. **Physical glasses validation** as a separate Phase 14/15 effort when hardware
    and Meta Developer Mode access are available.
+
+---
+
+# Phase 14 — Staging Deployment Readiness (2026-06-18)
+
+## Scope
+
+Prepare the virtual alpha for safe staging deployment and future Meta AI
+companion app Web App loading. No production deployment. No physical device
+changes.
+
+## What changed
+
+| File | Change | Reason |
+|---|---|---|
+| `vite.config.js` | New file | MPA config so `simulator.html` builds into `dist/` for staging |
+| `.env.example` | Reorganized | Clear sections: required, dev-only, staging-only, mobile bridge, reserved |
+| `README.md` | Phase 14 section added | Staging checklist, QR/deeplink prep, browser demo script, HTTPS docs |
+| `simulator.html` | Comment updated | Reflects that it is now included in `dist/` via `vite.config.js` |
+
+## Build output
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (app JS 42.69 kB / 13.26 kB gzip) |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists (new via MPA config) |
+| `dist/assets/*.js` | ✅ Exists |
+| `dist/models/*.tflite` | ✅ Exists |
+| `dist/mediapipe/wasm/*` | ✅ Exists |
+| `dist/manifest.webmanifest` | ✅ Exists |
+| `dist/icons/*` | ✅ Exists |
+| Production leak scan | ✅ No forbidden strings in `dist/index.html` |
+| Voice code in bundle | ✅ `voice.js` not imported |
+| Dev HUD in dist | ✅ Absent |
+| Simulator.html safety | ✅ No secrets, no payload logging, no real images |
+
+## Vite MPA config
+
+```javascript
+// vite.config.js
+build: {
+  rollupOptions: {
+    input: {
+      main: resolve(__dirname, 'index.html'),
+      simulator: resolve(__dirname, 'simulator.html'),
+    },
+  },
+}
+```
+
+No new dependencies. No breaking changes to existing app routing.
+
+## Environment variable segmentation
+
+| Category | Vars | Staging guidance |
+|---|---|---|
+| **Required** | `VITE_KSCAN_BACKEND_URL` | HTTPS only, no trailing slash |
+| **Optional** | `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` | Empty = stub/guest mode |
+| **Staging-only** | `VITE_ENABLE_SIMULATOR` | `true` for demo scenarios; never `true` in production |
+| **Dev-only** | `VITE_MOCK_DAT`, `VITE_MOCK_ANALYZE`, `VITE_MOCK_*` | Must be `false` or absent in staging/production |
+| **Mobile bridge** | `VITE_ENABLE_MOBILE_BRIDGE`, `VITE_MOBILE_BRIDGE_WS_URL` | `ws://` localhost/LAN only; off by default |
+| **Reserved** | `VITE_META_APP_ID`, `VITE_META_CLIENT_TOKEN` | Not used yet |
+
+## Staging safety checklist
+
+- [x] Branch: `phase-11-virtual-alpha-infra` ✅
+- [x] Working tree: clean ✅
+- [x] `npm test` passes ✅
+- [x] `npm run build` passes ✅
+- [x] `dist/` contains both `index.html` and `simulator.html` ✅
+- [x] No secrets in source ✅
+- [x] No base64/image payloads in source or logs ✅
+- [x] `dist/` is not committed (gitignored) ✅
+- [x] Model + WASM assets present in `dist/` ✅
+- [x] Simulator page is safe (no secrets, no payload logging) ✅
+- [x] Backend contract unchanged (`POST /api/analyze` with `{ image }`) ✅
+- [x] No physical-glasses readiness claimed ✅
+- [ ] HTTPS public URL available (requires deploy)
+- [ ] Backend CORS allows deployed origin (requires backend config)
+- [ ] Meta AI app Developer Mode enabled (requires hardware + companion app)
+
+## HTTPS readiness
+
+| Requirement | Status |
+|---|---|
+| Meta Web Apps require HTTPS | VERIFIED ✅ |
+| HTTP-only URLs rejected | Expected |
+| Localhost dev allowed | Yes (for `npm run dev` only) |
+| Staging must be HTTPS | Yes (required before Meta AI app loading) |
+
+## QR / deeplink launch prep
+
+**Blocked until a public HTTPS staging URL exists.**
+
+Once staged, the Meta AI app flow is:
+
+1. Meta AI app → Devices → Display Glasses settings → App connections → Web apps.
+2. Add a Web App → name: `K Scan` → URL: deployed HTTPS URL.
+3. Tap Connect → app appears in MRBD app grid.
+
+QR code can be generated from the staging URL via any standard QR generator.
+The QR is for the **tester's phone** (companion app), not the glasses.
+
+## Remaining hardware blockers
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode.
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (42.69 kB / 13.26 kB gzip) |
+| `git diff --check` | LF/CRLF warning only (Windows normal) |
+| `git diff --stat` | `vite.config.js`, `.env.example`, `README.md`, `simulator.html` |
+| Working tree | 4 files changed |
+| Safe to commit? | Yes — config + docs + comment, all tests pass |
+| Safe to stage deploy? | Yes — for browser/virtual-alpha staging only |
+| Hardware blockers | Physical glasses, real DAT, real voice runtime, real waveguide |
+
+## Suggested next steps
+
+1. **Commit Phase 14 changes** (vite.config.js, .env.example, README.md, simulator.html).
+2. **Push** to `phase-11-virtual-alpha-infra`.
+3. **Manual browser walkthrough** with `npm run preview` at 600×600.
+4. **Staging deploy** to a static host with required env vars set in host dashboard.
+5. **Verify** `/` and `/simulator.html` load from the staging HTTPS URL.
+6. **Physical glasses validation** when hardware and Developer Mode access are available.
