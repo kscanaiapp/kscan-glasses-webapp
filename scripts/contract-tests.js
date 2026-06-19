@@ -348,6 +348,66 @@ async function runCapture(scenario) {
   expectEq('C6.payload-too-large', 'PAYLOAD_TOO_LARGE', caught?.code);
 }
 
+// C7: late success after timeout → ignored, app resolves to timeout error
+{
+  let caught = null;
+  try {
+    await runCapture(async ({ promise, requestId }) => {
+      dispatchMessage(trustedEvent({ type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG }));
+      await promise;
+    });
+  } catch { /* handled below */ }
+
+  let caught2 = null;
+  try {
+    await runCapture(async ({ promise, requestId }) => {
+      promise.catch(() => {}); // prevent unhandled rejection during timeout wait
+      await new Promise((r) => setTimeout(r, 250));
+      dispatchMessage(trustedEvent({ type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG }));
+      await promise;
+    });
+  } catch (e) { caught2 = e; }
+  expectEq('C7.late-success-ignored', 'CAPTURE_TIMEOUT', caught2?.code);
+  expectEq('C7.listener-cleanup', 0, messageListenerCount());
+}
+
+// C8: mismatched requestId → ignored, app resolves to timeout error
+{
+  let caught = null;
+  try {
+    await runCapture(async ({ promise, requestId }) => {
+      dispatchMessage(trustedEvent({ type: 'photo-captured', requestId: 'wrong-id', base64: VALID_JPEG }));
+      await promise;
+    });
+  } catch (e) { caught = e; }
+  expectEq('C8.mismatched-requestId-ignored', 'CAPTURE_TIMEOUT', caught?.code);
+  expectEq('C8.listener-cleanup', 0, messageListenerCount());
+}
+
+// C9: bridge event constants documented
+{
+  expectTrue('C9.bridge-events.REQUEST', bridge.BRIDGE_EVENTS?.REQUEST === 'capture-photo');
+  expectTrue('C9.bridge-events.SUCCESS', bridge.BRIDGE_EVENTS?.SUCCESS === 'photo-captured');
+  expectTrue('C9.bridge-events.ERROR', bridge.BRIDGE_EVENTS?.ERROR === 'photo-capture-error');
+  expectTrue('C9.bridge-events.MOBILE_REQUEST', bridge.BRIDGE_EVENTS?.MOBILE_REQUEST === 'capture.request');
+  expectTrue('C9.bridge-events.MOBILE_SUCCESS', bridge.BRIDGE_EVENTS?.MOBILE_SUCCESS === 'capture.success');
+  expectTrue('C9.bridge-events.MOBILE_ERROR', bridge.BRIDGE_EVENTS?.MOBILE_ERROR === 'capture.error');
+}
+
+// C10: user-facing error copy — improved messages
+{
+  const error = new bridge.DATBridgeError(bridge.DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'test');
+  expectTrue('C10.error-copy.bridge-unavailable', bridge.toUserFriendlyCaptureError(error) === 'Unable to capture. Try again.');
+  const timeoutErr = new bridge.DATBridgeError(bridge.DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'test');
+  expectTrue('C10.error-copy.timeout', bridge.toUserFriendlyCaptureError(timeoutErr) === 'Unable to capture. Try again.');
+  const permErr = new bridge.DATBridgeError(bridge.DAT_ERROR_CODES.PERMISSION_DENIED, 'test');
+  expectTrue('C10.error-copy.permission-denied', bridge.toUserFriendlyCaptureError(permErr) === 'Capture denied. Try again.');
+  const invalidErr = new bridge.DATBridgeError(bridge.DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'test');
+  expectTrue('C10.error-copy.invalid-response', bridge.toUserFriendlyCaptureError(invalidErr) === "Couldn't read image. Try again.");
+  const largeErr = new bridge.DATBridgeError(bridge.DAT_ERROR_CODES.PAYLOAD_TOO_LARGE, 'test');
+  expectTrue('C10.error-copy.payload-too-large', bridge.toUserFriendlyCaptureError(largeErr) === 'Image too large. Try again.');
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // D. Scan pipeline invariants
 // ═══════════════════════════════════════════════════════════════════

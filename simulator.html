@@ -81,6 +81,9 @@
         <option value="error">generic capture error</option>
         <option value="permission">permission denied</option>
         <option value="timeout">timeout — never respond</option>
+        <option value="phone-asleep">phone asleep — no response (same as timeout)</option>
+        <option value="late-success">late success — respond after app timeout (ignored)</option>
+        <option value="mismatched-id">mismatched requestId — ignored by app</option>
       </select>
       <div class="btn-row">
         <button id="trigger-success">Send success now</button>
@@ -195,8 +198,22 @@
   }
 
   function respond(requestId, scenario) {
-    if (scenario === 'timeout') {
-      logInfo('simulator: scenario=timeout — not responding (app will time out)');
+    if (scenario === 'timeout' || scenario === 'phone-asleep') {
+      logInfo('simulator: scenario=' + scenario + ' — not responding (app will time out)');
+      return;
+    }
+    if (scenario === 'late-success') {
+      logInfo('simulator: scenario=late-success — will respond after 12s (app should have timed out by then)');
+      setTimeout(function () {
+        if (!frame.contentWindow) return;
+        post({ type: 'photo-captured', requestId: requestId, base64: makeFixture() });
+        log('simulator → app', 'photo-captured', 'late-success-after-timeout');
+      }, 12000);
+      return;
+    }
+    if (scenario === 'mismatched-id') {
+      post({ type: 'photo-captured', requestId: 'wrong-request-id', base64: makeFixture() });
+      log('simulator → app', 'photo-captured', 'mismatched-requestId');
       return;
     }
     if (scenario === 'cancel') {

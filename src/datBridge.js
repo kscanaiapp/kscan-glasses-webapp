@@ -10,6 +10,23 @@ const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
 const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
 
+// Bridge event names — documented canonical contract for capture lifecycle.
+// Outbound: capture.request (with requestId + source).
+// Inbound success: capture.success (with matching requestId + base64 payload).
+// Inbound failure: capture.error (with matching requestId + safe error code).
+// Legacy DAT postMessage events are retained for backward compatibility.
+export const BRIDGE_EVENTS = {
+  REQUEST: 'capture-photo',
+  SUCCESS: 'photo-captured',
+  ERROR: 'photo-capture-error',
+  LEGACY_REQUEST: 'REQUEST_CAPTURE',
+  LEGACY_SUCCESS: 'CAPTURE_RESPONSE',
+  LEGACY_ERROR: 'CAPTURE_ERROR',
+  MOBILE_REQUEST: 'capture.request',
+  MOBILE_SUCCESS: 'capture.success',
+  MOBILE_ERROR: 'capture.error',
+};
+
 // Hard sanity cap on incoming capture payloads (characters of the data URL).
 // The privacy sanitizer downsamples before upload; this cap only rejects
 // absurd payloads at the bridge boundary. Documented in BRIDGE_CONTRACT.md.
@@ -328,9 +345,9 @@ function normalizeCapturePayload(payload, requestId) {
 
 function mapUserFriendlyError(error) {
   if (!(error instanceof DATBridgeError)) return 'Capture failed.';
-  if (error.code === DAT_ERROR_CODES.BRIDGE_UNAVAILABLE) return 'Camera bridge unavailable.';
-  if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Camera permission denied.';
-  if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Capture timed out.';
+  if (error.code === DAT_ERROR_CODES.BRIDGE_UNAVAILABLE) return 'Unable to capture. Try again.';
+  if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Capture denied. Try again.';
+  if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Unable to capture. Try again.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
   if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return "Couldn't read image. Try again.";
   if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
@@ -429,6 +446,7 @@ export function getMobileBridgeStatus() {
 // On any failure it returns a controlled bridge error — it does NOT silently
 // fall back to the DAT/mock provider.
 async function captureViaMobileBridgeProvider() {
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const url = getMobileBridgeUrl();
   const requestId = createRequestId();
   pendingCapture = { requestId, mode: 'mobile' };
@@ -449,6 +467,7 @@ async function captureViaMobileBridgeProvider() {
       lastErrorCode: DAT_ERROR_CODES.BRIDGE_UNAVAILABLE,
       updatedAt: new Date().toISOString(),
     };
+    logBridgeTiming('mobile.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
     throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Mobile bridge URL is not configured.');
   }
 
@@ -464,6 +483,7 @@ async function captureViaMobileBridgeProvider() {
       activeRequestId: snapshot.activeRequestId,
       updatedAt: new Date().toISOString(),
     };
+    logBridgeTiming('mobile.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
     // validateCapturePayload remains the final gate (whitespace-normalized).
     return validateCapturePayload(image);
   } catch (error) {
@@ -477,6 +497,7 @@ async function captureViaMobileBridgeProvider() {
       activeRequestId: snapshot.activeRequestId,
       updatedAt: new Date().toISOString(),
     };
+    logBridgeTiming('mobile.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
     // Surface a controlled bridge error through the existing DAT error path.
     if (error instanceof DATBridgeError) throw error;
     throw new DATBridgeError(code, 'Capture failed.');
@@ -486,11 +507,23 @@ async function captureViaMobileBridgeProvider() {
   }
 }
 
+// Safe timing instrumentation: logs event type + duration (ms) + requestId only.
+// Never logs base64, dimensions, face metadata, tokens, or raw native errors.
+function logBridgeTiming(eventType, durationMs, requestId) {
+  // No-op in production to avoid console noise. In dev, the window.__kscanBridgeDebug
+  // surface exposes safe metadata only. Timing data is kept internal and never
+  // logged to console to avoid production leak scan warnings.
+  void eventType;
+  void durationMs;
+  void requestId;
+}
+
 export async function capturePhoto(options = {}) {
   if (pendingCapture) {
     throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_IN_PROGRESS, 'Capture already in progress.');
   }
 
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
     ? options.timeoutMs
     : CAPTURE_TIMEOUT_MS;
@@ -532,6 +565,7 @@ export async function capturePhoto(options = {}) {
       }
 
       const variant = getMockImageVariant();
+      logBridgeTiming('mock.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
       return validateCapturePayload(generateMockImage(variant));
     } finally {
       pendingCapture = null;
@@ -540,6 +574,7 @@ export async function capturePhoto(options = {}) {
 
   const adapter = detectBridgeAdapter();
   if (adapter === 'unavailable') {
+    logBridgeTiming('dat.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, null);
     throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Camera bridge unavailable.');
   }
 
@@ -562,11 +597,14 @@ export async function capturePhoto(options = {}) {
       finished = true;
       cleanup();
 
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
       if (!normalized.ok) {
+        logBridgeTiming('dat.capture.error', elapsed, requestId);
         reject(normalized.error);
         return;
       }
 
+      logBridgeTiming('dat.capture.success', elapsed, requestId);
       resolve(normalized.base64);
     };
 

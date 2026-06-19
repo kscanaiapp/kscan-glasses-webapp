@@ -967,3 +967,146 @@ remain visible. Brightness calibration requires physical Meta Ray-Ban Display.
 This is a **virtual alpha / browser-testable prototype** only. No physical Meta
 Ray-Ban Display glasses validation has been performed. Nothing in this phase
 claims physical-device readiness.
+
+---
+
+# Phase 16.5 — Bridge Contract Prep + Failure-Mode Harness
+
+## Scope
+
+Prepare the web app for future mobile/DAT bridge validation without claiming real
+bridge readiness. No production bridge integration. No mobile app changes. No
+deployment.
+
+## What changed
+
+| File | Changes |
+|---|---|
+| `src/datBridge.js` | Added `BRIDGE_EVENTS` constant documenting canonical event names (`capture-photo`, `photo-captured`, `photo-capture-error`, `capture.request`, `capture.success`, `capture.error`). Improved user-facing error copy: timeout/bridge-unavailable now "Unable to capture. Try again."; permission denied now "Capture denied. Try again."; invalid payload remains "Couldn't read image. Try again."; payload too large remains "Image too large. Try again." Added safe `logBridgeTiming` no-op (gated, no console noise, no payload logging). |
+| `simulator.html` | Added capture scenarios: `phone-asleep` (no response), `late-success` (responds after app timeout), `mismatched-id` (wrong requestId). Frame head branding updated to "K Scan". |
+| `scripts/contract-tests.js` | Added C7 (late success after timeout → ignored, app resolves to CAPTURE_TIMEOUT), C8 (mismatched requestId → ignored, app resolves to CAPTURE_TIMEOUT), C9 (bridge event constants documented), C10 (user-facing error copy verification). Total contract tests: 90 PASS / 0 FAIL. |
+
+## Bridge contract summary
+
+### Outbound (web app → parent/mobile bridge)
+
+- Event: `capture-photo` (canonical DAT postMessage) or `capture.request` (mobile bridge)
+- Includes `requestId` (random, non-user-identifying)
+- Includes `type` only — never secrets, never image data in request
+- Legacy fallback: `REQUEST_CAPTURE`
+
+### Inbound success (parent/mobile bridge → web app)
+
+- Event: `photo-captured` (canonical DAT) or `capture.success` (mobile bridge)
+- Must include matching `requestId`
+- Payload is validated through `validateCapturePayload` before use
+- Raw payload must not be logged
+
+### Inbound failure (parent/mobile bridge → web app)
+
+- Event: `photo-capture-error` (canonical DAT) or `capture.error` (mobile bridge)
+- Must include matching `requestId` where possible
+- Safe error codes only:
+  - `BRIDGE_UNAVAILABLE`
+  - `CAPTURE_TIMEOUT`
+  - `CAPTURE_CANCELLED`
+  - `PERMISSION_DENIED`
+  - `INVALID_CAPTURE_RESPONSE`
+  - `PAYLOAD_TOO_LARGE`
+  - `CAPTURE_IN_PROGRESS`
+- Do not include raw native error objects if they may contain user data
+
+### Timeout behavior
+
+- Current timeout: 10 seconds (configurable via `CAPTURE_TIMEOUT_MS`)
+- **10 seconds is unvalidated** until HTTPS staging + phone/glasses testing
+- On timeout: UI shows "Unable to capture. Try again."
+- Processing does not freeze
+- Late bridge responses after cancel/timeout are ignored (`finished` flag in `settle`)
+
+## Simulator failure scenarios
+
+| Scenario | Behavior | App Result |
+|---|---|---|
+| success | Synthetic JPEG fixture | Results screen |
+| oversized | Payload exceeds 8MB cap | Error: "Image too large. Try again." |
+| invalid | Non-JPEG data URL | Error: "Couldn't read image. Try again." |
+| cancel | CAPTURE_CANCELLED | Error: "Capture cancelled." |
+| error | Generic error | Error: "Unable to capture. Try again." |
+| permission | PERMISSION_DENIED | Error: "Capture denied. Try again." |
+| timeout | No response | Error: "Unable to capture. Try again." |
+| phone-asleep | No response (same as timeout) | Error: "Unable to capture. Try again." |
+| late-success | Success after 12s (app timed out at 10s) | Ignored; app already on error screen |
+| mismatched-id | Wrong requestId | Ignored; app times out |
+
+For each scenario:
+- App does not crash
+- Processing resolves to clean Home/Error/Retry state
+- No stale results after cancel/timeout
+- No payload logging
+- D-pad focus lands on Retry or Home
+- `screenHistory` is not polluted by reset actions
+
+## Bridge timing instrumentation
+
+- `logBridgeTiming` is a no-op in production to avoid console noise and leak-scan warnings
+- In dev, safe metadata is available via `window.__kscanBridgeDebug`
+- Never logs: base64, image dimensions, face metadata, tokens, secrets, raw native errors
+
+## Documentation updates
+
+- README bridge contract section preserved
+- QA_REPORT.md updated with this section
+- Staging validation plan: requires public HTTPS URL, backend CORS, mobile/DAT bridge implementation, physical glasses
+
+## Staging validation plan (blocked until deployment)
+
+1. Deploy to public HTTPS URL
+2. Verify backend CORS allows staging origin
+3. Verify `/` and `/simulator.html` load from staging URL
+4. Test mock DAT + mock analyze from staging origin
+5. Test with mobile bridge enabled (if WS server available)
+6. Document real latency vs current 10s hypothesis
+7. Test phone sleep/background/lock behavior
+8. Test bridge disconnect and reconnect
+
+## Remaining deployment blockers
+
+- Public HTTPS URL with accessible staging origin
+- Backend CORS configured for deployed origin
+- Mobile/DAT bridge implementation (iOS/Android native)
+- Physical Meta Ray-Ban Display glasses
+- Real latency measurement (10s timeout unvalidated)
+- Real phone sleep/error propagation validation
+
+## Remaining real bridge/device blockers
+
+- Physical Meta Ray-Ban Display glasses validation
+- Real DAT/companion phone bridge capture (iOS/Android)
+- Real Neural Band D-pad latency and tactile feel
+- Real additive waveguide brightness/contrast
+- Real microphone/voice runtime verification
+- QR/deeplink launch via Meta AI app Developer Mode
+- `devicePixelRatio` and viewport behavior on actual display
+- Backend CORS from deployed HTTPS origin
+- Real MediaPipe BlazeFace performance on glasses web runtime
+
+## Explicit statement
+
+Bridge behavior is **prepared but not validated** on phone/glasses. The web app
+can handle the expected bridge contract, but no end-to-end test has proven:
+`web app capture.request → mobile/DAT bridge → capture.success`. Localhost
+simulator tests do not prove phone/glasses bridge behavior. Capture timeout
+values remain unvalidated until HTTPS staging + phone/glasses testing.
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (90 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.61 kB / 13.40 kB gzip) |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| `git diff --check` | LF/CRLF warning only (Windows normal) |
+| Working tree | Clean after commits |
+| App bundle size | 13.40 KB gzip — well under 150 KB threshold |
