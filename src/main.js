@@ -31,6 +31,7 @@ const els = {
   library: document.getElementById('library'),
   settings: document.getElementById('settings'),
   error: document.getElementById('error'),
+  processingText: document.getElementById('processing-text'),
   processingSub: document.getElementById('processing-sub'),
   resultsList: document.getElementById('results-list'),
   resultsEmpty: document.getElementById('results-empty'),
@@ -64,7 +65,7 @@ function setState(next) {
     if (sub) sub.textContent = '';
   }
   if (next === STATE.ANALYZING) {
-    els.processingText.textContent = 'Analyzing...';
+    els.processingText.textContent = 'Analyzing scan...';
     if (sub) sub.textContent = 'Fashion AI is working';
   }
   updateHud();
@@ -151,12 +152,12 @@ function createProductCard(product) {
   const meta = document.createElement('div');
   meta.className = 'product-meta';
   meta.appendChild(createText('p', 'brand', safeText(product.brand, 'Unknown Brand')));
-  meta.appendChild(createText('p', 'name', safeText(product.name, 'Unnamed Product')));
+  meta.appendChild(createText('p', 'name', safeText(product.name, 'Unknown item')));
 
   const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
   meta.appendChild(createText('p', 'price', priceText));
 
-  const action = createText('p', 'product-action', 'Save to Library');
+  const action = createText('p', 'product-action', 'Save');
   meta.appendChild(action);
   card.appendChild(meta);
 
@@ -185,8 +186,6 @@ function renderProducts(data) {
   els.resultsList.innerHTML = '';
 
   if (!products.length) {
-    const empty = els.resultsEmpty.querySelector('p');
-    if (empty) empty.textContent = 'No matches found. Try another angle.';
     els.resultsEmpty.classList.remove('hidden');
     registerFocusMatrix('results', [
       [document.getElementById('results-back-btn')],
@@ -224,8 +223,8 @@ function normalizeScanError(error) {
   }
 
   if (error instanceof AnalyzeError) {
-    if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Backend not configured.';
-    if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Request timed out. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Unable to connect. Try again.';
+    if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.NON_2XX) return 'Something went wrong. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.INVALID_JSON) return 'Something went wrong. Try again.';
@@ -337,7 +336,7 @@ function renderLibrary() {
     ...examples.savedItems.map((item) => ({ item, isExample: true })),
   ];
   if (!savedItems.length) {
-    panel.appendChild(createText('p', 'empty-note', 'No saved items yet'));
+    panel.appendChild(createText('p', 'empty-note', 'No saved items yet.'));
   }
   savedItems.forEach(({ item }) => {
     const row = document.createElement('button');
@@ -414,8 +413,9 @@ function renderSettingsStatus(panel) {
   }
 
   const simBadge = sim.active ? '<span class="status-badge on">On</span>' : '<span class="status-badge off">Off</span>';
-  const supabaseBadge = isStubMode() ? '<span class="status-badge off">Guest</span>' : '<span class="status-badge on">Live</span>';
-  const authBadge = session ? '<span class="status-badge on">Active</span>' : '<span class="status-badge off">Guest</span>';
+  const supabaseBadge = isStubMode() ? '<span class="status-badge off">Unconfigured</span>' : '<span class="status-badge on">Live</span>';
+  const authBadge = session ? '<span class="status-badge on">Live</span>' : '<span class="status-badge off">Guest</span>';
+  const voiceBadge = '<span class="status-badge off">future device test</span>';
 
   const makeRow = (label, badgeHtml) => {
     const row = document.createElement('div');
@@ -428,6 +428,7 @@ function renderSettingsStatus(panel) {
   status.appendChild(makeRow('Backend', backendBadge));
   status.appendChild(makeRow('Supabase', supabaseBadge));
   status.appendChild(makeRow('Account', authBadge));
+  status.appendChild(makeRow('Voice', voiceBadge));
 }
 
 function renderSettings() {

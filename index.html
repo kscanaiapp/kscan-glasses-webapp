@@ -14,8 +14,8 @@
   <main id="app" aria-live="polite">
     <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
       <div class="home-header">
-        <div class="home-brand">K SCAN</div>
-        <div class="home-tagline">Fashion AI</div>
+        <div class="home-brand">K Scan</div>
+        <div class="home-tagline">Find what you're looking at.</div>
       </div>
       <div class="home-center">
         <button id="scan-btn" class="btn btn-primary focusable">Scan</button>
@@ -31,7 +31,7 @@
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
         <div class="spinner" aria-hidden="true"></div>
-        <p id="processing-text" class="processing-text">Analyzing...</p>
+        <p id="processing-text" class="processing-text">Analyzing scan...</p>
         <p id="processing-sub" class="processing-sub"></p>
       </div>
     </section>
@@ -43,8 +43,8 @@
       </header>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
-        <p class="empty-title">No matches found</p>
-        <p class="empty-note">Try another angle</p>
+        <p class="empty-title">No matches found.</p>
+        <p class="empty-note">Try another angle.</p>
         <button id="retry-empty-btn" class="btn btn-primary focusable">Retry</button>
       </div>
     </section>
@@ -69,13 +69,14 @@
         <button id="settings-account-row" class="row focusable">Account: Guest</button>
         <button class="row focusable">Privacy &amp; Data</button>
         <button id="settings-auth-btn" class="row focusable">Sign In</button>
+        <div id="settings-voice-row" class="row">Voice: future device test</div>
       </div>
     </section>
 
     <section id="error" class="screen hidden" aria-label="Error" aria-hidden="true">
       <div class="error-center">
         <div class="error-symbol" aria-hidden="true">!</div>
-        <p id="error-message">Something went wrong</p>
+        <p id="error-message">Something went wrong. Try again.</p>
         <button id="error-retry-btn" class="btn btn-primary focusable">Retry</button>
         <button id="error-home-btn" class="btn btn-ghost focusable">Home</button>
       </div>
