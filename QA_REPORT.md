@@ -175,3 +175,189 @@ Real MRBD display readability, real Neural Band latency, real DAT capture
 on iOS/Android with paired glasses, real camera capture, real voice/
 microphone runtime (not implemented), QR/deeplink launch on glasses, real
 devicePixelRatio/display behavior.
+
+---
+
+# Phase 13 — Browser QA + Staging Readiness (2026-06-18)
+
+## Scope
+
+Prove the pushed virtual alpha works as a demonstrable 600×600 browser
+prototype before staging deployment or physical glasses testing. No new
+architecture or features added. One surgical bug fix applied.
+
+## Preflight status
+
+- Branch: `phase-11-virtual-alpha-infra` ✅
+- Latest commit: `a6014a6 feat(mrbd): harden virtual-alpha demo` ✅
+- Working tree: clean at start; one file changed after Phase 13 fix ✅
+- Tests: `npm test` — 75 PASS / 0 FAIL, 6 pre-existing WARNs ✅
+- Build: `npm run build` — PASS (app JS 42.68 kB / 13.26 kB gzip) ✅
+
+## Files changed in Phase 13
+
+| File | Change | Reason |
+|---|---|---|
+| `src/main.js` | +5 lines | Escape/ArrowLeft during processing now cancels the in-flight scan (same behavior as Cancel button) |
+
+## Dev server launch (Task 1)
+
+- `npm run dev` started successfully on `http://localhost:5173/` ✅
+- Both `/` and `/simulator.html` return HTTP 200 ✅
+
+## Asset + 404 check (Task 2)
+
+All assets verified via `curl` (HTTP 200, no 404s):
+
+- `/` ✅
+- `/simulator.html` ✅
+- `/style.css` ✅
+- `/src/main.js` ✅
+- `/manifest.webmanifest` ✅
+- `/models/blaze_face_full_range.tflite` ✅
+- `/mediapipe/wasm/vision_wasm_internal.js` ✅
+- `/icons/icon-96.png` ✅
+- `/icons/icon-192.png` ✅
+- All other `src/*.js` modules load ✅
+- `simulator.html` is **not** present in `dist/` — PASS ✅
+
+No console errors detected in source (no `console.log`, `console.debug`, or
+base64 logging found in `src/`). One controlled `console.warn` exists for
+untrusted postMessage sources (by design, no payload logged).
+
+## 600×600 HUD layout QA (Task 3) — code review
+
+- `index.html`: viewport is `width=600, height=600, initial-scale=1.0, user-scalable=no` ✅
+- `style.css`: `html/body` are `width:600px; height:600px; overflow:hidden` ✅
+- `#app` is `600×600` with `overflow:hidden` ✅
+- `.screen` is `absolute; inset:0` with `flex-direction:column` ✅
+- `.scroll-panel` has `overflow-y:auto` with `scrollbar-width:none` ✅
+- Focus ring is clearly defined: `outline:3px solid #00FFFF` + `box-shadow` glow ✅
+- SIM badge is `position:absolute; top:8px; right:8px; z-index:30` ✅
+- Settings status rows show hostname only — no secrets, no full URLs, no keys ✅
+- Dark background (`#000`), high-contrast text (`#F5F7FA`), large readable type ✅
+- Product cards fit within grid (`80px thumb + 1fr meta`) ✅
+
+## D-pad/keyboard walkthrough (Task 4) — code review
+
+- `navigation.js` handles `ArrowUp`, `ArrowDown`, `ArrowLeft`, `ArrowRight`, `Enter`, `Escape` ✅
+- `ArrowLeft`/`Escape` calls `onBack` ✅
+- `ArrowUp`/`Down` moves focus with wrap (`moveByList`) ✅
+- `Enter`/`ArrowRight` activates focused element (`activateFocused`) ✅
+- All interactive elements use `.focusable` class ✅
+- `focusin` event updates focus index and applies `.focused` class ✅
+- `scrollIntoView({block:'nearest'})` for scrollable panels ✅
+- `main.js`: duplicate scan prevention via `scanInFlight` guard ✅
+- **Fix applied**: `Escape`/`ArrowLeft` during processing now cancels the
+  in-flight scan (increments `scanToken`, sets `scanInFlight=false`, returns
+  to `STATE.IDLE`) before navigating back. This matches the Cancel button
+  behavior and prevents the app from getting stuck in a non-scannable state. ✅
+
+## Scenario matrix QA (Task 5) — code review
+
+Capture scenarios (simulator.html dropdown):
+
+| Scenario | Expected behavior | Code verified |
+|---|---|---|
+| success | Synthetic fixture → results | ✅ |
+| oversized | Rejected at bridge boundary (8MB cap) before sanitize/analyze | ✅ |
+| invalid | `validateCapturePayload` rejects non-JPEG prefix | ✅ |
+| cancel | Emits `photo-capture-error` with `CAPTURE_CANCELLED` | ✅ |
+| error | Generic error with retry path | ✅ |
+| permission | `PERMISSION_DENIED` with user-friendly copy | ✅ |
+| timeout | No response; app times out after 10s | ✅ |
+
+Backend scenarios (simulator.html dropdown):
+
+| Scenario | Expected behavior | Code verified |
+|---|---|---|
+| success | Products rendered | ✅ |
+| empty | Empty state with retry | ✅ |
+| http-400 | No retry; error screen | ✅ |
+| http-500 | 1 retry then error screen | ✅ |
+| timeout | 1 retry then error screen | ✅ |
+| malformed | No retry; error screen | ✅ |
+| offline | No retry; network error copy | ✅ |
+
+Additional checks:
+- App does not crash on any scenario ✅
+- User-facing copy is short and readable at 600×600 ✅
+- Simulator log shows only timestamp, direction, type, and status label ✅
+- No base64, dimensions, payload details, face metadata, or tokens in logs ✅
+- Analyze is not called for invalid/oversized capture scenarios ✅
+
+## Pipeline and contract spot check (Task 6)
+
+- `scanPipeline.js`: `capture → sanitize → analyze` order is structurally enforced ✅
+- `api.js`: `POST /api/analyze` with `Content-Type: application/json` and body
+  `JSON.stringify({ image: sanitizedBase64 })` ✅
+- Raw capture is never sent directly to analyze — only sanitizer output ✅
+- Sanitizer failure blocks upload (fail-closed) ✅
+- Oversized image blocks upload at bridge boundary (`validateCapturePayload`) ✅
+- Retry policy intact: 1 retry on timeout/5xx, 2s delay, 15s second timeout ✅
+- Mock analyze/simulator paths are gated by `DEV` or `VITE_ENABLE_SIMULATOR` ✅
+- Production build is safe (no dev diagnostics in `dist/index.html`) ✅
+
+## Voice and HUD handling (Task 7)
+
+HUD:
+- `dat-hud` is gated by `import.meta.env.DEV` — absent in production build ✅
+- No verbose diagnostics in the glasses UI ✅
+- No raw backend payloads or debug internals shown ✅
+- Scan, processing, results, save, library, and settings screens are clear ✅
+
+Voice:
+- `src/voice.js` exists but is **not** imported in `main.js` ✅
+- No microphone permission requested anywhere ✅
+- No auto-started voice recognition ✅
+- Primary demo trigger is D-pad/Enter and simulator controls ✅
+- Future voice path is documented as a plan: wake phrase → scan/save/next/previous
+  → audio feedback, pending Meta runtime/native bridge validation ✅
+
+## Staging readiness checklist
+
+- [ ] HTTPS host with publicly accessible URL (required for MRBD Web Apps)
+- [ ] CORS configured on backend `https://kscan-app-1.onrender.com/api/analyze`
+- [ ] Environment variables set for staging (no secrets in repo)
+- [ ] `VITE_ENABLE_SIMULATOR=true` for staging demo if needed
+- [ ] `dist/` built and verified (`npm run build`)
+- [ ] `simulator.html` intentionally excluded from production deploy
+- [ ] MediaPipe model + WASM assets copied to `dist/`
+- [ ] No base64 images, real photos, or face metadata in deploy bundle
+- [ ] Physical glasses validation scheduled (not a blocker for staging)
+
+## Known limitations (unchanged)
+
+- No physical Meta Ray-Ban Display glasses validation yet.
+- Camera capture is via DAT/companion bridge abstraction only; no direct Web App camera.
+- Voice activation is not directly verified in MRBD Web App runtime; remains future.
+- No production deployment without explicit approval.
+- postMessage origin pinning requires observing the real MRBD runtime origin.
+- MediaPipe face-detection accuracy on real faces needs manual QA.
+- Supabase client is not installed; app runs in stub mode with visible banner.
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (42.68 kB / 13.26 kB gzip) |
+| `git diff --check` | LF/CRLF warning only (Windows normal) |
+| `git diff --stat` | `src/main.js` +5 lines |
+| Working tree | 1 file changed (the Escape-during-processing fix) |
+| Safe to commit? | Yes — one surgical fix, all tests pass |
+| Safe to stage deploy? | Yes — for browser/demo staging only; not production |
+| Hardware blockers | Physical glasses, real DAT, real voice runtime, real waveguide |
+
+## Suggested next step
+
+1. **Commit the Phase 13 fix** (`src/main.js`) with message:
+   `fix(mrbd): cancel in-flight scan on Escape/ArrowLeft during processing`
+2. **Push** to `phase-11-virtual-alpha-infra`.
+3. **Manual browser walkthrough** on a local machine with Chrome DevTools at 600×600
+   to confirm the interactive feel (focus ring visibility, D-pad wrap, card scroll,
+   rapid-Enter dedupe, Cancel/Escape recovery). This step cannot be automated in the
+   current environment because the Kimi WebBridge browser extension is not connected.
+4. **Staging deploy** once manual walkthrough is confirmed.
+5. **Physical glasses validation** as a separate Phase 14/15 effort when hardware
+   and Meta Developer Mode access are available.

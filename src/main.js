@@ -281,6 +281,11 @@ export async function startScan() {
 
 function onBack() {
   if (currentView === 'home') return;
+  if (currentView === 'processing') {
+    scanToken += 1; // invalidate in-flight scan
+    scanInFlight = false;
+    setState(STATE.IDLE);
+  }
   const previous = screenHistory.pop() || 'home';
   showScreen(previous, false);
 }
