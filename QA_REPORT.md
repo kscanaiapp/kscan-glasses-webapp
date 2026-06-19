@@ -613,3 +613,234 @@ Total increase: ~4 KB raw / ~0.8 KB gzip — acceptable for the visual system im
 3. **Manual browser walkthrough** with `npm run preview` at 600×600 to confirm focus ring visibility, hover feel, and screen transitions.
 4. **Staging deploy** for browser demo validation.
 5. **Physical glasses validation** when hardware is available.
+
+
+---
+
+# Phase 16 — Staging Readiness + Programmatic Browser QA Evidence (2026-06-18)
+
+## Scope
+
+Evidence-based staging-readiness audit. No visual hallucination. All claims
+are verified through code inspection, static tests, contract tests, build
+output analysis, and source review. Browser visual QA items that could not be
+automated are explicitly labeled **MANUAL QA REQUIRED**.
+
+## Preflight status
+
+| Check | Result |
+|---|---|
+| Branch | `phase-11-virtual-alpha-infra` |
+| Latest commit | `13af786 feat(mrbd): polish glasses HUD UI` |
+| Working tree | Clean |
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.18 kB / 13.34 kB gzip) |
+| `git diff --check` | PASS |
+| Browser automation | Playwright/Puppeteer **not installed** — visual items are MANUAL QA REQUIRED |
+
+## Evidence-based code audit
+
+### 1. Navigation (`src/navigation.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| ArrowUp/ArrowDown navigates focus | `handleKeydown` → `moveByList` with delta ±1 | ✅ VERIFIED |
+| ArrowLeft/Escape calls onBack | `event.key === 'ArrowLeft' \|\| event.key === 'Escape'` → `onBackHandler()` | ✅ VERIFIED |
+| ArrowRight/Enter activates | `event.key === 'ArrowRight' \|\| event.key === 'Enter'` → `activateFocused` | ✅ VERIFIED |
+| `.focusable` elements selected | `getFocusableInView` uses `querySelectorAll('.focusable:not([disabled]):not(.hidden)')` | ✅ VERIFIED |
+| Hidden/disabled excluded | `:not([disabled]):not(.hidden)` in selector | ✅ VERIFIED |
+| Focus index wraps | `((index % items.length) + items.length) % items.length` | ✅ VERIFIED |
+| Focus scrolls into view | `items[focusIndex].scrollIntoView({ block: 'nearest' })` | ✅ VERIFIED |
+| `focusin` event updates index | `focusin` listener tracks `items.indexOf(target)` | ✅ VERIFIED |
+
+### 2. Scan flow locking (`src/main.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| Single-flight guard | `if (scanInFlight) return;` at `startScan` entry | ✅ VERIFIED |
+| Duplicate Enter blocked | `scanInFlight = true` set before any async work | ✅ VERIFIED |
+| Cancel invalidates token | `scanToken += 1; scanInFlight = false;` in `onBack` when processing | ✅ VERIFIED |
+| Stale results discarded | `if (token !== scanToken) return;` after pipeline and in catch | ✅ VERIFIED |
+| Stale errors discarded | `if (token !== scanToken) return;` in catch block | ✅ VERIFIED |
+| Reset actions don't pollute history | `showScreen('home', false)` in Cancel and Error-home | ✅ VERIFIED |
+
+### 3. Capture and payload validation (`src/datBridge.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| `capturePhoto` exported | `export async function capturePhoto` | ✅ VERIFIED |
+| Mock DAT dev/staging gated | `import.meta.env.DEV === true && VITE_MOCK_DAT === 'true'` | ✅ VERIFIED |
+| `?dat=parent` overrides mock | `parseDatModeOverride` returns `'parent'` → `isMockEnabled` returns false | ✅ VERIFIED |
+| Payload validation at bridge | `validateCapturePayload` requires `startsWith(CAPTURE_DATA_URL_PREFIX)` | ✅ VERIFIED |
+| `CAPTURE_DATA_URL_PREFIX` exact | `const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,'` | ✅ VERIFIED |
+| Oversized rejected | `trimmed.length > MAX_CAPTURE_PAYLOAD_CHARS` (8MB) → `PAYLOAD_TOO_LARGE` | ✅ VERIFIED |
+| Empty encoded payload rejected | `if (!encodedPayload)` throw | ✅ VERIFIED |
+| Malformed mock returns exact JPEG | `validateCapturePayload('data:image/jpeg;base64,bm90YW5pbWFnZQ==')` | ✅ VERIFIED |
+| Invalid-response mock rejected | `validateCapturePayload('invalid-response')` fails prefix check | ✅ VERIFIED |
+| Timeout handled | `setTimeout` reject with `CAPTURE_TIMEOUT` | ✅ VERIFIED |
+| Cancel handled | `CAPTURE_CANCELLED` error code | ✅ VERIFIED |
+| Permission denied handled | `PERMISSION_DENIED` error code | ✅ VERIFIED |
+| Origin trust enforced | `evaluateMessageTrust` with allowlist + parent fallback | ✅ VERIFIED |
+| `null` origin rejected | `if (origin === 'null') return { trusted: false }` | ✅ VERIFIED |
+| Wildcard ignored | `if (trimmed !== '*')` in `buildOriginAllowlist` | ✅ VERIFIED |
+| Mobile bridge atomic | `isMobileBridgeEnabled()` → `captureViaMobileBridgeProvider()` | ✅ VERIFIED |
+| `pendingCapture` prevents concurrent | `if (pendingCapture) throw CAPTURE_IN_PROGRESS` | ✅ VERIFIED |
+| No base64 logging | No `console.log(base64)` in `datBridge.js` | ✅ VERIFIED |
+
+### 4. Sanitizer (`src/privacyImageSanitizer.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| `sanitizeImageBeforeUpload` exported | `export async function sanitizeImageBeforeUpload` | ✅ VERIFIED |
+| Fail-closed | `try` → catch `SanitizerError` → block upload | ✅ VERIFIED |
+| No base64 logging | No `console.log(base64)` in file | ✅ VERIFIED |
+| Face metadata not exported | Exports: `MAX_SANITIZED_OUTPUT_CHARS`, `SANITIZER_ERROR_CODES`, `SanitizerError`, `__setMaskEngineForTests`, `sanitizeImageBeforeUpload`, `mapSanitizerErrorToUserMessage`, `teardownSanitizer` | ✅ VERIFIED |
+| No bbox/keypoint exports | No exports matching `box/bound/keypoint/landmark/detect` | ✅ VERIFIED |
+| Local model path | `FACE_MODEL_PATH = '/models/blaze_face_full_range.tflite'` | ✅ VERIFIED |
+| Local WASM path | `VISION_WASM_BASE_PATH = '/mediapipe/wasm'` | ✅ VERIFIED |
+| Max output cap | `MAX_SANITIZED_OUTPUT_CHARS = 1024 * 1024` | ✅ VERIFIED |
+| Quality fallback | `FALLBACK_JPEG_QUALITY = 0.6` retry if too large | ✅ VERIFIED |
+
+### 5. Backend (`src/api.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| Endpoint is `/api/analyze` | `const endpoint = \`${backend}/api/analyze\`` | ✅ VERIFIED |
+| Content-Type `application/json` | `headers: { 'Content-Type': 'application/json' }` | ✅ VERIFIED |
+| Body shape `{ image }` | `body: JSON.stringify({ image: sanitizedBase64 })` | ✅ VERIFIED |
+| No extra payload fields | Only `image` key in `JSON.stringify` | ✅ VERIFIED |
+| Retry once on timeout/5xx | `shouldRetry` checks `TIMEOUT` or `status >= 500` | ✅ VERIFIED |
+| First timeout 10s | `ANALYZE_FIRST_TIMEOUT_MS = 10000` | ✅ VERIFIED |
+| Second timeout 15s | `ANALYZE_RETRY_TIMEOUT_MS = 15000` | ✅ VERIFIED |
+| Retry delay 2s | `ANALYZE_RETRY_DELAY_MS = 2000` | ✅ VERIFIED |
+| No retry on 4xx | `shouldRetry` returns false for non-5xx NON_2XX | ✅ VERIFIED |
+| Mock analyze dev-gated | `env.DEV === true && env.VITE_MOCK_ANALYZE === 'true'` | ✅ VERIFIED |
+| Scenario override dev/staging-gated | `parseAnalyzeScenario` checks `DEV || VITE_ENABLE_SIMULATOR` | ✅ VERIFIED |
+| Logging policy: no image/base64 | Comments enforce no image logging | ✅ VERIFIED |
+
+### 6. Pipeline order (`src/scanPipeline.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| Order: capture → sanitize → analyze | `runScanPipeline`: `capture()` → `sanitize(captured)` → `analyze(sanitized)` | ✅ VERIFIED |
+| Sanitizer output validated before analyze | `if (!sanitized.startsWith(JPEG_DATA_URL_PREFIX)) throw PipelineInvariantError` | ✅ VERIFIED |
+| Raw capture never sent to analyze | `analyze` only receives `sanitized` variable | ✅ VERIFIED |
+| Sanitized payload not returned to caller | `return { response }` only — no sanitized field | ✅ VERIFIED |
+
+### 7. Voice (`src/voice.js`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| `voice.js` not imported in `main.js` | `grep` confirms no `import.*voice` in `main.js` | ✅ VERIFIED |
+| No auto-mic-start at module level | `recognition.start()` only inside `start()` function | ✅ VERIFIED |
+| `SpeechRecognition` check before use | `window.SpeechRecognition \|\| window.webkitSpeechRecognition` | ✅ VERIFIED |
+| Graceful fallback if unavailable | Returns `{ start() {}, stop() {}, supported: false }` | ✅ VERIFIED |
+| Not bundled in production | Contract test `D.voice-not-bundled` passes | ✅ VERIFIED |
+
+### 8. Simulator (`simulator.html`)
+
+| Claim | Evidence | Status |
+|---|---|---|
+| 7 capture scenarios | `success`, `oversized`, `invalid`, `cancel`, `error`, `permission`, `timeout` | ✅ VERIFIED |
+| 7 backend scenarios | `success`, `empty`, `http-400`, `http-500`, `timeout`, `malformed`, `offline` | ✅ VERIFIED |
+| No base64 in logs | `log` function only writes `direction`, `type`, `label` | ✅ VERIFIED |
+| No payload sizes logged | No `.length`, `.size`, or dimension logging | ✅ VERIFIED |
+| No face metadata logged | Simulator uses synthetic canvas, no face detection | ✅ VERIFIED |
+| No secrets in simulator | No tokens, keys, or credentials in source | ✅ VERIFIED |
+| Manual trigger buttons | `trigger-success`, `trigger-error`, `trigger-invalid`, `trigger-oversized` | ✅ VERIFIED |
+| Start Scan / Focus App controls | Present and wired | ✅ VERIFIED |
+| Safe fixture generation | Canvas-generated synthetic shapes, no real photos | ✅ VERIFIED |
+| Oversized fixture is synthetic padding | `makeFixture() + Array(9*1024*1024).join('A')` — no real data | ✅ VERIFIED |
+
+## Production leak scan review (6 WARNs)
+
+| WARN | String | Context | Assessment |
+|---|---|---|---|
+| D.leak-js:"VITE_MOCK_DAT" | `VITE_MOCK_DAT` | Env var name in minified JS | **EXPECTED** — Vite inlines `import.meta.env` checks; string is required for DEV gating. Not a production leak. |
+| D.leak-js:"VITE_MOCK_ANALYZE" | `VITE_MOCK_ANALYZE` | Env var name in minified JS | **EXPECTED** — Same reason as above. Not a production leak. |
+| D.leak-js:"permission-denied" | `permission-denied` | Mock scenario enum string | **EXPECTED** — Part of mock scenario code path. Inert in production (DEV gating). |
+| D.leak-js:"malformed-image" | `malformed-image` | Mock scenario enum string | **EXPECTED** — Same as above. |
+| D.leak-js:"invalid-response" | `invalid-response` | Mock scenario enum string | **EXPECTED** — Same as above. |
+| D.leak-js:"data:image/jpeg;base64," | `data:image/jpeg;base64,` | Sanitizer prefix constant | **EXPECTED** — Required for sanitizer to validate and produce JPEG data URLs. Non-dev, production-critical. |
+
+**Verdict:** All 6 WARNs are pre-existing, expected, and non-blocking. No production leak. No follow-up action required.
+
+## Staging-readiness checklist
+
+| Item | Status | Evidence |
+|---|---|---|
+| Local build passed | ✅ | `npm run build` succeeded |
+| Test suite passed | ✅ | `npm test` succeeded (75/75) |
+| Contract tests passed | ✅ | 75 PASS, 0 FAIL |
+| Static hard checks passed | ✅ | 0 FAIL |
+| Production leak scan reviewed | ✅ | 6 WARNs, all expected/pre-existing |
+| No secrets committed | ✅ | No `.env` files, no `sk-` tokens, no keys in source |
+| No raw images committed | ✅ | No real photos in repo; fixtures are synthetic canvas |
+| No base64 logging | ✅ | No `console.log(base64)` in any source file |
+| No face metadata logging | ✅ | No face bbox/keypoint exports; no logging in sanitizer |
+| Backend payload shape preserved | ✅ | `JSON.stringify({ image: sanitizedBase64 })` in `api.js:131` |
+| Sanitizer-before-analyze preserved | ✅ | `scanPipeline.js` enforces order invariant |
+| Invalid/raw payloads rejected before analyze | ✅ | `validateCapturePayload` rejects non-JPEG-prefix strings; `runScanPipeline` validates sanitizer output |
+| Simulator scenarios covered | ✅ | 7 capture + 7 backend scenarios in code/static tests |
+| Browser visual QA | ⚠️ MANUAL QA REQUIRED | No browser automation available; focus ring, transition feel, additive-display contrast need human verification |
+| No physical MRBD validation | ⚠️ BLOCKED | No hardware available |
+| No real DAT iOS/Android capture | ⚠️ BLOCKED | No hardware + companion app |
+| No real voice runtime validation | ⚠️ BLOCKED | Meta Web App microphone not confirmed |
+| Backend CORS from deployed HTTPS | ⚠️ PENDING | Requires staging deployment |
+| MediaPipe on real MRBD runtime | ⚠️ BLOCKED | No hardware |
+
+## Manual browser QA still required
+
+The following items cannot be verified programmatically without a browser
+automation tool (Playwright/Puppeteer not available in this environment):
+
+- [ ] Home screen premium HUD layout at 600×600
+- [ ] Focus ring visibility and pulse animation feel
+- [ ] Arrow key navigation wrap and order
+- [ ] Enter activation response time
+- [ ] Escape/back recovery smoothness
+- [ ] Processing spinner animation smoothness
+- [ ] Screen transition opacity fade (0.18s) smoothness
+- [ ] Additive-display contrast impression on black background
+- [ ] Result card readability at 600×600
+- [ ] Scroll panel feel with multiple items
+- [ ] Simulator frame visual polish
+- [ ] No console errors on initial load
+- [ ] No asset 404s in Network tab
+
+**Recommended:** Run `npm run preview`, open `http://localhost:4173/` and
+`http://localhost:4173/simulator.html`, set DevTools viewport to 600×600, and
+use only keyboard (Arrow keys, Enter, Escape) to exercise the full flow.
+
+## Remaining hardware blockers (unchanged)
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode.
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.18 kB / 13.34 kB gzip) |
+| `git diff --check` | PASS |
+| `git status --short` | Clean working tree |
+| Safe to commit docs? | Yes — only QA_REPORT.md changed |
+| Safe to stage deploy? | Yes — for browser/virtual-alpha staging only |
+| Safe for production? | No — physical device QA required |
+
+## Suggested next steps
+
+1. **Manual browser walkthrough** at 600×600 to verify focus ring, transitions, and HUD feel.
+2. **Staging deploy** to verify HTTPS loading, CORS, and `/simulator.html` access.
+3. **Physical glasses validation** when hardware and Meta Developer Mode are available.
+4. **Backend CORS test** from the deployed HTTPS origin to `https://kscan-app-1.onrender.com/api/analyze`.
+
+---

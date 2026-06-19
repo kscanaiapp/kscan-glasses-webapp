@@ -1346,3 +1346,71 @@ A quick checklist for verifying the premium HUD feel in a browser:
 | No dense text | Brand/name/price only on cards; no descriptions |
 | No debug jargon | "Demo mode" not "stub"; "Guest" not "stub session" |
 | No false claims | No "camera ready", "voice ready", or "production ready" |
+
+
+## Phase 16 — Browser QA / Staging Readiness
+
+### How to run local QA
+
+```bash
+cd C:\Users\jsmit\kscan-glasses-webapp
+npm run dev
+```
+
+Open:
+- `http://localhost:5173/` — app shell
+- `http://localhost:5173/simulator.html` — demo control room
+
+### How to test 600×600
+
+In Chrome or Edge DevTools:
+1. Toggle device toolbar (Ctrl+Shift+M).
+2. Set dimensions to **600 × 600**.
+3. Refresh the page.
+4. Use **Arrow keys**, **Enter**, and **Escape** only — no mouse/touch.
+
+### Known emulator limitation
+
+There is **no official Meta Ray-Ban Display emulator**. The browser at 600×600
+and the `/simulator.html` control room are the current development substitutes.
+They validate layout, navigation, focus handling, and scan-pipeline logic, but
+they **do not** validate:
+
+- Real additive waveguide brightness/contrast
+- Real Neural Band D-pad latency/tactile feel
+- Real DAT capture from companion phone
+- Real `devicePixelRatio` behavior
+- Real MediaPipe performance on glasses Web runtime
+
+### Physical MRBD testing still required
+
+Do not claim physical glasses readiness. All browser QA is virtual-alpha only.
+Physical testing requires:
+
+- Meta Ray-Ban Display glasses
+- Meta AI companion app with Developer Mode enabled
+- Public HTTPS staging URL
+- iOS or Android companion device paired to glasses
+
+### Camera / microphone support
+
+- **Web App camera access**: Not directly supported per current Meta Web App
+documentation. Capture remains abstracted through the DAT/mobile bridge.
+- **Web App microphone access**: Not directly supported. Voice activation is a
+product goal but remains a future abstraction. Do not request microphone
+permission from the Web App.
+
+### Staging readiness quick check
+
+Before deploying to any staging host:
+
+- [ ] `npm test` passes (75 contract, 0 fail)
+- [ ] `npm run build` passes
+- [ ] `git diff --check` passes
+- [ ] No secrets in working tree
+- [ ] `dist/index.html` and `dist/simulator.html` exist
+- [ ] Backend endpoint is `POST /api/analyze` with body `{ image }`
+- [ ] Sanitizer runs before analyze (verified by `scanPipeline.js`)
+- [ ] Invalid/oversized payloads rejected at bridge (verified by `datBridge.js`)
+- [ ] Voice code not imported in production (verified by contract tests)
+- [ ] No base64/image logging in source (verified by static tests)
