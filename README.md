@@ -1290,3 +1290,59 @@ Notes:
   hijack the screen.
 - Scan/result state is in-memory by design; only library metadata persists
   across reloads (guest localStorage, metadata only).
+
+
+## UI QA checklist (600×600 browser)
+
+A quick checklist for verifying the premium HUD feel in a browser:
+
+- [ ] Home screen shows "K SCAN" brand + "FASHION AI" tagline
+- [ ] Home primary action is "Scan" with cyan glow
+- [ ] Home secondary nav is "Library" / "Settings" (lighter weight)
+- [ ] Subtitle reads "Use D-pad arrows and Enter"
+- [ ] Processing shows spinner + "Analyzing..." + "Fashion AI is working"
+- [ ] Processing cancel button is visible and focusable
+- [ ] Results product cards show brand (cyan, uppercase), name (bold), price
+- [ ] Results save action reads "Save to Library" → "Saved" on click
+- [ ] Empty results show "No matches found" + "Try another angle" + Retry
+- [ ] Error screen shows red circle + short message + Retry + Home
+- [ ] Library shows Saved Items and Scan History with divider
+- [ ] Library stub banner reads "Demo mode — guest session"
+- [ ] Settings shows badge-style status indicators (On/Off/Guest/Live)
+- [ ] Settings back button is visible
+- [ ] Focus ring is bright cyan with subtle pulse animation
+- [ ] No full-page scroll; only scroll panels scroll
+- [ ] No mouse-only or touch-only controls
+- [ ] No console errors or asset 404s
+- [ ] No payload/secret logging in console
+
+## Phase 15 — UI Productization (2026-06-18)
+
+### What changed
+
+- **Premium Luminous AR design system**: Obsidian base, bright cyan highlights,
+  subtle chrome text, deep-space purple accents, minimal clutter.
+- **Home screen**: Brand header "K SCAN" with glow + "FASHION AI" tagline,
+  primary "Scan" button with cyan glow, lighter secondary nav.
+- **Processing**: Secondary text line "Fashion AI is working" / "Still working..."
+- **Results**: Cleaner product cards with uppercase brand label, diamond placeholder,
+  "Save to Library" action text.
+- **Library**: No "Example:" prefix, section divider, "Demo mode" banner.
+- **Settings**: Badge-style status indicators (On/Off/Guest/Live) instead of plain text.
+- **Error states**: Red glow on error symbol, "Retry" and "Home" buttons.
+- **Focus**: Subtle pulse animation on focus ring (not inside scroll panels).
+- **Transitions**: Opacity fade between screens (0.18s).
+- **Simulator**: Better frame border/shadow for demo presentation.
+
+### Visual constraints applied
+
+| Constraint | Implementation |
+|---|---|
+| 600×600 fixed viewport | `html/body/#app` all `600×600` with `overflow:hidden` |
+| Additive display (black = transparent) | Black background with bright high-contrast foreground |
+| D-pad/keyboard first | All interactive elements use `.focusable` |
+| Focus ring obvious | Cyan outline + glow + subtle pulse animation |
+| Short copy | No long paragraphs; single-line actions |
+| No dense text | Brand/name/price only on cards; no descriptions |
+| No debug jargon | "Demo mode" not "stub"; "Guest" not "stub session" |
+| No false claims | No "camera ready", "voice ready", or "production ready" |

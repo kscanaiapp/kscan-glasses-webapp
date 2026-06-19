@@ -13,13 +13,17 @@
 <body>
   <main id="app" aria-live="polite">
     <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
+      <div class="home-header">
+        <div class="home-brand">K SCAN</div>
+        <div class="home-tagline">Fashion AI</div>
+      </div>
       <div class="home-center">
-        <button id="scan-btn" class="btn btn-primary focusable">K Scan</button>
+        <button id="scan-btn" class="btn btn-primary focusable">Scan</button>
         <p class="subtitle">Use D-pad arrows and Enter</p>
       </div>
       <nav class="home-nav">
-        <button id="library-btn" class="btn focusable">Library</button>
-        <button id="settings-btn" class="btn focusable">Settings</button>
+        <button id="library-btn" class="home-nav-btn focusable">Library</button>
+        <button id="settings-btn" class="home-nav-btn focusable">Settings</button>
       </nav>
     </section>
 
@@ -27,7 +31,8 @@
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
         <div class="spinner" aria-hidden="true"></div>
-        <p id="processing-text" class="processing-text">Capturing...</p>
+        <p id="processing-text" class="processing-text">Analyzing...</p>
+        <p id="processing-sub" class="processing-sub"></p>
       </div>
     </section>
 
@@ -38,7 +43,8 @@
       </header>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
-        <p>No matches found. Try another angle.</p>
+        <p class="empty-title">No matches found</p>
+        <p class="empty-note">Try another angle</p>
         <button id="retry-empty-btn" class="btn btn-primary focusable">Retry</button>
       </div>
     </section>
@@ -62,16 +68,16 @@
       <div id="settings-panel" class="scroll-panel settings-list">
         <button id="settings-account-row" class="row focusable">Account: Guest</button>
         <button class="row focusable">Privacy &amp; Data</button>
-        <button id="settings-auth-btn" class="row focusable">Sign In (stub)</button>
+        <button id="settings-auth-btn" class="row focusable">Sign In</button>
       </div>
     </section>
 
     <section id="error" class="screen hidden" aria-label="Error" aria-hidden="true">
       <div class="error-center">
         <div class="error-symbol" aria-hidden="true">!</div>
-        <p id="error-message">Something went wrong.</p>
-        <button id="error-retry-btn" class="btn btn-primary focusable">Try Again</button>
-        <button id="error-home-btn" class="btn focusable">Back Home</button>
+        <p id="error-message">Something went wrong</p>
+        <button id="error-retry-btn" class="btn btn-primary focusable">Retry</button>
+        <button id="error-home-btn" class="btn btn-ghost focusable">Home</button>
       </div>
     </section>
 

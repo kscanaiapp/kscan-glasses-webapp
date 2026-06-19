@@ -31,7 +31,7 @@ const els = {
   library: document.getElementById('library'),
   settings: document.getElementById('settings'),
   error: document.getElementById('error'),
-  processingText: document.getElementById('processing-text'),
+  processingSub: document.getElementById('processing-sub'),
   resultsList: document.getElementById('results-list'),
   resultsEmpty: document.getElementById('results-empty'),
   errorMessage: document.getElementById('error-message'),
@@ -54,9 +54,19 @@ function updateHud() {
 
 function setState(next) {
   setFlowState(next);
-  if (next === STATE.CAPTURING) els.processingText.textContent = 'Capturing...';
-  if (next === STATE.SANITIZING) els.processingText.textContent = 'Protecting privacy...';
-  if (next === STATE.ANALYZING) els.processingText.textContent = 'Analyzing...';
+  const sub = els.processingSub;
+  if (next === STATE.CAPTURING) {
+    els.processingText.textContent = 'Capturing...';
+    if (sub) sub.textContent = '';
+  }
+  if (next === STATE.SANITIZING) {
+    els.processingText.textContent = 'Protecting privacy...';
+    if (sub) sub.textContent = '';
+  }
+  if (next === STATE.ANALYZING) {
+    els.processingText.textContent = 'Analyzing...';
+    if (sub) sub.textContent = 'Fashion AI is working';
+  }
   updateHud();
 }
 
@@ -146,7 +156,7 @@ function createProductCard(product) {
   const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
   meta.appendChild(createText('p', 'price', priceText));
 
-  const action = createText('p', 'link', 'Press Enter to save');
+  const action = createText('p', 'product-action', 'Save to Library');
   meta.appendChild(action);
   card.appendChild(meta);
 
@@ -159,12 +169,12 @@ function createProductCard(product) {
       price: safeText(product.priceRange || product.price, 'Price unavailable'),
     });
     if (result.saved) {
-      action.textContent = 'Saved to Library';
+      action.textContent = 'Saved';
       card.classList.add('saved');
     } else if (result.reason === 'duplicate') {
-      action.textContent = 'Already in Library';
+      action.textContent = 'Already saved';
     } else {
-      action.textContent = 'Could not save';
+      action.textContent = 'Unable to save';
     }
   });
   return card;
@@ -246,7 +256,7 @@ export async function startScan() {
       sanitize: (captured) => sanitizeImageBeforeUpload(captured),
       analyze: (sanitized) => analyzeImage(sanitized, {
         onSlow: () => {
-          els.processingText.textContent = 'Waking up Fashion AI...';
+          if (els.processingSub) els.processingSub.textContent = 'Still working...';
         },
       }),
       onStage: (stage) => {
@@ -296,17 +306,16 @@ function formatScanRow(scan, isExample) {
   const date = typeof scan.capturedAt === 'string' ? scan.capturedAt.slice(0, 10) : '';
   const count = Number.isFinite(scan.productCount) ? scan.productCount : 0;
   const top = scan.topBrand ? ` · ${scan.topBrand}` : '';
-  const prefix = isExample ? 'Example: ' : '';
   return count > 0
-    ? `${prefix}${date} · ${count} match${count === 1 ? '' : 'es'}${top}`
-    : `${prefix}${date} · No matches`;
+    ? `${date} · ${count} match${count === 1 ? '' : 'es'}${top}`
+    : `${date} · No matches`;
 }
 
 function appendStubBanner(panel) {
   if (!isStubMode()) return;
   const banner = document.createElement('p');
   banner.className = 'stub-banner';
-  banner.textContent = 'Supabase stub – virtual-alpha only.';
+  banner.textContent = 'Demo mode — guest session';
   panel.appendChild(banner);
 }
 
@@ -328,16 +337,20 @@ function renderLibrary() {
     ...examples.savedItems.map((item) => ({ item, isExample: true })),
   ];
   if (!savedItems.length) {
-    panel.appendChild(createText('p', 'empty-note', 'No saved items yet.'));
+    panel.appendChild(createText('p', 'empty-note', 'No saved items yet'));
   }
-  savedItems.forEach(({ item, isExample }) => {
+  savedItems.forEach(({ item }) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'row focusable';
-    row.textContent = `${isExample ? 'Example: ' : ''}${item.brand} — ${item.name} (${item.price})`;
+    row.textContent = `${item.brand} — ${item.name} (${item.price})`;
     panel.appendChild(row);
     rows.push(row);
   });
+
+  if (savedItems.length > 0) {
+    panel.appendChild(createText('div', 'section-divider', ''));
+  }
 
   panel.appendChild(createText('h2', null, 'Scan History'));
   const scans = [
@@ -345,13 +358,13 @@ function renderLibrary() {
     ...examples.scans.map((scan) => ({ scan, isExample: true })),
   ];
   if (!scans.length) {
-    panel.appendChild(createText('p', 'empty-note', 'No scans yet.'));
+    panel.appendChild(createText('p', 'empty-note', 'No scans yet'));
   }
-  scans.forEach(({ scan, isExample }) => {
+  scans.forEach(({ scan }) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'row focusable';
-    row.textContent = formatScanRow(scan, isExample);
+    row.textContent = formatScanRow(scan);
     panel.appendChild(row);
     rows.push(row);
   });
@@ -364,8 +377,8 @@ function renderLibrary() {
 
 // ─── Settings screen ─────────────────────────────────────────────────
 
-// Plain-text status rows. Shows hostname at most — never full URLs,
-// query params, keys, tokens, or raw env values.
+// Status rows with badge-style indicators. Shows hostname at most — never
+// full URLs, query params, keys, tokens, or raw env values.
 function renderSettingsStatus(panel) {
   let status = panel.querySelector('#settings-status');
   if (!status) {
@@ -381,36 +394,40 @@ function renderSettingsStatus(panel) {
   const scenario = sim.allowed ? params.get('mockAnalyze') : null;
   const mockAnalyze = import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true';
 
-  let backendText;
+  let backendBadge;
   if (scenario) {
-    backendText = `mock (${scenario})`;
+    backendBadge = '<span class="status-badge warn">Mock</span>';
   } else if (mockAnalyze) {
-    backendText = 'mock';
+    backendBadge = '<span class="status-badge warn">Mock</span>';
   } else {
     const raw = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim();
     if (!raw) {
-      backendText = 'unavailable';
+      backendBadge = '<span class="status-badge off">Unavailable</span>';
     } else {
       try {
-        backendText = `configured (${new URL(raw).hostname})`;
+        const hostname = new URL(raw).hostname;
+        backendBadge = `<span class="status-badge on">${hostname}</span>`;
       } catch {
-        backendText = 'configured';
+        backendBadge = '<span class="status-badge on">Configured</span>';
       }
     }
   }
 
-  const rows = [
-    `Simulator: ${sim.active ? 'enabled' : 'disabled'}`,
-    `Backend: ${backendText}`,
-    `Supabase: ${isStubMode() ? 'stub' : 'configured'}`,
-    `Auth: ${session ? 'stub session' : 'guest'}`,
-  ];
-  rows.forEach((text) => {
-    const row = document.createElement('p');
+  const simBadge = sim.active ? '<span class="status-badge on">On</span>' : '<span class="status-badge off">Off</span>';
+  const supabaseBadge = isStubMode() ? '<span class="status-badge off">Guest</span>' : '<span class="status-badge on">Live</span>';
+  const authBadge = session ? '<span class="status-badge on">Active</span>' : '<span class="status-badge off">Guest</span>';
+
+  const makeRow = (label, badgeHtml) => {
+    const row = document.createElement('div');
     row.className = 'status-row';
-    row.textContent = text;
-    status.appendChild(row);
-  });
+    row.innerHTML = `<span>${label}</span>${badgeHtml}`;
+    return row;
+  };
+
+  status.appendChild(makeRow('Simulator', simBadge));
+  status.appendChild(makeRow('Backend', backendBadge));
+  status.appendChild(makeRow('Supabase', supabaseBadge));
+  status.appendChild(makeRow('Account', authBadge));
 }
 
 function renderSettings() {
@@ -425,7 +442,7 @@ function renderSettings() {
     accountRow.textContent = session ? `Account: ${session.user.email}` : 'Account: Guest';
   }
   if (authBtn) {
-    authBtn.textContent = session ? 'Sign Out' : 'Sign In (stub)';
+    authBtn.textContent = session ? 'Sign Out' : 'Sign In';
     authBtn.classList.toggle('row-danger', Boolean(session));
   }
 
@@ -435,7 +452,7 @@ function renderSettings() {
   if (isStubMode() && !banner) {
     banner = document.createElement('p');
     banner.className = 'stub-banner';
-    banner.textContent = 'Supabase stub – virtual-alpha only.';
+    banner.textContent = 'Demo mode — guest session';
     panel.prepend(banner);
   }
 

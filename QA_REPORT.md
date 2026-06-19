@@ -499,3 +499,117 @@ The QR is for the **tester's phone** (companion app), not the glasses.
 4. **Staging deploy** to a static host with required env vars set in host dashboard.
 5. **Verify** `/` and `/simulator.html` load from the staging HTTPS URL.
 6. **Physical glasses validation** when hardware and Developer Mode access are available.
+
+---
+
+# Phase 15 — Clean HUD/UI Productization (2026-06-18)
+
+## Scope
+
+Transform the functional virtual alpha into a clean, premium, readable K Scan AI
+HUD that can be demoed confidently at 600×600. No backend changes. No new
+dependencies. No physical device changes.
+
+## What changed
+
+| File | Change | Reason |
+|---|---|---|
+| `style.css` | Major rewrite | Premium Luminous AR design system: ambient glow, focus pulse animation, screen transitions, badge styling, hover states |
+| `index.html` | Restructured | Brand header on home, empty title/secondary text, processing sub text, improved button hierarchy |
+| `src/main.js` | Copy + rendering | Premium action text, badge-style settings, cleaner library, no "Example:" prefix, better error messages |
+| `simulator.html` | Minor polish | Better frame shadow/border for demo presentation |
+
+## Visual system changes
+
+### Home screen
+- **Brand header**: "K SCAN" with text-shadow glow + "FASHION AI" tagline
+- **Ambient glow**: Subtle radial gradient behind the home screen for additive-display depth
+- **Primary action**: "Scan" button with cyan glow shadow and hover lift
+- **Secondary nav**: `home-nav-btn` styling — lighter, text-centered, not equal-weight to primary
+- **Subtitle**: Smaller, spaced, less dominant
+
+### Processing screen
+- **Secondary text**: `processing-sub` element for "Fashion AI is working" / "Still working..."
+- **Spinner**: Unchanged — already clean and active
+
+### Results screen
+- **Product cards**: Subtle background tint, hover lift, `product-action` class for save text
+- **Save action**: "Save to Library" → "Saved" / "Already saved" / "Unable to save"
+- **Placeholder thumbs**: Diamond glyph (`◆`) instead of empty border
+- **Brand label**: Uppercase, smaller, cyan — stronger hierarchy
+
+### Empty/error states
+- **Empty title**: "No matches found" as bold heading + "Try another angle" as secondary
+- **Error symbol**: Added subtle red glow shadow
+- **Error button**: "Try Again" → "Retry", "Back Home" → "Home"
+
+### Library screen
+- **No "Example:" prefix**: Stub items appear as normal items
+- **Section divider**: Visual line between Saved Items and Scan History
+- **Stub banner**: "Demo mode — guest session" (cleaner than "Supabase stub")
+- **Empty notes**: "No saved items yet" / "No scans yet" (no periods, more casual)
+
+### Settings screen
+- **Status badges**: `.status-badge` with `.on`/`.off`/`.warn`/`.live` variants
+- **Row layout**: Label + badge with flex gap, not plain text
+- **Clean labels**: "On" / "Off" / "Guest" / "Live" instead of "enabled" / "disabled" / "stub" / "configured"
+
+### Focus/D-pad
+- **Focus pulse animation**: Subtle breathing glow on focused elements (not inside scroll panels)
+- **Hover states**: Buttons and cards lift slightly on hover (for simulator mouse use)
+- **Screen transitions**: Opacity fade between screens (0.18s)
+
+## Simulator UI polish
+- Frame wrap: Better border radius, subtle shadow, gold glow
+- Frame head: Slightly more padding for cleaner look
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.18 kB / 13.34 kB gzip) |
+| `git diff --check` | PASS (LF/CRLF warning only) |
+| `git status --short` | 4 files changed |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| No secrets introduced | ✅ Confirmed |
+| No backend contract change | ✅ Confirmed |
+| Voice code not imported | ✅ Confirmed |
+| Dev HUD not in production | ✅ Confirmed |
+
+## Bundle size impact
+
+| Before | After | Δ |
+|---|---|---|
+| CSS 4.50 kB / 1.56 kB gzip | CSS 8.03 kB / 2.32 kB gzip | +3.53 kB / +0.76 kB gzip |
+| JS 42.69 kB / 13.26 kB gzip | JS 43.18 kB / 13.34 kB gzip | +0.49 kB / +0.08 kB gzip |
+
+Total increase: ~4 KB raw / ~0.8 KB gzip — acceptable for the visual system improvements.
+
+## Remaining UI items
+
+- Product images: placeholders are clean but real product images would improve the demo.
+- Animation: could add more subtle micro-interactions (e.g., card entry slide).
+- Typography: could use a custom font for stronger brand identity (but adds dependency).
+- Dark mode calibration: real additive display may require brightness adjustments.
+
+## Remaining hardware blockers
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode.
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Suggested next steps
+
+1. **Commit Phase 15 changes** (style.css, index.html, src/main.js, simulator.html).
+2. **Push** to `phase-11-virtual-alpha-infra`.
+3. **Manual browser walkthrough** with `npm run preview` at 600×600 to confirm focus ring visibility, hover feel, and screen transitions.
+4. **Staging deploy** for browser demo validation.
+5. **Physical glasses validation** when hardware is available.
