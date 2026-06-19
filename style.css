@@ -212,6 +212,7 @@ body {
   padding: 14px;
   overflow-y: auto;
   flex: 1;
+  max-height: 480px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }

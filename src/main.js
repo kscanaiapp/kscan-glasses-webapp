@@ -173,7 +173,8 @@ function createProductCard(product) {
       action.textContent = 'Saved';
       card.classList.add('saved');
     } else if (result.reason === 'duplicate') {
-      action.textContent = 'Already saved';
+      action.textContent = 'Saved';
+      card.classList.add('saved');
     } else {
       action.textContent = 'Unable to save';
     }
