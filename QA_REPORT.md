@@ -844,3 +844,126 @@ use only keyboard (Arrow keys, Enter, Escape) to exercise the full flow.
 4. **Backend CORS test** from the deployed HTTPS origin to `https://kscan-app-1.onrender.com/api/analyze`.
 
 ---
+
+---
+
+# Phase 15 — Clean HUD/UI Productization (Autonomous Build)
+
+## Scope
+
+Polish the K Scan glasses HUD/UI into a cleaner, more premium, more readable
+600×600 virtual-alpha demo. UI/productization phase only — no backend,
+deployment, mobile, or architecture changes.
+
+## Milestones
+
+### Milestone A — Core glasses HUD polish
+
+| File | Changes |
+|---|---|
+| `index.html` | Copy aligned to approved map: "K Scan", "Find what you're looking at.", "Analyzing scan...", "No matches found. Try another angle.", "Something went wrong. Try again.", Voice row added to settings |
+| `style.css` | Removed `text-shadow` (forbidden). Removed `text-transform: uppercase` from tagline. Replaced translucent `rgba()` panel backgrounds with opaque `#0A0A0A` / `#111111`. Replaced fractional opacity on text with explicit `#8E9BAE` muted color. Updated focus ring to spec: `outline: 2px solid #00E5FF; outline-offset: 2px; box-shadow: 0 0 0 2px #00E5FF, 0 0 8px rgba(0, 229, 255, 0.5); transform: scale(1.02);`. Added `.hidden { display: none !important; }`. Fixed product placeholder to "?" with dashed border. |
+| `src/main.js` | Added `processingText` to `els` object (runtime bug fix). Updated save action text: "Save" / "Saved". Updated missing product title fallback to "Unknown item". Updated error messages to copy map. Fixed empty results state rendering (removed double textContent overwrite). Updated settings badges: "Live", "Unconfigured", "Guest". Added Voice status row. |
+| `src/navigation.js` | `scrollIntoView` now includes `inline: 'nearest'` for safer root containment. |
+
+### Milestone B — Results, Library, Settings polish
+
+| File | Changes |
+|---|---|
+| `src/main.js` | Duplicate save action now shows "Saved" with `.saved` class. |
+| `style.css` | Added `max-height: 480px` to `.scroll-panel` to ensure scroll containers fit inside the 600×600 frame. |
+
+### Milestone C — Simulator and focus visual polish
+
+| File | Changes |
+|---|---|
+| `simulator.html` | Frame head branding updated from "K SCAN" to "K Scan" to match app. |
+| `QA_REPORT.md` | This section added. |
+
+## Visual system changes
+
+- **Home**: Brand "K Scan" with sentence-case tagline. No text-shadow. Subtle ambient radial gradient retained (background effect, not core HUD surface). Secondary nav buttons use opaque `#0A0A0A`.
+- **Processing**: Title "Analyzing scan..." with sub-text "Fashion AI is working". Spinner unchanged. Cancel focusable.
+- **Results**: Cards use opaque `#111111` background with `#1a1a1a` hover. Saved state uses bright cyan border `#00E5FF`. Placeholder thumbs use dashed `#5A6578` border with "?" glyph. Save action: "Save" → "Saved".
+- **Empty/error**: "No matches found." / "Try another angle." split hierarchy. "Something went wrong. Try again." on error screen.
+- **Library**: "No saved items yet." with period. Section divider between Saved Items and Scan History. Stub banner retained.
+- **Settings**: Status badges use opaque backgrounds. Voice row: "future device test".
+- **Simulator**: Frame title matches app branding.
+
+## D-pad/focus system
+
+- **Query-based focus pool**: `getFocusableInView()` queries `.focusable` fresh on each keydown. Dynamically injected cards/items are automatically detected without an explicit refresh function. This is documented as the current strategy.
+- **Focus ring**: Matches spec — 2px solid `#00E5FF`, outline-offset 2px, box-shadow glow, scale(1.02). Scroll-panel inset variant preserved to avoid clipping.
+- **scrollIntoView**: Uses `{ block: 'nearest', inline: 'nearest' }` for safe container-only scrolling.
+- **Focus assignment on screen show**: Results → first card (or back). Error → Retry. Processing → Cancel. Library/Settings → first focusable via `focusFirstInView`.
+
+## Scroll containment
+
+- `html/body/#app`: `width: 600px; height: 600px; overflow: hidden;` — never scrollable.
+- `.scroll-panel`: `overflow-y: auto; flex: 1; max-height: 480px;` — internal scroll only, bounded.
+- Focused items inside scroll panels scroll into view via `nearest` behavior, never shifting the root frame.
+
+## Async cancel race protection
+
+- `scanInFlight` guard prevents duplicate scan triggers.
+- `scanToken` incremented on cancel (Escape/ArrowLeft during processing, Cancel button).
+- Late pipeline promises check `if (token !== scanToken) return;` before updating UI.
+- Stale errors suppressed by the same token check.
+
+## Privacy checks
+
+- No base64 images in source.
+- No face metadata in source.
+- No image dimensions in logs.
+- No tokens/secrets in logs.
+- Metadata-only library storage via existing safe `libraryStore` pattern.
+- Sanitizer runs before analyze. Backend payload remains `{ image: sanitizedImageString }`.
+
+## Build validation
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (75 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.15 kB / 13.34 kB gzip) |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| `git diff --check` | LF/CRLF warning only (Windows normal) |
+| Working tree | Clean after commits |
+| App bundle size | 13.34 KB gzip — well under 150 KB threshold |
+
+## Manual visual QA still required
+
+- [ ] Home screen at 600×600 — brand readability, focus ring on Scan button.
+- [ ] Processing — spinner visible, "Analyzing scan..." readable, Cancel focusable.
+- [ ] Results — card readability, save state visibility, first-card focus.
+- [ ] Empty state — "No matches found." hierarchy, Retry focus.
+- [ ] Library — scroll feel, focus on items, Back action.
+- [ ] Settings — status badge readability, Voice row visible.
+- [ ] Simulator — frame title, app loads, controls work.
+- [ ] Focus ring — visible on all `.focusable` elements from distance.
+- [ ] No full-page scroll on any screen.
+- [ ] Additive-display contrast impression (browser cannot fully simulate waveguide).
+
+## Browser testing limitation
+
+Browser testing cannot fully simulate additive waveguide behavior. Black/dark
+backgrounds may appear transparent on device; bright high-contrast UI should
+remain visible. Brightness calibration requires physical Meta Ray-Ban Display.
+
+## Remaining hardware blockers (unchanged)
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast calibration.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode.
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Explicit statement
+
+This is a **virtual alpha / browser-testable prototype** only. No physical Meta
+Ray-Ban Display glasses validation has been performed. Nothing in this phase
+claims physical-device readiness.
