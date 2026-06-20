@@ -13,6 +13,8 @@
 <body>
   <main id="app" aria-live="polite">
     <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
+      <div class="reticle-corners"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="scan-target"><div class="st-dot"></div></div>
       <div class="home-header">
         <div class="home-brand">K Scan</div>
         <div class="home-tagline">Find what you're looking at.</div>
@@ -28,6 +30,8 @@
     </section>
 
     <section id="processing" class="screen hidden" aria-label="Processing" aria-hidden="true">
+      <div class="reticle-corners scan-active"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="scan-target"><div class="st-dot"></div></div>
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
         <div class="spinner" aria-hidden="true"></div>
