@@ -1,8 +1,11 @@
 import { initNavigation, focusFirstInView, registerFocusMatrix, resetFocusIndex } from './navigation.js';
 import {
   capturePhoto,
+  requestBetaCapture,
   getDatDiagnostics,
+  getDatStatus,
   getMobileBridgeStatus,
+  getBetaBridgeStatus,
   DATBridgeError,
   DAT_ERROR_CODES,
   toUserFriendlyCaptureError,
@@ -46,12 +49,35 @@ function updateHud() {
   if (!els.hud || !import.meta.env.DEV) return;
 
   const datDiagnostics = getDatDiagnostics();
-  const datState = datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING');
+  const betaStatus = getBetaBridgeStatus();
+  const datState = betaStatus.enabled ? 'BETA' : (datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING'));
   const analyzeState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') ? 'MOCK' : 'REAL';
   const backendState = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim() ? 'OK' : 'MISSING';
   const flow = getFlowState();
 
   els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | BACKEND: ${backendState} | FLOW: ${flow}`;
+}
+
+function updateBridgeBadge() {
+  const badge = document.getElementById('bridge-status');
+  if (!badge) return;
+
+  const betaStatus = getBetaBridgeStatus();
+  const datStatus = getDatStatus();
+
+  if (betaStatus.enabled) {
+    badge.textContent = 'BRIDGE: BETA';
+    badge.className = 'bridge-badge beta';
+  } else if (datStatus.includes('mock')) {
+    badge.textContent = 'BRIDGE: MOCK';
+    badge.className = 'bridge-badge mock';
+  } else if (datStatus.includes('ready')) {
+    badge.textContent = 'BRIDGE: READY';
+    badge.className = 'bridge-badge ready';
+  } else {
+    badge.textContent = 'BRIDGE: PENDING';
+    badge.className = 'bridge-badge pending';
+  }
 }
 
 function setState(next) {
@@ -501,7 +527,21 @@ function renderSettingsStatus(panel) {
   const simBadge = sim.active ? '<span class="status-badge on">On</span>' : '<span class="status-badge off">Off</span>';
   const supabaseBadge = isStubMode() ? '<span class="status-badge off">Unconfigured</span>' : '<span class="status-badge on">Live</span>';
   const authBadge = session ? '<span class="status-badge on">Live</span>' : '<span class="status-badge off">Guest</span>';
-  const voiceBadge = '<span class="status-badge off">future device test</span>';
+
+  const voiceEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_VOICE_PLACEHOLDER === 'true';
+  const voiceBadge = voiceEnabled
+    ? '<span class="status-badge warn">future device test</span>'
+    : '<span class="status-badge off">future device test</span>';
+
+  const mobileBridgeEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOBILE_BRIDGE_PLACEHOLDER === 'true';
+  const mobileBridgeBadge = mobileBridgeEnabled
+    ? '<span class="status-badge warn">prepared</span>'
+    : '<span class="status-badge off">not validated</span>';
+
+  const connectivityEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_CONNECTIVITY_STATUS === 'true';
+  const connectivityBadge = connectivityEnabled
+    ? '<span class="status-badge warn">pending device test</span>'
+    : '<span class="status-badge off">pending device test</span>';
 
   const makeRow = (label, badgeHtml) => {
     const row = document.createElement('div');
@@ -515,6 +555,8 @@ function renderSettingsStatus(panel) {
   status.appendChild(makeRow('Supabase', supabaseBadge));
   status.appendChild(makeRow('Account', authBadge));
   status.appendChild(makeRow('Voice', voiceBadge));
+  status.appendChild(makeRow('Mobile bridge', mobileBridgeBadge));
+  status.appendChild(makeRow('Connectivity', connectivityBadge));
 }
 
 function renderSettings() {
@@ -625,6 +667,7 @@ function init() {
   registerMatrices();
   wireButtons();
   initStatus();
+  updateBridgeBadge();
   initMobileBridgeDebug();
   mountSimulatorBadge(document.getElementById('app'));
   showScreen('home', false);

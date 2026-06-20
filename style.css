@@ -641,6 +641,51 @@ body {
   pointer-events: none;
 }
 
+/* ── Bridge status badge (all builds, including production) ── */
+
+.bridge-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 25;
+  min-width: 44px;
+  min-height: 24px;
+  padding: 2px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  pointer-events: none;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.bridge-badge.pending {
+  border: 1px solid rgba(107, 120, 140, 0.5);
+  background: rgba(0, 0, 0, 0.72);
+  color: #6B788C;
+}
+
+.bridge-badge.mock {
+  border: 1px solid rgba(255, 213, 74, 0.5);
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--gold-sim);
+}
+
+.bridge-badge.beta {
+  border: 1px solid rgba(0, 229, 255, 0.5);
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--cyan-primary);
+}
+
+.bridge-badge.ready {
+  border: 1px solid rgba(46, 204, 113, 0.5);
+  background: rgba(0, 0, 0, 0.72);
+  color: #2ECC71;
+}
+
 #dat-hud {
   position: absolute;
   left: 8px;

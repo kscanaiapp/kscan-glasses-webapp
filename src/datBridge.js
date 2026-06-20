@@ -36,10 +36,14 @@ export const DAT_ERROR_CODES = {
   BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
   CAPTURE_TIMEOUT: 'CAPTURE_TIMEOUT',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
+  CAPTURE_DENIED: 'PERMISSION_DENIED',
   CAPTURE_CANCELLED: 'CAPTURE_CANCELLED',
   INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE',
+  INVALID_PAYLOAD: 'INVALID_CAPTURE_RESPONSE',
   CAPTURE_IN_PROGRESS: 'CAPTURE_IN_PROGRESS',
   PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  PHONE_SLEEP: 'PHONE_SLEEP',
+  UNKNOWN: 'UNKNOWN',
 };
 
 // ─── Origin validation (Phase 11) ────────────────────────────────────
@@ -416,6 +420,7 @@ export function getDatDiagnostics() {
 
 export function getDatStatus() {
   const diagnostics = getDatDiagnostics();
+  if (isBetaStubEnabled()) return 'DAT: beta stub';
   if (diagnostics.mock) return 'DAT: mock';
   if (diagnostics.bridgeReady) return 'DAT: ready';
   return 'DAT: unavailable';
@@ -439,6 +444,91 @@ export function getMobileBridgeStatus() {
     activeRequestId: lastMobileBridgeMeta.activeRequestId,
     updatedAt: lastMobileBridgeMeta.updatedAt,
   };
+}
+
+// ─── Beta capture stub (Phase 1 real-glasses readiness) ─────────────────
+// Dev-only, gated by VITE_ENABLE_BETA_STUB. Simulates a capture.success
+// response after ~1.5s so the HUD/navigation flow can be tested on real
+// glasses without requiring a paired phone bridge.
+//
+// TODO: Replace with real DAT/mobile bridge call when native capture is validated.
+//
+// Safety:
+// - Never runs in production (DEV gate).
+// - Never logs base64 or image data.
+// - Returns a Promise that resolves with a validated JPEG data URL.
+// - Supports forceTimeout for testing CAPTURE_TIMEOUT behavior.
+// - Does not weaken sanitizer-before-analyze pipeline.
+
+let lastBetaMeta = {
+  mode: 'inactive',
+  connectionState: 'idle',
+  lastErrorCode: null,
+  activeRequestId: null,
+  updatedAt: null,
+};
+
+function isBetaStubEnabled() {
+  try {
+    return import.meta.env.DEV === true
+      && String(import.meta.env.VITE_ENABLE_BETA_STUB || '').toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function getBetaBridgeStatus() {
+  return {
+    enabled: isBetaStubEnabled(),
+    mode: lastBetaMeta.mode,
+    connectionState: lastBetaMeta.connectionState,
+    lastErrorCode: lastBetaMeta.lastErrorCode,
+    activeRequestId: lastBetaMeta.activeRequestId,
+    updatedAt: lastBetaMeta.updatedAt,
+  };
+}
+
+export async function requestBetaCapture(options = {}) {
+  if (!isBetaStubEnabled()) {
+    throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Beta stub is not enabled.');
+  }
+
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const requestId = createRequestId();
+  const delayMs = 1500;
+
+  lastBetaMeta = {
+    mode: 'beta-stub',
+    connectionState: 'connecting',
+    lastErrorCode: null,
+    activeRequestId: requestId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (options.forceTimeout === true) {
+    await waitMs(Math.max(delayMs, CAPTURE_TIMEOUT_MS + 100));
+    lastBetaMeta = {
+      ...lastBetaMeta,
+      connectionState: 'error',
+      lastErrorCode: DAT_ERROR_CODES.CAPTURE_TIMEOUT,
+      updatedAt: new Date().toISOString(),
+    };
+    logBridgeTiming('beta.capture.timeout', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+    throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.');
+  }
+
+  await waitMs(delayMs);
+
+  lastBetaMeta = {
+    ...lastBetaMeta,
+    connectionState: 'connected',
+    lastErrorCode: null,
+    updatedAt: new Date().toISOString(),
+  };
+  logBridgeTiming('beta.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+
+  // Return a validated mock JPEG — same validation path as real capture.
+  return validateCapturePayload(generateMockImage('standard'));
 }
 
 // Mobile bridge capture provider (dev-only). Selected atomically per capture

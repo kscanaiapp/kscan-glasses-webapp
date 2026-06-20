@@ -9,6 +9,102 @@ Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. Thi
 - Backend API client is scaffolded; production backend testing is pending.
 - Supabase sync is not implemented yet.
 
+## Phase 1 — Real-Glasses Beta Readiness (Scaffolding Only)
+
+**Status: Loadable Web App candidate. Not device validated.**
+
+This phase prepares the virtual-alpha codebase for controlled testing on actual Meta Ray-Ban Display hardware. It does **not** claim real glasses, real DAT, real backend, voice, connectivity, or Supabase sync readiness.
+
+### What "beta readiness scaffolding" means
+
+- The app can be loaded onto glasses for visual/HUD/navigation testing.
+- The scan pipeline remains mock-only until the phone bridge is validated.
+- All new integrations are feature-gated, placeholder-only, or documented as future work.
+- No custom BLE, Wi-Fi Direct, WebRTC, or WebSocket bridge is introduced.
+- No production camera, microphone, voice, or backend sync is enabled.
+
+### 600×600 HUD invariants (preserved for real device)
+
+| Invariant | Rule | Status |
+|---|---|---|
+| Viewport | Fixed `600×600` CSS, `user-scalable=no` | Enforced |
+| Overflow | `html`, `body`, `#app` = `overflow: hidden` | Enforced |
+| Background | Pure black (`#000000`) for additive waveguide transparency | Enforced |
+| Contrast | Bright high-contrast UI (cyan `#00E5FF`, champagne `#C58A3A`) | Enforced |
+| Full-screen brightness | Avoid bright full-screen backgrounds inside HUD | Enforced |
+| Navigation | D-pad/keyboard only (Arrow keys + Enter) | Enforced |
+| Focus | Every interactive element has `.focusable` class | Enforced |
+| Mouse/touch | No mouse-only or touch-only interactions | Enforced |
+| Scroll | Internal scroll panels only, bounded `max-height` | Enforced |
+| Safe zone | 20 px inner margin; critical controls away from edges | Enforced |
+
+### D-pad / keyboard interaction instructions
+
+- **ArrowUp / ArrowDown**: Move focus between `.focusable` elements (wraps).
+- **ArrowRight / Enter**: Activate the focused element.
+- **ArrowLeft / Escape**: Go back / dismiss current screen.
+- **Focus ring**: Cyan outline + glow + subtle pulse animation.
+- **No mouse or touch required**: The app must remain fully usable with keyboard/D-pad only.
+
+### Device loading checklist (Meta AI companion app)
+
+**Important:** The glasses do not scan a QR code directly. The host phone companion app used for the glasses setup flow — Meta AI (depending on the installed device flow) — is used for pairing and adding/loading Web Apps.
+
+Requirements:
+- Public **HTTPS** URL is mandatory. HTTP URLs are invalid for real-device testing.
+- Meta Ray-Ban Display glasses paired with a phone (iOS or Android).
+- Developer Mode enabled in the Meta AI companion app.
+
+Steps to load the Web App:
+
+1. Pair glasses with the Meta AI companion app.
+2. Enable Developer Mode in the companion app (Settings → App Info → tap app version 5×).
+3. Navigate to: Devices → Display Glasses settings → App connections → Web apps.
+4. Tap **Add a Web App**.
+5. Enter app name: `K Scan`.
+6. Enter the public **HTTPS** URL (e.g. `https://kscan-glasses-demo.vercel.app`).
+7. Tap **Connect**.
+8. Launch the Web App from the glasses interface (app grid).
+
+**HTTPS enforcement:** The Web App URL must use HTTPS. HTTP requests/URLs should be treated as invalid for glasses testing.
+
+### Real glasses test checklist (device QA)
+
+Use this checklist during controlled hardware testing. Do not claim validation until each item is checked on real hardware.
+
+- [ ] **Launch**: App launches from the glasses app grid without error.
+- [ ] **Visual frame fit**: UI fits within the 600×600 waveguide frame; no clipping at edges.
+- [ ] **Focus ring**: Cyan focus outline is visible on the first interactive element.
+- [ ] **D-pad movement**: ArrowUp/ArrowDown moves focus between `.focusable` elements.
+- [ ] **Enter activation**: Enter selects the focused element (Scan, History, Settings, Back, Save).
+- [ ] **Escape / universal menu**: Escape or ArrowLeft navigates back; universal menu (if available) does not trap the app.
+- [ ] **Simulator route**: In staging builds with `VITE_ENABLE_SIMULATOR=true`, `/simulator.html` loads from the same origin.
+- [ ] **Brightness / readability**: Text and UI elements are legible indoors and outdoors on the additive waveguide.
+- [ ] **Restart / resume**: App restarts from the glasses Web App menu without corruption.
+- [ ] **Permissions menu**: If a permissions menu is presented, it is navigable by D-pad.
+- [ ] **Top-right status badge**: A compact bridge/status badge is visible (e.g. `BRIDGE: PENDING`) and does not block primary actions.
+- [ ] **No page scroll**: Body does not scroll; only internal panels scroll if needed.
+- [ ] **Mock/stub labeling**: UI clearly indicates mock/stub/placeholder state so testers are not misled.
+
+### Known hardware blockers (still unresolved)
+
+- Physical Meta Ray-Ban Display glasses not yet tested.
+- Real DAT/mobile bridge capture not validated on iOS/Android.
+- Real Neural Band D-pad latency and tactile feel unknown.
+- Real additive waveguide brightness/contrast uncalibrated.
+- Real microphone/voice runtime not verified.
+- `devicePixelRatio` and viewport behavior on actual display unknown.
+- Backend CORS from deployed HTTPS origin pending live test.
+
+### Public URLs
+
+| URL | Purpose | HTTPS |
+|---|---|---|
+| `https://kscan-glasses-demo.vercel.app` | Public investor demo | Yes |
+| `https://kscan-glasses-demo.vercel.app/simulator.html` | Simulator control room | Yes |
+
+**Note:** Verify both URLs return 200 OK before claiming glasses-load readiness. If a URL check fails, note it in the checklist but do not block the local build.
+
 ## Overview
 
 - Fixed `600x600` viewport

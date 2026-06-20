@@ -1517,3 +1517,99 @@ simulator tests do not prove phone/glasses bridge behavior.
 ### Completion Status
 
 Phase 19 investor demo alpha delivery complete. Public HTTPS preview live and demo-safe. Manual push required from GUI due to Windows credential manager. STOP for user action.
+
+
+---
+
+## Phase 1 — Real-Glasses Beta Readiness Scaffolding (2026-06-20)
+
+**Scope:** Safe scaffolding for controlled real-glasses HUD/navigation testing. No hardware changes. No production integrations.
+
+**Status:** Loadable Web App candidate. Not device validated.
+
+### What was added
+
+- Device loading checklist (Meta AI companion app flow, HTTPS requirement).
+- Real glasses test checklist (launch, D-pad, focus, brightness, badge, scroll, etc.).
+- Mobile bridge beta placeholders: `requestBetaCapture()` stub, additional error codes.
+- Backend/Supabase/voice/connectivity placeholder status rows in Settings.
+- Top-right bridge/status badge (`#bridge-status`) visible on all screens.
+- `.env.example` updated with placeholder flags (`VITE_ENABLE_BETA_STUB`, `VITE_ENABLE_VOICE_PLACEHOLDER`, `VITE_ENABLE_MOBILE_BRIDGE_PLACEHOLDER`, `VITE_ENABLE_CONNECTIVITY_STATUS`).
+- Documentation: beta readiness language, explicit "not device validated" statements.
+
+### What was NOT added
+
+- No custom BLE or Wi-Fi Direct transport.
+- No WebRTC or WebSocket bridge (existing websocket dev client unchanged).
+- No full voice recognition or always-on wake word.
+- No Supabase sync package or sync code.
+- No real backend analyze client changes (contract unchanged).
+- No production camera or microphone access.
+- No native mobile code or backend code.
+
+### Files changed
+
+- `README.md` — real-glasses load readiness section, device loading checklist, test checklist.
+- `QA_REPORT.md` — this beta readiness scaffolding section.
+- `.env.example` — new placeholder env flags.
+- `src/datBridge.js` — `requestBetaCapture()` stub, additional error codes (`PHONE_SLEEP`, `INVALID_PAYLOAD`, `UNKNOWN`), `getBetaBridgeStatus()` helper.
+- `src/main.js` — Settings "System Info" panel, top-right bridge badge update, connectivity/voice placeholder rows.
+- `index.html` — `#bridge-status` badge element in app shell.
+- `simulator.html` — updated status strip labels to reflect beta readiness.
+
+### Build verification
+
+```
+npm test               # PASS (models + build + static + contract)
+npm run build          # PASS — dist/index.html + dist/simulator.html exist
+git diff --check       # PASS — no whitespace errors
+```
+
+### Real-glasses loading checklist
+
+- [ ] Public HTTPS URL returns 200 OK (`https://kscan-glasses-demo.vercel.app`).
+- [ ] `/simulator.html` reachable from the same origin.
+- [ ] Build produces `dist/index.html` and `dist/simulator.html`.
+- [ ] No `process.env` references in client-side code (Vite-safe: `import.meta.env` only).
+- [ ] No secrets, raw base64, or face metadata in source or logs.
+- [ ] No production readiness claims in docs or UI.
+- [ ] Device loading instructions documented (Meta AI app → Developer Mode → Web Apps → Add → HTTPS URL).
+- [ ] HTTP URLs marked as invalid for glasses testing.
+- [ ] 600×600/HUD invariants documented and enforced.
+- [ ] D-pad navigation instructions documented.
+- [ ] Top-right bridge/status badge visible and non-blocking.
+- [ ] Settings "System Info" panel shows placeholder status (backend, supabase, voice, mobile bridge, connectivity).
+- [ ] Beta stub is feature-gated and does not run in production.
+- [ ] Sanitizer-before-analyze pipeline unchanged and contract-tested.
+
+### Real glasses test checklist (to be completed on hardware)
+
+- [ ] Launch from glasses app grid.
+- [ ] Visual frame fit within 600×600 waveguide.
+- [ ] Focus ring visible on first element.
+- [ ] D-pad movement (ArrowUp/ArrowDown) works.
+- [ ] Enter activation works.
+- [ ] Escape/ArrowLeft back navigation works.
+- [ ] Simulator route reachable if staging build.
+- [ ] Brightness/readability indoors and outdoors.
+- [ ] Restart/resume from Web App menu.
+- [ ] Permissions menu navigable by D-pad.
+- [ ] Top-right status badge visible and not blocking.
+- [ ] No body scroll; only internal panels scroll.
+- [ ] Mock/stub labeling clearly visible.
+
+### Beta integration placeholder status
+
+| Integration | Phase 1 Status | Next Step |
+|---|---|---|
+| Meta glasses loading | Loadable candidate | Controlled hardware test |
+| DAT/mobile bridge | Prepared / not validated | iOS/Android native spike |
+| Backend analyze | Mock/stub only | CORS test from deployed origin |
+| Supabase sync | Unconfigured / placeholder | Install `@supabase/supabase-js` later |
+| Voice activation | Future device test | Native/mobile runtime validation |
+| Bluetooth/Wi-Fi | No custom transport | Rely on Meta/DAT/mobile path later |
+| Connectivity status | Pending device test | Hardware validation |
+
+### Stop statement
+
+This is beta readiness scaffolding. Real glasses, real DAT, real backend, voice, connectivity, and Supabase sync still require controlled hardware/integration testing.
