@@ -18,6 +18,7 @@ import { runScanPipeline, PIPELINE_STAGES, PipelineInvariantError } from './scan
 import { mountSimulatorBadge, getSimulatorState } from './simulatorMode.js';
 import { getSession, signInStub, signOut, isStubMode } from './authSession.js';
 import { loadGuestLibrary, recordGuestScan, saveGuestItem, getStubLibraryExamples } from './libraryStore.js';
+import { buildMockStyleMatch, makeEmptyStyleMatch } from './styleMatchContract.js';
 
 const STATE = FLOW_STATES;
 
@@ -157,16 +158,16 @@ function createText(tag, className, value) {
   return node;
 }
 
-function createProductCard(product, sourceType) {
+function createStyleMatchItemCard(item) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'row product-card focusable';
 
-  const hasImage = typeof product.imageUrl === 'string' && product.imageUrl.length > 0;
+  const hasImage = typeof item.imageUrl === 'string' && item.imageUrl.length > 0;
   if (hasImage) {
     const image = document.createElement('img');
     image.className = 'product-thumb';
-    image.src = product.imageUrl;
+    image.src = item.imageUrl;
     image.alt = 'Product image';
     card.appendChild(image);
   } else {
@@ -180,14 +181,14 @@ function createProductCard(product, sourceType) {
   meta.className = 'product-meta';
 
   const sourcePill = document.createElement('span');
-  sourcePill.className = `source-pill ${sourceType}`;
-  sourcePill.textContent = sourceType === 'retail' ? 'Retail — demo' : sourceType === 'resale' ? 'Resale — demo' : 'Suggested — demo';
+  sourcePill.className = `source-pill ${item.sourceType}`;
+  sourcePill.textContent = item.sourceType === 'retail' ? 'Retail — demo' : item.sourceType === 'resale' ? 'Resale — demo' : 'Suggested — demo';
   meta.appendChild(sourcePill);
 
-  meta.appendChild(createText('p', 'brand', safeText(product.brand, 'Unknown Brand')));
-  meta.appendChild(createText('p', 'name', safeText(product.name, 'Unknown item')));
+  meta.appendChild(createText('p', 'brand', safeText(item.subtitle, 'Unknown Brand')));
+  meta.appendChild(createText('p', 'name', safeText(item.title, 'Unknown item')));
 
-  const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
+  const priceText = safeText(item.priceLabel, 'Price unavailable');
   meta.appendChild(createText('p', 'price', priceText));
 
   const actions = document.createElement('div');
@@ -204,9 +205,9 @@ function createProductCard(product, sourceType) {
   // never images) to the guest library.
   card.addEventListener('click', () => {
     const result = saveGuestItem({
-      brand: safeText(product.brand, 'Unknown Brand'),
-      name: safeText(product.name, 'Unnamed Product'),
-      price: safeText(product.priceRange || product.price, 'Price unavailable'),
+      brand: safeText(item.subtitle, 'Unknown Brand'),
+      name: safeText(item.title, 'Unnamed Product'),
+      price: safeText(item.priceLabel, 'Price unavailable'),
     });
     if (result.saved) {
       saveAction.textContent = 'Saved';
@@ -221,22 +222,12 @@ function createProductCard(product, sourceType) {
   return card;
 }
 
-function buildSourceType(index, total) {
-  if (index < 2) return 'retail';
-  if (index < 3 || (total >= 4 && index === 3)) return 'resale';
-  return 'suggested';
-}
-
-function renderStyleMatch(data) {
+function renderStyleMatch(styleMatch) {
   const panel = els.resultsMatch;
   if (!panel) return;
   panel.innerHTML = '';
 
-  const styleMeta = data?.style_metadata && typeof data.style_metadata === 'object' ? data.style_metadata : {};
-  const detectedStyle = safeText(styleMeta.detected_style || styleMeta.style, 'Modern Minimalist Layering');
-  const attributes = Array.isArray(styleMeta.attributes) ? styleMeta.attributes : ['Cream knit', 'tailored outerwear', 'soft neutral palette'];
-  const confidence = Number.isFinite(styleMeta.confidence) ? styleMeta.confidence : 94;
-  const scanMode = safeText(styleMeta.scan_mode || styleMeta.mode, 'Outfit');
+  const sm = styleMatch && typeof styleMatch === 'object' ? styleMatch : makeEmptyStyleMatch();
 
   const card = document.createElement('div');
   card.className = 'glass-card gold-border style-match-card';
@@ -249,34 +240,47 @@ function renderStyleMatch(data) {
   badgeRow.style.display = 'flex';
   badgeRow.style.gap = '8px';
   badgeRow.style.flexWrap = 'wrap';
-  badgeRow.appendChild(createText('span', 'confidence-badge', `${confidence}% Match`));
-  badgeRow.appendChild(createText('span', 'scan-mode-pill', `Scan Mode: ${scanMode}`));
+
+  if (sm.meta?.confidenceLabel) {
+    badgeRow.appendChild(createText('span', 'confidence-badge', sm.meta.confidenceLabel));
+  }
+  if (sm.meta?.scanModeLabel) {
+    badgeRow.appendChild(createText('span', 'scan-mode-pill', `Scan Mode: ${sm.meta.scanModeLabel}`));
+  }
   header.appendChild(badgeRow);
   card.appendChild(header);
 
-  card.appendChild(createText('div', 'detected-style', detectedStyle));
+  card.appendChild(createText('div', 'detected-style', sm.summary || 'Style Match'));
 
   const attrRow = document.createElement('div');
   attrRow.className = 'style-attributes';
-  attributes.slice(0, 5).forEach((attr) => {
+  const keywords = Array.isArray(sm.intent?.keywords) ? sm.intent.keywords : [];
+  keywords.slice(0, 5).forEach((attr) => {
     attrRow.appendChild(createText('span', 'attr-pill', safeText(attr, '')));
   });
   card.appendChild(attrRow);
 
   const disclaimer = document.createElement('p');
   disclaimer.className = 'source-disclaimer';
-  disclaimer.textContent = 'Mock demo data — no live inventory or pricing';
+  disclaimer.textContent = sm.meta?.isDemo ? 'Mock demo data — no live inventory or pricing' : 'Results may vary — verify before purchase';
   card.appendChild(disclaimer);
 
   panel.appendChild(card);
 }
 
-function renderProducts(data) {
-  const products = Array.isArray(data?.products) ? data.products : [];
+function renderProducts(styleMatch) {
+  const sm = styleMatch && typeof styleMatch === 'object' ? styleMatch : makeEmptyStyleMatch();
+  const itemGroups = [
+    { key: 'retail', label: 'Retail — demo source' },
+    { key: 'resale', label: 'Resale — demo source' },
+    { key: 'suggested', label: 'Suggested Sources' },
+  ];
   els.resultsList.innerHTML = '';
-  renderStyleMatch(data);
+  renderStyleMatch(sm);
 
-  if (!products.length) {
+  const hasAnyItems = itemGroups.some((g) => Array.isArray(sm.items?.[g.key]) && sm.items[g.key].length > 0);
+
+  if (!hasAnyItems) {
     els.resultsEmpty.classList.remove('hidden');
     if (els.resultsMatch) els.resultsMatch.classList.add('hidden');
     registerFocusMatrix('results', [
@@ -289,28 +293,25 @@ function renderProducts(data) {
   els.resultsEmpty.classList.add('hidden');
   if (els.resultsMatch) els.resultsMatch.classList.remove('hidden');
 
-  // Group by source type for visual grouping
-  let currentSource = null;
-  const total = products.length;
+  itemGroups.forEach((group) => {
+    const items = Array.isArray(sm.items?.[group.key]) ? sm.items[group.key] : [];
+    if (!items.length) return;
 
-  products.forEach((product, index) => {
-    const sourceType = buildSourceType(index, total);
-    if (sourceType !== currentSource) {
-      currentSource = sourceType;
-      const groupHeader = document.createElement('div');
-      groupHeader.className = 'source-group';
-      const sourceHeader = document.createElement('div');
-      sourceHeader.className = 'source-header';
-      const dot = document.createElement('span');
-      dot.className = `source-dot ${sourceType}`;
-      sourceHeader.appendChild(dot);
-      const labelText = sourceType === 'retail' ? 'Retail — demo source' : sourceType === 'resale' ? 'Resale — demo source' : 'Suggested Sources';
-      sourceHeader.appendChild(document.createTextNode(labelText));
-      groupHeader.appendChild(sourceHeader);
-      els.resultsList.appendChild(groupHeader);
-    }
-    const card = createProductCard(product, sourceType);
-    els.resultsList.appendChild(card);
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'source-group';
+    const sourceHeader = document.createElement('div');
+    sourceHeader.className = 'source-header';
+    const dot = document.createElement('span');
+    dot.className = `source-dot ${group.key}`;
+    sourceHeader.appendChild(dot);
+    sourceHeader.appendChild(document.createTextNode(group.label));
+    groupHeader.appendChild(sourceHeader);
+    els.resultsList.appendChild(groupHeader);
+
+    items.forEach((item) => {
+      const card = createStyleMatchItemCard(item);
+      els.resultsList.appendChild(card);
+    });
   });
 
   registerFocusMatrix('results', [
@@ -388,7 +389,12 @@ export async function startScan() {
       topName: products[0]?.name || '',
     });
 
-    renderProducts(response);
+    // Build canonical StyleMatch contract from raw response.
+    // Future integrations (TextScan, backend analyze, StyleChat, mobile handoff)
+    // should replace this adapter call with their own adapter that still returns
+    // a canonical StyleMatch. The UI consumes ONLY the canonical shape.
+    const styleMatch = buildMockStyleMatch(response);
+    renderProducts(styleMatch);
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');

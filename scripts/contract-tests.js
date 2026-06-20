@@ -62,6 +62,7 @@ const pipeline = await import('../src/scanPipeline.js');
 const library = await import('../src/libraryStore.js');
 const auth = await import('../src/authSession.js');
 const sim = await import('../src/simulatorMode.js');
+const styleContract = await import('../src/styleMatchContract.js');
 
 // ═══════════════════════════════════════════════════════════════════
 // A. Backend analyze client (performAnalyzeRequest)
@@ -556,6 +557,100 @@ console.log('\n=== G. Simulator gating ===');
 
   const mockDat = sim.parseSimulatorState({ search: '' }, { DEV: true, VITE_MOCK_DAT: 'true' });
   expectEq('G5.mock-dat-shows-badge', true, mockDat.active);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// H. Style Match contract adapter
+// ═══════════════════════════════════════════════════════════════════
+console.log('\n=== H. Style Match contract ===');
+
+// H1: adapter returns canonical object from mock response
+{
+  const raw = {
+    products: [
+      { brand: 'Aether Loom', name: 'Chrome Arc Jacket', price: '$189', imageUrl: '/i1.png' },
+      { brand: 'Nova Thread', name: 'Cyan Edge Vest', price: '$124' },
+      { brand: 'Glassline', name: 'Nightline Pant', price: '$98' },
+      { brand: 'Orbit Form', name: 'Signal Knit', price: '$76', imageUrl: '/i4.png' },
+    ],
+    style_metadata: {
+      detected_style: 'Urban Utility Layering',
+      scan_mode: 'Outfit',
+      confidence: 91,
+      attributes: ['structured outerwear', 'technical fabric', 'neutral base'],
+    },
+  };
+  const sm = styleContract.buildMockStyleMatch(raw);
+  expectTrue('H1.id-present', typeof sm.id === 'string' && sm.id.startsWith('match_'));
+  expectEq('H1.source', 'demo', sm.source);
+  expectEq('H1.confidence', 91, sm.confidence);
+  expectEq('H1.summary', 'Urban Utility Layering', sm.summary);
+  expectEq('H1.intent.style', 'Urban Utility Layering', sm.intent.style);
+  expectEq('H1.meta.scanModeLabel', 'Outfit', sm.meta.scanModeLabel);
+  expectEq('H1.meta.confidenceLabel', '91% Match', sm.meta.confidenceLabel);
+  expectTrue('H1.meta.isDemo', sm.meta.isDemo === true);
+  expectTrue('H1.actions.canSave', sm.actions.canSave === true);
+  expectTrue('H1.actions.canOpenOnPhone', sm.actions.canOpenOnPhone === true);
+}
+
+// H2: missing fields normalize safely
+{
+  const sm = styleContract.buildMockStyleMatch({ products: [{ name: 'Solo Item' }] });
+  expectEq('H2.confidence-null', null, sm.confidence);
+  expectEq('H2.summary-fallback', 'Modern Minimalist Layering', sm.summary);
+  expectTrue('H2.intent.colors-empty', Array.isArray(sm.intent.colors) && sm.intent.colors.length === 0);
+  expectTrue('H2.intent.materials-empty', Array.isArray(sm.intent.materials) && sm.intent.materials.length === 0);
+  expectTrue('H2.intent.keywords-empty', Array.isArray(sm.intent.keywords) && sm.intent.keywords.length === 0);
+  expectEq('H2.meta.scanModeLabel', null, sm.meta.scanModeLabel);
+  expectEq('H2.meta.confidenceLabel', null, sm.meta.confidenceLabel);
+}
+
+// H3: empty groups become empty arrays
+{
+  const sm = styleContract.buildMockStyleMatch({ products: [] });
+  expectTrue('H3.retail-empty', Array.isArray(sm.items.retail) && sm.items.retail.length === 0);
+  expectTrue('H3.resale-empty', Array.isArray(sm.items.resale) && sm.items.resale.length === 0);
+  expectTrue('H3.suggested-empty', Array.isArray(sm.items.suggested) && sm.items.suggested.length === 0);
+}
+
+// H4: deterministic grouping preserved
+{
+  const raw = {
+    products: [
+      { brand: 'A', name: 'One' },
+      { brand: 'B', name: 'Two' },
+      { brand: 'C', name: 'Three' },
+      { brand: 'D', name: 'Four' },
+    ],
+  };
+  const sm = styleContract.buildMockStyleMatch(raw);
+  expectEq('H4.retail-count', 2, sm.items.retail.length);
+  expectEq('H4.resale-count', 2, sm.items.resale.length);
+  expectEq('H4.suggested-count', 0, sm.items.suggested.length);
+  expectEq('H4.retail-first-source', 'retail', sm.items.retail[0].sourceType);
+  expectEq('H4.resale-first-source', 'resale', sm.items.resale[0].sourceType);
+}
+
+// H5: item fields normalize correctly
+{
+  const raw = { products: [{ brand: 'X', name: 'Y', price: '$10', url: 'https://example.com/y', imageUrl: '/y.png' }] };
+  const sm = styleContract.buildMockStyleMatch(raw);
+  const item = sm.items.retail[0];
+  expectEq('H5.title', 'Y', item.title);
+  expectEq('H5.subtitle', 'X', item.subtitle);
+  expectEq('H5.priceLabel', '$10', item.priceLabel);
+  expectEq('H5.href', 'https://example.com/y', item.href);
+  expectEq('H5.imageUrl', '/y.png', item.imageUrl);
+  expectEq('H5.sourceType', 'retail', item.sourceType);
+}
+
+// H6: empty fallback object is safe
+{
+  const sm = styleContract.makeEmptyStyleMatch();
+  expectTrue('H6.id-present', typeof sm.id === 'string');
+  expectEq('H6.confidence', null, sm.confidence);
+  expectTrue('H6.items-empty', sm.items.retail.length === 0 && sm.items.resale.length === 0 && sm.items.suggested.length === 0);
+  expectTrue('H6.actions-disabled', sm.actions.canSave === false && sm.actions.canOpenOnPhone === false);
 }
 
 // ═══════════════════════════════════════════════════════════════════
