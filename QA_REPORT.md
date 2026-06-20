@@ -1458,3 +1458,62 @@ simulator tests do not prove phone/glasses bridge behavior.
 | No secrets introduced | ✅ Confirmed |
 | No backend contract change | ✅ Confirmed |
 | No dependency changes | ✅ Confirmed |
+
+## Phase 19: Investor Demo Alpha Delivery — QA Report
+
+### Deployment
+
+| Check | Status | Notes |
+|-------|--------|-------|
+| Vercel preview deployed | ✅ | `justinlandes-projects/kscan-glasses-webapp` |
+| Preview URL | ✅ | `https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app` |
+| HTTPS (TLS 1.2+) | ✅ | Vercel edge default |
+| Build artifacts | ✅ | `index.html`, `simulator.html`, `assets/`, models present |
+
+### Smoke Checks (via vercel curl)
+
+| Endpoint | Status | Result |
+|----------|--------|--------|
+| `GET /` | 200 | Home HUD HTML + CSS + JS |
+| `GET /simulator.html` | 200 | Simulator HTML + CSS + JS |
+| `GET /src/style.css` | 200 | CSS loaded |
+| `GET /assets/index-D2...js` | 200 | Bundled JS loaded |
+| Model + WASM | 200 | Present in dist |
+
+### Investor Demo Talk Track
+
+**What works:**
+- 600×600 MRBD-style HUD with D-pad/keyboard navigation.
+- Full scan flow: Home → Scan → Processing → Results → Save → Library.
+- Privacy-first pipeline with MediaPipe face masking.
+- Backend analyze client wired to `POST /api/analyze`.
+- Metadata-only library save (no images, no payloads).
+- Simulator at `/simulator.html` with 10+ failure scenarios.
+- Bridge contract prepared for DAT/mobile integration.
+
+**What is not yet validated:**
+- Physical Meta Ray-Ban Display glasses.
+- Real DAT/mobile bridge capture on iOS/Android.
+- Real camera capture latency and behavior.
+- Backend CORS from deployed staging origin (pending test).
+- Phone sleep, background, lock behavior.
+- QR/deeplink launch via Meta AI companion app.
+- Real additive waveguide brightness/contrast.
+
+**Investor-safe framing:**
+- "The HUD and scan pipeline are built. The bridge contract is prepared. Device validation is the next milestone when hardware arrives."
+- "No production voice, no production camera, no production offline mode — those are future phases."
+
+### Safety & Risk
+
+| Item | Status |
+|------|--------|
+| No physical device claims in docs | ✅ Added to README |
+| No DAT bridge validation claims | ✅ Added to README |
+| No production readiness claims | ✅ Added to README |
+| Honest caveats section | ✅ Present in README |
+| Talk track included | ✅ Present in README |
+
+### Completion Status
+
+Phase 19 investor demo alpha delivery complete. Public HTTPS preview live and demo-safe. Manual push required from GUI due to Windows credential manager. STOP for user action.

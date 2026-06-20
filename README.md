@@ -1475,3 +1475,70 @@ Before deploying to any staging host:
 - [ ] Invalid/oversized payloads rejected at bridge (verified by `datBridge.js`)
 - [ ] Voice code not imported in production (verified by contract tests)
 - [ ] No base64/image logging in source (verified by static tests)
+
+## Investor Demo Alpha
+
+**Status:** Virtual alpha / browser-testable prototype. Not physically validated on Meta Ray-Ban Display glasses.
+
+**Staging URL:** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app
+
+**Simulator URL:** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app/simulator.html
+
+### What works in the demo
+
+- 600×600 MRBD-style HUD with D-pad/keyboard navigation.
+- Clean home screen → Scan → Processing → Results → Save → Library flow.
+- Privacy-first pipeline: capture → sanitize (MediaPipe face masking) → analyze.
+- Backend analyze client wired to `POST /api/analyze` with `{ image: sanitizedImageString }`.
+- Metadata-only library save (brand, name, price) — never images or payloads.
+- Simulator control room at `/simulator.html` with 10+ failure scenarios.
+- Bridge contract prepared for future DAT/mobile bridge integration.
+- Focus ring, scroll containment, async cancel safety, and D-pad navigation.
+
+### What is not yet validated
+
+- Physical Meta Ray-Ban Display glasses.
+- Real DAT/mobile bridge capture on iOS/Android.
+- Real camera capture latency and behavior.
+- Backend CORS from the deployed staging origin (pending test).
+- Phone sleep, background, lock behavior.
+- QR/deeplink launch via Meta AI companion app.
+- Real additive waveguide brightness/contrast.
+
+### How to demo
+
+1. Open the staging URL in Chrome/Edge.
+2. For the glasses HUD view: set DevTools viewport to 600×600.
+3. For the simulator control room: open `/simulator.html` in a second tab.
+4. In the simulator:
+   - Select **"success"** capture scenario.
+   - Click **"Start Scan"** or press Enter on the Scan button in the app.
+   - Watch: Home → Processing → Results.
+   - Navigate to a result card, press Enter to save.
+   - Navigate to Library to see the saved item.
+   - Navigate to Settings to see system status.
+5. Try failure scenarios:
+   - **"timeout"** → shows "Unable to capture. Try again."
+   - **"permission"** → shows "Capture denied. Try again."
+   - **"oversized"** → shows "Image too large. Try again."
+   - **"phone-asleep"** → same as timeout.
+   - **"late-success"** → ignored by app after timeout.
+6. Explain: "The HUD and scan pipeline are built. The bridge contract is prepared. Device validation is the next milestone when hardware arrives."
+
+### Investor-safe talk track
+
+- "This is the browser-based virtual alpha of the K Scan MRBD glasses HUD."
+- "The 600×600 UI, D-pad navigation, and scan flow are functional today."
+- "Privacy is enforced: images are sanitized with on-device MediaPipe face masking before any backend upload."
+- "The backend analyze contract is wired and tested."
+- "The DAT bridge contract is prepared for iOS/Android companion app integration."
+- "The next milestone is real glasses + phone bridge testing, which requires the physical Meta Ray-Ban Display hardware."
+- "No production voice, no production camera, no production offline mode — those are future phases."
+
+### Demo safety notes
+
+- Do not claim physical glasses validation.
+- Do not claim real DAT bridge validation.
+- Do not claim production readiness.
+- The simulator is a testing tool, not a separate product.
+- The 600×600 HUD is the actual product surface.
