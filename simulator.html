@@ -20,33 +20,52 @@
   dimensions, tokens, or scan results. No real photos, no real faces.
 -->
 <style>
-  body { margin: 0; background: #0a0e14; color: #e0e0e0; font-family: system-ui, sans-serif; font-size: 14px; }
-  header.page { padding: 14px 16px 0; }
-  header.page h1 { margin: 0; font-size: 20px; color: #00E5FF; }
-  header.page p { margin: 4px 0 0; color: #9fb0c3; }
-  .layout { display: flex; gap: 16px; padding: 16px; align-items: flex-start; flex-wrap: wrap; }
-  .frame-wrap { border: 2px solid rgba(255, 213, 74, 0.65); border-radius: 10px; overflow: hidden; box-shadow: 0 0 30px rgba(255, 213, 74, 0.1), 0 8px 24px rgba(0, 0, 0, 0.4); }
-  .frame-head { background: var(--gold-sim); color: #14110a; font-weight: 800; padding: 4px 10px; font-size: 12px; letter-spacing: 1px; display: flex; justify-content: space-between; }
+  :root {
+    --sim-cream: #FBF7F0;
+    --sim-warm: #FAF4EA;
+    --sim-plum: #3A1028;
+    --sim-plum-light: #5C1A40;
+    --sim-champagne: #C58A3A;
+    --sim-champagne-soft: #D6A75C;
+    --sim-border: #E8D8C3;
+    --sim-silver: #7A6E5E;
+    --sim-silver-light: #9A8E7E;
+    --sim-dark: #1A1510;
+    --sim-card: #FFFFFF;
+  }
+  body { margin: 0; background: var(--sim-cream); color: var(--sim-dark); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
+  header.page { padding: 18px 24px 0; }
+  header.page h1 { margin: 0; font-size: 22px; color: var(--sim-plum); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+  header.page h1::after { content: ""; display: block; width: 40px; height: 2px; background: var(--sim-champagne); margin: 8px 0 0; border-radius: 1px; }
+  header.page p { margin: 8px 0 0; color: var(--sim-silver); font-size: 13px; line-height: 1.5; max-width: 640px; }
+  .demo-label { display: inline-block; margin-top: 8px; padding: 4px 10px; border: 1px solid var(--sim-champagne); border-radius: 6px; color: var(--sim-champagne); font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: rgba(197, 138, 58, 0.06); }
+  .layout { display: flex; gap: 20px; padding: 20px 24px 24px; align-items: flex-start; flex-wrap: wrap; }
+  .frame-wrap { border: 1px solid var(--sim-border); border-radius: 16px; overflow: hidden; box-shadow: 0 0 40px rgba(58, 16, 40, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08); }
+  .frame-head { background: var(--sim-plum); color: var(--sim-cream); font-weight: 700; padding: 6px 14px; font-size: 12px; letter-spacing: 1.5px; display: flex; justify-content: space-between; text-transform: uppercase; }
   iframe { width: 600px; height: 600px; border: 0; display: block; background: #000; }
-  .panel { flex: 1; min-width: 360px; max-width: 540px; display: flex; flex-direction: column; gap: 12px; }
-  fieldset { border: 1px solid #2a3442; border-radius: 8px; padding: 10px; }
-  legend { color: #00E5FF; font-weight: 700; padding: 0 6px; }
-  label { display: block; margin: 6px 0 2px; color: #9fb0c3; }
-  select, button { background: #141b26; color: #e0e0e0; border: 1px solid #2a3442; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
-  button { cursor: pointer; }
-  button:hover, button:focus { border-color: #00E5FF; outline: none; }
-  button.primary { background: #00E5FF; color: #001014; font-weight: 700; }
-  .btn-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-  #scenario-now { color: #FFD54A; font-weight: 700; }
-  #log { background: #05070b; border: 1px solid #2a3442; border-radius: 8px; padding: 8px; height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; }
-  .note { color: #9fb0c3; font-size: 12px; margin: 6px 0 0; }
-  ul.instructions { margin: 6px 0 0 18px; padding: 0; color: #e0e0e0; line-height: 1.5; }
+  .panel { flex: 1; min-width: 360px; max-width: 540px; display: flex; flex-direction: column; gap: 14px; }
+  fieldset { border: 1px solid var(--sim-border); border-radius: 14px; padding: 14px 16px; background: var(--sim-card); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03); }
+  legend { color: var(--sim-plum); font-weight: 700; padding: 0 8px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+  label { display: block; margin: 8px 0 4px; color: var(--sim-silver); font-size: 13px; font-weight: 500; }
+  select, button { background: var(--sim-warm); color: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 8px; padding: 8px 12px; font-size: 14px; font-family: inherit; }
+  button { cursor: pointer; font-weight: 600; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+  button:hover, button:focus { border-color: var(--sim-champagne); outline: none; background: var(--sim-cream); }
+  button.primary { background: var(--sim-champagne); color: #FFFFFF; border-color: var(--sim-champagne); font-weight: 700; letter-spacing: 0.5px; }
+  button.primary:hover { background: var(--sim-champagne-soft); border-color: var(--sim-champagne-soft); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  #scenario-now { color: var(--sim-champagne); font-weight: 700; }
+  #log { background: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 10px; padding: 10px; height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: var(--sim-cream); line-height: 1.5; }
+  .note { color: var(--sim-silver); font-size: 12px; margin: 8px 0 0; line-height: 1.4; }
+  ul.instructions { margin: 8px 0 0 20px; padding: 0; color: var(--sim-dark); line-height: 1.6; font-size: 13px; }
+  ul.instructions li { margin-bottom: 4px; }
+  ul.instructions strong { color: var(--sim-plum); }
 </style>
 </head>
 <body>
 <header class="page">
   <h1>K Scan Glasses Virtual Alpha Simulator</h1>
   <p>Desktop-browser stand-in for the Meta Ray-Ban Display runtime. No glasses, camera, or microphone required.</p>
+  <span class="demo-label">Investor Demo Alpha</span>
 </header>
 <div class="layout">
   <div class="frame-wrap">
