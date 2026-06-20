@@ -9,6 +9,7 @@ export const CAPTURE_TIMEOUT_MS = 10000;
 const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
 const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
+const BETA_STUB_DELAY_MS = 1500;
 
 // Bridge event names — documented canonical contract for capture lifecycle.
 // Outbound: capture.request (with requestId + source).
@@ -495,7 +496,6 @@ export async function requestBetaCapture(options = {}) {
 
   const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
   const requestId = createRequestId();
-  const delayMs = 1500;
 
   lastBetaMeta = {
     mode: 'beta-stub',
@@ -506,7 +506,7 @@ export async function requestBetaCapture(options = {}) {
   };
 
   if (options.forceTimeout === true) {
-    await waitMs(Math.max(delayMs, CAPTURE_TIMEOUT_MS + 100));
+    await waitMs(BETA_STUB_DELAY_MS + 100);
     lastBetaMeta = {
       ...lastBetaMeta,
       connectionState: 'error',
@@ -517,7 +517,7 @@ export async function requestBetaCapture(options = {}) {
     throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.');
   }
 
-  await waitMs(delayMs);
+  await waitMs(BETA_STUB_DELAY_MS);
 
   lastBetaMeta = {
     ...lastBetaMeta,

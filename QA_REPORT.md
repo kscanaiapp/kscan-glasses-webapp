@@ -1613,3 +1613,164 @@ git diff --check       # PASS — no whitespace errors
 ### Stop statement
 
 This is beta readiness scaffolding. Real glasses, real DAT, real backend, voice, connectivity, and Supabase sync still require controlled hardware/integration testing.
+
+
+---
+
+## Phase 1 Hardening Addendum — Environment & Safety Verification (2026-06-20)
+
+Run after all Phase 1 code changes to verify safety before execution.
+
+### 1. Environment Pattern Detection
+
+**Detected pattern:** Vite build-time env (`import.meta.env.VITE_...`)
+
+| Check | Result |
+|---|---|
+| `vite.config.js` inspected | No custom `envPrefix` set; default `VITE_` prefix is valid |
+| `src/api.js` uses `import.meta.env` | Confirmed |
+| `src/datBridge.js` uses `import.meta.env` | Confirmed |
+| `src/main.js` uses `import.meta.env` | Confirmed |
+| `src/authSession.js` uses `import.meta.env` | Confirmed |
+| `src/env.js` exists | No — not present |
+| `src/config.js` exists | No — not present |
+| `window.ENV` runtime pattern | Not found in source |
+| `process.env` in client code | **None found** (verified by `grep -r`) |
+| `.env` file exists | Yes (8 lines, gitignored) |
+| `.env.local` exists | No |
+
+**Conclusion:** The repo uses Vite build-time env only. All env variables use `VITE_` prefix. No `process.env` in client code. No `window.ENV` runtime system. Continue with `VITE_` variables.
+
+### 2. Vite Env Prefix Check
+
+| Check | Result |
+|---|---|
+| `vite.config.js` `envPrefix` | Not set (default `VITE_`) |
+| Custom prefix (e.g., `APP_`) | Not found |
+| Empty or unusual prefix | Not found |
+
+**Conclusion:** Default `VITE_` prefix is valid. All new env variables use `VITE_` prefix consistently.
+
+### 3. `process.env` Client Scan
+
+```bash
+grep -r "process\.env" src/
+```
+
+**Result:** No matches. All client-side env access uses `import.meta.env`.
+
+### 4. Deterministic Beta Bridge Stub Timing
+
+| Check | Result |
+|---|---|
+| Named constant `BETA_STUB_DELAY_MS` | **Yes** — added at `src/datBridge.js:12` |
+| Constant value | `1500` ms |
+| Normal success delay | `await waitMs(BETA_STUB_DELAY_MS)` → exactly 1500ms |
+| `forceTimeout` delay | `await waitMs(BETA_STUB_DELAY_MS + 100)` → exactly 1600ms |
+| Random delay used | No |
+| Gate | `import.meta.env.DEV && VITE_ENABLE_BETA_STUB === 'true'` |
+
+**Conclusion:** Timing is deterministic. `forceTimeout` rejects with `CAPTURE_TIMEOUT` after `BETA_STUB_DELAY_MS + 100` (1600ms), not after the full `CAPTURE_TIMEOUT_MS`.
+
+### 5. Mock Image Fixture Rule
+
+| Check | Result |
+|---|---|
+| Beta stub uses `generateMockImage()` | Yes — reuses existing canvas fixture |
+| Canvas size | 120×120 (standard variant) |
+| Content | Dark fill (`#000000`) + cyan rectangle (`#00E5FF`) + "MOCK DAT" text |
+| JPEG prefix | `data:image/jpeg;base64,` (valid) |
+| Contains faces | No |
+| Contains EXIF | No (canvas-generated, no EXIF) |
+| Real photograph | No |
+| Base64 logged | No |
+| Passes sanitizer | Yes — `validateCapturePayload()` gate applied |
+
+**Conclusion:** Mock fixture is safe. Reuses existing canvas generator. No new base64 blobs committed.
+
+### 6. Mock Mode Unification
+
+| Flag | Purpose | Beta Stub Relationship |
+|---|---|---|
+| `VITE_MOCK_DAT=true` | Existing mock capture (600ms delay, scenarios) | Primary mock path, unchanged |
+| `VITE_ENABLE_BETA_STUB=true` | New beta stub (1500ms delay, HUD testing) | **Separate** dev-only flag; does not conflict with `VITE_MOCK_DAT` |
+| `VITE_MOCK_ANALYZE=true` | Mock backend analyze | Unchanged |
+| `VITE_ENABLE_SIMULATOR=true` | Simulator badge + scenario overrides | Unchanged |
+
+**Conclusion:** `VITE_ENABLE_BETA_STUB` is a separate opt-in flag. It does not override or conflict with `VITE_MOCK_DAT`. The investor simulator (`VITE_MOCK_DAT`) continues to work as before. The beta stub is only active when explicitly enabled.
+
+### 7. Post-Build 600×600 Verification
+
+```bash
+grep -o "width:600px" dist/assets/*.css    # 2 matches
+grep -o "height:600px" dist/assets/*.css    # 2 matches
+grep -o "overflow:hidden" dist/assets/*.css # 2 matches
+```
+
+**Result:** All three patterns appear in the built CSS bundle (`dist/assets/main-*.css`):
+- `html,body{width:600px;height:600px;overflow:hidden}`
+- `#app{position:relative;width:600px;height:600px;overflow:hidden}`
+
+**Conclusion:** 600×600 viewport constraints preserved in production build.
+
+### 8. System Info Panel Sizing
+
+| Check | Result |
+|---|---|
+| Settings panel uses `.scroll-panel` | Yes |
+| `.scroll-panel` `max-height` | `480px` (bounded) |
+| `.scroll-panel` `overflow-y` | `auto` (internal scroll only) |
+| `.scroll-panel` `overflow-x` | `hidden` |
+| Root `html`, `body`, `#app` scroll | `overflow: hidden` (no page scroll) |
+| Back/Home button reachable | Yes — outside scroll panel in `.top-bar` |
+| Last status row reachable | Yes — `overflow-y: auto` with `max-height: 480px` |
+
+**Conclusion:** Panel is properly bounded. No root scroll introduced. D-pad navigation works through all rows.
+
+### 9. Manifest Verification
+
+| Check | Result |
+|---|---|
+| `public/manifest.webmanifest` | Exists (486 bytes) |
+| `dist/manifest.webmanifest` | Exists (486 bytes) — copied by build |
+| `index.html` references manifest | Yes: `<link rel="manifest" href="/manifest.webmanifest">` |
+| Icons referenced | Yes: 96px, 192px, 180px Apple touch icon |
+
+**Conclusion:** Manifest is present in both source and build. No regression.
+
+### 10. Web App Secret and Forbidden API Scan
+
+```bash
+grep -ri "getusermedia\|navigator\.mediadevices\|bluetoothadapter\|wifip2pmanager\|speechrecognizer\|mediarecorder\|webbluetooth\|navigator\.bluetooth" src/
+```
+
+**Result:** No matches. No forbidden camera, microphone, BLE, Wi-Fi, or voice APIs in source.
+
+```bash
+grep -ri "service_role\|PRIVATE_KEY\|GOOGLE_API_KEY\|GEMINI_API_KEY\|OPENAI_API_KEY\|sk-" src/ .env.example README.md QA_REPORT.md
+```
+
+**Result:** No dangerous secrets found. Only matches are documentation references to safe scanning practices.
+
+### 11. Final Validation Summary
+
+| Item | Detected / Result |
+|---|---|
+| **Detected env pattern** | Vite build-time `import.meta.env.VITE_...` |
+| **Detected Vite env prefix** | Default `VITE_` (no custom `envPrefix`) |
+| **Beta stub delay value** | `BETA_STUB_DELAY_MS = 1500` ms |
+| **Mock image fixture approach** | Existing `generateMockImage()` canvas fixture (120×120, dark + cyan rectangle, no faces) |
+| **Mock mode flag used** | `VITE_ENABLE_BETA_STUB` (separate from existing `VITE_MOCK_DAT`) |
+| **Post-build 600×600** | PASS — `width:600px`, `height:600px`, `overflow:hidden` all present in built CSS |
+| **Manifest verification** | PASS — `dist/manifest.webmanifest` exists, referenced in `index.html` |
+| **System Info panel sizing** | PASS — `max-height: 480px`, `overflow-y: auto`, no root scroll |
+| **Forbidden API scan** | PASS — no getUserMedia, navigator.mediaDevices, BLE, Wi-Fi, or voice APIs |
+| **Secret scan** | PASS — no service_role, PRIVATE_KEY, API keys, or sk- tokens in source |
+| **Tests** | 90/90 PASS, 0 FAIL |
+| **Build** | PASS — `dist/index.html` + `dist/simulator.html` |
+| **process.env scan** | PASS — none found in `src/` |
+| **git diff --check** | PASS |
+
+---
+
+**This is beta readiness scaffolding. Real glasses, real DAT, real backend, voice, connectivity, and Supabase sync still require controlled hardware/integration testing.**
