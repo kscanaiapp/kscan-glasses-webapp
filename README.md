@@ -380,6 +380,67 @@ Version requirements:
 Developer Mode steps:
 - "Meta AI app -> Settings/App Info -> tap app version 5x": `UNKNOWN` from accessible source in this environment; verify against authenticated official docs before release testing.
 
+## Staging Deployment
+
+### Build output
+
+- `npm run build` produces `dist/` with both `index.html` and `simulator.html`.
+- `dist/` is `.gitignore`d and must not be committed.
+- Model and WASM assets are copied into `dist/` by the build.
+
+### Vercel staging settings (recommended)
+
+If deploying to Vercel for staging preview:
+
+| Setting | Value |
+|---|---|
+| Framework preset | Vite or Other |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Install command | `npm install` or `npm ci` |
+| Branch | `phase-11-virtual-alpha-infra` (or a dedicated staging branch) |
+| Environment | Preview only — never production |
+| HTTPS | Required (Vercel provides this automatically) |
+
+### Staging environment variables
+
+Create a `.env` file (gitignored) with staging-safe values:
+
+```bash
+VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com
+VITE_ENABLE_SIMULATOR=true
+VITE_MOCK_DAT=false
+VITE_MOCK_ANALYZE=false
+```
+
+- `VITE_ENABLE_SIMULATOR=true` allows the simulator badge and scenario overrides in the staging build.
+- `VITE_MOCK_DAT=false` and `VITE_MOCK_ANALYZE=false` ensure the staging build uses real bridge and backend paths.
+- Do not commit `.env` or any file containing real values.
+- Vite env vars are baked into the bundle at build time; any change requires rebuild and redeploy.
+
+### Backend CORS risk
+
+The deployed staging origin must be allowed by the K Scan backend CORS policy before `POST /api/analyze` will succeed. If CORS fails:
+
+1. Note the exact failing origin and request path.
+2. Report to the backend team for CORS allowlist update.
+3. Do not modify backend in this repo.
+
+### QR / deeplink prep
+
+- QR codes should point to the **public HTTPS staging URL** only.
+- The QR is scanned by the **tester's phone / Meta AI companion app**, not the glasses.
+- Do not include secrets, tokens, or private query params in the URL.
+- QR validation is blocked until the public HTTPS staging URL exists.
+
+### Deployment rules
+
+- **Do not deploy to production.**
+- **Do not promote preview to production.**
+- **Do not change DNS.**
+- Deploy to **Preview / Staging only**.
+- Physical glasses validation remains blocked until hardware is available.
+
 ## Manual QA Checklist
 
 Browser/Desktop:

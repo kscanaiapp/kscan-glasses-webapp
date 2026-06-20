@@ -1110,3 +1110,351 @@ values remain unvalidated until HTTPS staging + phone/glasses testing.
 | `git diff --check` | LF/CRLF warning only (Windows normal) |
 | Working tree | Clean after commits |
 | App bundle size | 13.40 KB gzip — well under 150 KB threshold |
+
+---
+
+# Phase 17 — HTTPS Staging Deployment Prep + Browser Staging Validation
+
+## Scope
+
+Prepare the virtual alpha for safe HTTPS staging deployment. No production deploy.
+No physical device changes. No backend changes. Docs and configuration only.
+
+## Preflight status
+
+| Check | Result |
+|---|---|
+| Branch | `phase-11-virtual-alpha-infra` ✅ |
+| Latest commit | `d2d9f4b test(mrbd): add bridge failure-mode harness` ✅ |
+| Commit pushed | `d2d9f4b` confirmed on `origin/phase-11-virtual-alpha-infra` ✅ |
+| Working tree | Clean ✅ |
+| `npm test` | PASS (90 contract, 0 fail, 6 pre-existing WARNs) ✅ |
+| `npm run build` | PASS (43.61 kB / 13.40 kB gzip) ✅ |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| Model/WASM assets | ✅ Present in `dist/` |
+
+## Build configuration review
+
+| File | Status | Notes |
+|---|---|---|
+| `package.json` | ✅ | `build: "vite build"`, `preview: "vite preview"`, `test` chains verify+build+static+contract |
+| `vite.config.js` | ✅ | MPA config with `main` (index.html) and `simulator` (simulator.html) inputs |
+| `.env.example` | ✅ | Clear sections: Required, Dev-only, Staging-only, Mobile bridge, Reserved |
+| `vercel.json` | ❌ Not present | May be needed if deploying to Vercel |
+| `netlify.toml` | ❌ Not present | Not needed unless deploying to Netlify |
+
+## Staging environment variable plan
+
+| Variable | Required | Staging value | Dev-only | Secret | Notes |
+|---|---|---|---|---|---|
+| `VITE_KSCAN_BACKEND_URL` | ✅ | `https://kscan-app-1.onrender.com` | No | No | Backend analyze endpoint. Must be HTTPS. |
+| `VITE_SUPABASE_URL` | Optional | (empty) | No | No | Leave empty for stub/guest mode. |
+| `VITE_SUPABASE_ANON_KEY` | Optional | (empty) | No | No | Leave empty for stub/guest mode. |
+| `VITE_DAT_PARENT_ORIGIN` | Optional | (empty) | No | No | MRBD host origin unknown until device testing. |
+| `VITE_ENABLE_SIMULATOR` | Optional | `true` | No | No | Set `true` for staging demo scenarios. Never in production. |
+| `VITE_MOCK_DAT` | Optional | `false` | Yes | No | Must be `false` in staging. Dev-only. |
+| `VITE_MOCK_ANALYZE` | Optional | `false` | Yes | No | Must be `false` in staging. Dev-only. |
+| `VITE_MOCK_ANALYZE_DELAY_MS` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_ANALYZE_ERROR` | Optional | `false` | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_SCENARIO` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_DELAY_MS` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_IMAGE_VARIANT` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_ENABLE_MOBILE_BRIDGE` | Optional | `false` | No | No | Off by default. ws:// localhost only. |
+| `VITE_MOBILE_BRIDGE_WS_URL` | Optional | `ws://localhost:8787` | No | No | ws:// localhost/LAN only. Never public. |
+| `VITE_META_APP_ID` | Optional | (absent) | No | No | Reserved. Not used yet. |
+| `VITE_META_CLIENT_TOKEN` | Optional | (absent) | No | No | Reserved. Not used yet. |
+
+**Staging env example** (safe, no secrets):
+
+```bash
+VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com
+VITE_ENABLE_SIMULATOR=true
+VITE_MOCK_DAT=false
+VITE_MOCK_ANALYZE=false
+```
+
+**Important:** Vite env vars are baked into build artifacts at build time. Any env change requires a new `npm run build` and redeploy.
+
+## Backend CORS staging risk
+
+**This is a known blocker.** The deployed staging URL must be allowed by the K Scan backend CORS policy before `POST /api/analyze` will succeed from the staging origin.
+
+- Do not modify backend in this repo.
+- Staging validation must test `POST /api/analyze` from the deployed origin.
+- If CORS fails, document the exact failing origin and request path for the backend team.
+- The backend is at `https://kscan-app-1.onrender.com/api/analyze`.
+- Render cold starts can add 30–60s warm-up; UI already surfaces friendly timeout errors.
+
+## Staging browser QA checklist
+
+Open the staging HTTPS URL in Chrome/Edge with DevTools viewport set to 600×600.
+Use only keyboard: ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Enter, Escape.
+
+- [ ] `/` loads with no console errors.
+- [ ] `/simulator.html` loads if `VITE_ENABLE_SIMULATOR=true`.
+- [ ] No asset 404s in Network tab.
+- [ ] 600×600 viewport is enforced; no body scrollbars.
+- [ ] D-pad/keyboard navigation works on all screens.
+- [ ] Focus ring is visible on all `.focusable` elements.
+- [ ] **Success scenario:** scan → processing → results → save → library shows item.
+- [ ] **Empty scenario:** backend returns empty products → "No matches found. Try another angle."
+- [ ] **Backend error:** HTTP 500 → friendly error with retry.
+- [ ] **Timeout:** no response → "Unable to capture. Try again."
+- [ ] **Network unavailable:** backend unreachable → "Unable to connect. Try again."
+- [ ] **Invalid capture:** non-JPEG payload → "Couldn't read image. Try again."
+- [ ] **Cancel:** processing → cancel → clean home, no stale results.
+- [ ] **Oversized image:** payload exceeds 8MB → "Image too large. Try again."
+- [ ] **Phone asleep:** no response → same as timeout.
+- [ ] **Late success:** bridge responds after timeout → ignored by app.
+- [ ] **Mismatched requestId:** ignored by app, app times out.
+- [ ] No base64, image dimensions, face metadata, tokens, or secrets in console logs.
+- [ ] Backend analyze call only sends `{ image: sanitizedImageString }`.
+- [ ] Physical glasses validation remains blocked and unclaimed.
+
+## QR / deeplink staging prep
+
+- QR/deeplink should use the **public HTTPS staging URL** only.
+- The QR is scanned by the **tester's phone / Meta AI companion app**, not the glasses.
+- Do not include secrets, auth tokens, or private query params in the URL.
+- Do not commit generated QR images unless explicitly approved.
+- QR/deeplink validation is **blocked until public HTTPS staging exists**.
+- Device validation is **blocked until physical glasses and phone/DAT path are available**.
+
+## Vercel staging deployment settings (if user approves)
+
+If deploying to Vercel:
+
+| Setting | Value |
+|---|---|
+| Framework preset | Vite or Other |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Install command | `npm install` or `npm ci` |
+| Branch | `phase-11-virtual-alpha-infra` (or staging branch) |
+| Environment | Preview / Staging only |
+| HTTPS | Required (Vercel provides this) |
+
+**Do not deploy to production. Do not promote preview to production. Do not change DNS.**
+
+## Invariants preserved
+
+| Invariant | Status |
+|---|---|
+| 600×600 HUD | ✅ `html/body/#app` fixed at 600×600 with `overflow: hidden` |
+| D-pad/keyboard primary | ✅ All interactive elements use `.focusable` |
+| No text-shadow | ✅ Removed in Phase 15 |
+| No translucent alpha panels | ✅ Replaced with opaque `#0A0A0A` / `#111111` |
+| No full-page scroll | ✅ Internal scroll only in `.scroll-panel` |
+| `dist/index.html` builds | ✅ |
+| `dist/simulator.html` builds | ✅ |
+| Model/WASM assets | ✅ Present in `dist/` |
+| Sanitizer before analyze | ✅ Enforced by `scanPipeline.js` |
+| Analyze payload `{ image: sanitizedImageString }` | ✅ Preserved in `api.js` |
+| No base64/image payloads/logs | ✅ No secrets in source; no payload logging |
+| No face metadata logs | ✅ No exports outside sanitizer |
+| No tokens exposed | ✅ No secrets in `.env.example` |
+
+## Remaining blockers
+
+| Blocker | Status |
+|---|---|
+| Public HTTPS staging URL | ❌ Not created |
+| Backend CORS from deployed origin | ❌ Unknown — needs testing |
+| Physical Meta Ray-Ban Display glasses | ❌ Not available |
+| Real DAT/companion phone bridge | ❌ Not implemented |
+| Real latency measurement (10s timeout) | ❌ Unvalidated |
+| Phone sleep/error propagation | ❌ Unvalidated |
+| QR/deeplink launch | ❌ Blocked until HTTPS URL exists |
+| Manual 600×600 browser visual QA | ❌ HUMAN QA REQUIRED |
+
+## Explicit statement
+
+This is a **virtual alpha / browser-testable prototype**. It is not physically
+validated on Meta Ray-Ban Display glasses. No end-to-end test has proven:
+`web app capture.request → mobile/DAT bridge → capture.success`. Localhost
+simulator tests do not prove phone/glasses bridge behavior.
+
+## Validation summary
+
+| Check | Result |
+
+
+---
+
+# Phase 17 — HTTPS Staging Deployment Prep + Browser Staging Validation
+
+## Scope
+
+Prepare the virtual alpha for safe HTTPS staging deployment. No production deploy.
+No physical device changes. No backend changes. Docs and configuration only.
+
+## Preflight status
+
+| Check | Result |
+|---|---|
+| Branch | `phase-11-virtual-alpha-infra` ✅ |
+| Latest commit | `d2d9f4b test(mrbd): add bridge failure-mode harness` ✅ |
+| Commit pushed | `d2d9f4b` confirmed on `origin/phase-11-virtual-alpha-infra` ✅ |
+| Working tree | Clean ✅ |
+| `npm test` | PASS (90 contract, 0 fail, 6 pre-existing WARNs) ✅ |
+| `npm run build` | PASS (43.61 kB / 13.40 kB gzip) ✅ |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| Model/WASM assets | ✅ Present in `dist/` |
+
+## Build configuration review
+
+| File | Status | Notes |
+|---|---|---|
+| `package.json` | ✅ | `build: "vite build"`, `preview: "vite preview"`, `test` chains verify+build+static+contract |
+| `vite.config.js` | ✅ | MPA config with `main` (index.html) and `simulator` (simulator.html) inputs |
+| `.env.example` | ✅ | Clear sections: Required, Dev-only, Staging-only, Mobile bridge, Reserved |
+| `vercel.json` | ❌ Not present | May be needed if deploying to Vercel |
+| `netlify.toml` | ❌ Not present | Not needed unless deploying to Netlify |
+
+## Staging environment variable plan
+
+| Variable | Required | Staging value | Dev-only | Secret | Notes |
+|---|---|---|---|---|---|
+| `VITE_KSCAN_BACKEND_URL` | ✅ | `https://kscan-app-1.onrender.com` | No | No | Backend analyze endpoint. Must be HTTPS. |
+| `VITE_SUPABASE_URL` | Optional | (empty) | No | No | Leave empty for stub/guest mode. |
+| `VITE_SUPABASE_ANON_KEY` | Optional | (empty) | No | No | Leave empty for stub/guest mode. |
+| `VITE_DAT_PARENT_ORIGIN` | Optional | (empty) | No | No | MRBD host origin unknown until device testing. |
+| `VITE_ENABLE_SIMULATOR` | Optional | `true` | No | No | Set `true` for staging demo scenarios. Never in production. |
+| `VITE_MOCK_DAT` | Optional | `false` | Yes | No | Must be `false` in staging. Dev-only. |
+| `VITE_MOCK_ANALYZE` | Optional | `false` | Yes | No | Must be `false` in staging. Dev-only. |
+| `VITE_MOCK_ANALYZE_DELAY_MS` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_ANALYZE_ERROR` | Optional | `false` | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_SCENARIO` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_DELAY_MS` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_MOCK_DAT_IMAGE_VARIANT` | Optional | (absent) | Yes | No | Dev-only. |
+| `VITE_ENABLE_MOBILE_BRIDGE` | Optional | `false` | No | No | Off by default. ws:// localhost only. |
+| `VITE_MOBILE_BRIDGE_WS_URL` | Optional | `ws://localhost:8787` | No | No | ws:// localhost/LAN only. Never public. |
+| `VITE_META_APP_ID` | Optional | (absent) | No | No | Reserved. Not used yet. |
+| `VITE_META_CLIENT_TOKEN` | Optional | (absent) | No | No | Reserved. Not used yet. |
+
+**Staging env example** (safe, no secrets):
+
+```bash
+VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com
+VITE_ENABLE_SIMULATOR=true
+VITE_MOCK_DAT=false
+VITE_MOCK_ANALYZE=false
+```
+
+**Important:** Vite env vars are baked into build artifacts at build time. Any env change requires a new `npm run build` and redeploy.
+
+## Backend CORS staging risk
+
+**This is a known blocker.** The deployed staging URL must be allowed by the K Scan backend CORS policy before `POST /api/analyze` will succeed from the staging origin.
+
+- Do not modify backend in this repo.
+- Staging validation must test `POST /api/analyze` from the deployed origin.
+- If CORS fails, document the exact failing origin and request path for the backend team.
+- The backend is at `https://kscan-app-1.onrender.com/api/analyze`.
+- Render cold starts can add 30–60s warm-up; UI already surfaces friendly timeout errors.
+
+## Staging browser QA checklist
+
+Open the staging HTTPS URL in Chrome/Edge with DevTools viewport set to 600×600.
+Use only keyboard: ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Enter, Escape.
+
+- [ ] `/` loads with no console errors.
+- [ ] `/simulator.html` loads if `VITE_ENABLE_SIMULATOR=true`.
+- [ ] No asset 404s in Network tab.
+- [ ] 600×600 viewport is enforced; no body scrollbars.
+- [ ] D-pad/keyboard navigation works on all screens.
+- [ ] Focus ring is visible on all `.focusable` elements.
+- [ ] **Success scenario:** scan → processing → results → save → library shows item.
+- [ ] **Empty scenario:** backend returns empty products → "No matches found. Try another angle."
+- [ ] **Backend error:** HTTP 500 → friendly error with retry.
+- [ ] **Timeout:** no response → "Unable to capture. Try again."
+- [ ] **Network unavailable:** backend unreachable → "Unable to connect. Try again."
+- [ ] **Invalid capture:** non-JPEG payload → "Couldn't read image. Try again."
+- [ ] **Cancel:** processing → cancel → clean home, no stale results.
+- [ ] **Oversized image:** payload exceeds 8MB → "Image too large. Try again."
+- [ ] **Phone asleep:** no response → same as timeout.
+- [ ] **Late success:** bridge responds after timeout → ignored by app.
+- [ ] **Mismatched requestId:** ignored by app, app times out.
+- [ ] No base64, image dimensions, face metadata, tokens, or secrets in console logs.
+- [ ] Backend analyze call only sends `{ image: sanitizedImageString }`.
+- [ ] Physical glasses validation remains blocked and unclaimed.
+
+## QR / deeplink staging prep
+
+- QR/deeplink should use the **public HTTPS staging URL** only.
+- The QR is scanned by the **tester's phone / Meta AI companion app**, not the glasses.
+- Do not include secrets, auth tokens, or private query params in the URL.
+- Do not commit generated QR images unless explicitly approved.
+- QR/deeplink validation is **blocked until public HTTPS staging exists**.
+- Device validation is **blocked until physical glasses and phone/DAT path are available**.
+
+## Vercel staging deployment settings (if user approves)
+
+If deploying to Vercel:
+
+| Setting | Value |
+|---|---|
+| Framework preset | Vite or Other |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Install command | `npm install` or `npm ci` |
+| Branch | `phase-11-virtual-alpha-infra` (or staging branch) |
+| Environment | Preview / Staging only |
+| HTTPS | Required (Vercel provides this) |
+
+**Do not deploy to production. Do not promote preview to production. Do not change DNS.**
+
+## Invariants preserved
+
+| Invariant | Status |
+|---|---|
+| 600×600 HUD | ✅ `html/body/#app` fixed at 600×600 with `overflow: hidden` |
+| D-pad/keyboard primary | ✅ All interactive elements use `.focusable` |
+| No text-shadow | ✅ Removed in Phase 15 |
+| No translucent alpha panels | ✅ Replaced with opaque `#0A0A0A` / `#111111` |
+| No full-page scroll | ✅ Internal scroll only in `.scroll-panel` |
+| `dist/index.html` builds | ✅ |
+| `dist/simulator.html` builds | ✅ |
+| Model/WASM assets | ✅ Present in `dist/` |
+| Sanitizer before analyze | ✅ Enforced by `scanPipeline.js` |
+| Analyze payload `{ image: sanitizedImageString }` | ✅ Preserved in `api.js` |
+| No base64/image payloads/logs | ✅ No secrets in source; no payload logging |
+| No face metadata logs | ✅ No exports outside sanitizer |
+| No tokens exposed | ✅ No secrets in `.env.example` |
+
+## Remaining blockers
+
+| Blocker | Status |
+|---|---|
+| Public HTTPS staging URL | ❌ Not created |
+| Backend CORS from deployed origin | ❌ Unknown — needs testing |
+| Physical Meta Ray-Ban Display glasses | ❌ Not available |
+| Real DAT/companion phone bridge | ❌ Not implemented |
+| Real latency measurement (10s timeout) | ❌ Unvalidated |
+| Phone sleep/error propagation | ❌ Unvalidated |
+| QR/deeplink launch | ❌ Blocked until HTTPS URL exists |
+| Manual 600×600 browser visual QA | ❌ HUMAN QA REQUIRED |
+
+## Explicit statement
+
+This is a **virtual alpha / browser-testable prototype**. It is not physically
+validated on Meta Ray-Ban Display glasses. No end-to-end test has proven:
+`web app capture.request → mobile/DAT bridge → capture.success`. Localhost
+simulator tests do not prove phone/glasses bridge behavior.
+
+## Validation summary
+
+| Check | Result |
+|---|---|
+| `npm test` | PASS (90 contract, 0 fail, 6 pre-existing WARNs) |
+| `npm run build` | PASS (43.61 kB / 13.40 kB gzip) |
+| `dist/index.html` | ✅ Exists |
+| `dist/simulator.html` | ✅ Exists |
+| `git diff --check` | LF/CRLF warning only (Windows normal) |
+| Working tree | Clean after commits |
+| App bundle size | 13.40 KB gzip — well under 150 KB threshold |
+| No secrets introduced | ✅ Confirmed |
+| No backend contract change | ✅ Confirmed |
+| No dependency changes | ✅ Confirmed |
