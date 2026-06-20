@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
-  <title>K Scan Glasses</title>
+  <title>K Scan Glasses HUD</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
@@ -13,7 +13,7 @@
 <body>
   <main id="app" aria-live="polite">
     <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
-      <div class="reticle-corners"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="reticle-corners reticle-warm"><div class="rc-bl"></div><div class="rc-br"></div></div>
       <div class="scan-target"><div class="st-dot"></div></div>
       <div class="home-header">
         <div class="home-brand">K Scan</div>
@@ -23,14 +23,19 @@
         <button id="scan-btn" class="btn btn-primary focusable">Scan</button>
         <p class="subtitle">Use D-pad arrows and Enter</p>
       </div>
+      <div class="home-status-strips" aria-label="System status">
+        <div class="status-pill"><div class="dot ok" aria-hidden="true"></div>Privacy gate passed · mock</div>
+        <div class="status-pill"><div class="dot mock" aria-hidden="true"></div>Bridge: mock phone handoff</div>
+      </div>
       <nav class="home-nav">
-        <button id="library-btn" class="home-nav-btn focusable">Library</button>
+        <button id="library-btn" class="home-nav-btn focusable">History</button>
         <button id="settings-btn" class="home-nav-btn focusable">Settings</button>
       </nav>
+      <p class="home-investor-note">Investor preview · Mock data only · No camera or microphone access</p>
     </section>
 
     <section id="processing" class="screen hidden" aria-label="Processing" aria-hidden="true">
-      <div class="reticle-corners scan-active"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="reticle-corners scan-active reticle-warm"><div class="rc-bl"></div><div class="rc-br"></div></div>
       <div class="scan-target"><div class="st-dot"></div></div>
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
@@ -43,8 +48,9 @@
     <section id="results" class="screen hidden" aria-label="Results" aria-hidden="true">
       <header class="top-bar">
         <button id="results-back-btn" class="btn btn-ghost focusable">Back</button>
-        <h1>Results</h1>
+        <h1>Style Match</h1>
       </header>
+      <div id="results-match" class="scroll-panel" style="max-height: 220px; flex: 0 0 auto; margin-bottom: 0;" aria-label="Style Match"></div>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
         <p class="empty-title">No matches found.</p>
@@ -56,10 +62,10 @@
     <section id="library" class="screen hidden" aria-label="Library" aria-hidden="true">
       <header class="top-bar">
         <button id="library-back-btn" class="btn btn-ghost focusable">Back</button>
-        <h1>Library</h1>
+        <h1>History</h1>
       </header>
       <div id="library-panel" class="scroll-panel">
-        <h2>Saved Items</h2>
+        <h2>Saved Looks</h2>
         <h2>Scan History</h2>
       </div>
     </section>

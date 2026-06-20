@@ -2,13 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>K Scan Glasses Virtual Alpha Simulator (dev only)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K Scan Glasses HUD · Projected glasses demo</title>
 <!--
-  DEV-ONLY parent-frame DAT bridge simulator — the demo control room.
+  DEV-ONLY parent-frame DAT bridge simulator — investor-ready demo control room.
 
-  Lives at the repo root on purpose: the Vite dev server serves it at
-  /simulator.html, and `vite build` now bundles it into dist/ via
-  vite.config.js so testers can access it from a deployed staging URL.
+  Lives at the repo root: Vite serves it at /simulator.html, and `vite build`
+  bundles it into dist/ via vite.config.js so testers can access it from a
+  deployed staging URL.
 
   It loads the app in a 600×600 iframe with ?dat=parent (forces the real
   postMessage bridge path even when VITE_MOCK_DAT=true) and answers the
@@ -27,60 +28,110 @@
     --sim-plum-light: #5C1A40;
     --sim-champagne: #C58A3A;
     --sim-champagne-soft: #D6A75C;
+    --sim-pearl: #F3EDE4;
+    --sim-gold: #D4A843;
+    --sim-gold-soft: #E8C87A;
     --sim-border: #E8D8C3;
     --sim-silver: #7A6E5E;
     --sim-silver-light: #9A8E7E;
     --sim-dark: #1A1510;
     --sim-card: #FFFFFF;
+    --sim-glass: rgba(255, 255, 255, 0.72);
+    --sim-glass-border: rgba(197, 138, 58, 0.25);
   }
   body { margin: 0; background: var(--sim-cream); color: var(--sim-dark); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; -webkit-font-smoothing: antialiased; }
-  header.page { padding: 18px 24px 0; }
-  header.page h1 { margin: 0; font-size: 22px; color: var(--sim-plum); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* ── Header ── */
+  header.page { padding: 22px 24px 0; max-width: 1200px; margin: 0 auto; }
+  header.page h1 { margin: 0; font-size: 24px; color: var(--sim-plum); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; }
   header.page h1::after { content: ""; display: block; width: 40px; height: 2px; background: var(--sim-champagne); margin: 8px 0 0; border-radius: 1px; }
-  header.page p { margin: 8px 0 0; color: var(--sim-silver); font-size: 13px; line-height: 1.5; max-width: 640px; }
-  .demo-label { display: inline-block; margin-top: 8px; padding: 4px 10px; border: 1px solid var(--sim-champagne); border-radius: 6px; color: var(--sim-champagne); font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: rgba(197, 138, 58, 0.06); }
-  .layout { display: flex; gap: 20px; padding: 20px 24px 24px; align-items: flex-start; flex-wrap: wrap; }
-  .frame-wrap { border: 1px solid var(--sim-border); border-radius: 16px; overflow: hidden; box-shadow: 0 0 40px rgba(58, 16, 40, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08); }
-  .frame-head { background: var(--sim-plum); color: var(--sim-cream); font-weight: 700; padding: 6px 14px; font-size: 12px; letter-spacing: 1.5px; display: flex; justify-content: space-between; text-transform: uppercase; }
+  header.page .subtitle { margin: 8px 0 0; color: var(--sim-silver); font-size: 14px; line-height: 1.5; max-width: 640px; font-weight: 500; }
+  header.page .tagline { margin: 4px 0 0; color: var(--sim-plum-light); font-size: 15px; font-weight: 600; line-height: 1.5; max-width: 640px; }
+  .demo-label { display: inline-block; margin-top: 10px; padding: 5px 12px; border: 1px solid var(--sim-champagne); border-radius: 8px; color: var(--sim-champagne); font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; background: rgba(197, 138, 58, 0.06); }
+  .disclosure { margin-top: 8px; color: var(--sim-silver-light); font-size: 12px; line-height: 1.5; max-width: 640px; }
+
+  /* ── Layout ── */
+  .layout { display: flex; gap: 24px; padding: 22px 24px 28px; align-items: flex-start; flex-wrap: wrap; max-width: 1200px; margin: 0 auto; }
+
+  /* ── Projected HUD Frame ── */
+  .hud-frame { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .hud-frame-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-radius: 12px; background: rgba(58, 16, 40, 0.85); color: var(--sim-cream); font-weight: 700; font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; border: 1px solid rgba(212, 168, 67, 0.3); box-shadow: 0 4px 20px rgba(58, 16, 40, 0.15); }
+  .hud-frame-head .hud-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sim-gold); box-shadow: 0 0 8px rgba(212, 168, 67, 0.6); animation: hud-dot-pulse 2s ease-in-out infinite; }
+  @keyframes hud-dot-pulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 1; } }
+  .frame-wrap { border: 1px solid var(--sim-border); border-radius: 20px; overflow: hidden; box-shadow: 0 0 60px rgba(58, 16, 40, 0.08), 0 12px 40px rgba(0, 0, 0, 0.1); position: relative; }
+  .frame-wrap::before { content: ""; position: absolute; inset: 0; border-radius: 20px; box-shadow: inset 0 0 0 1px rgba(212, 168, 67, 0.15); pointer-events: none; z-index: 10; }
   iframe { width: 600px; height: 600px; border: 0; display: block; background: #000; }
-  .panel { flex: 1; min-width: 360px; max-width: 540px; display: flex; flex-direction: column; gap: 14px; }
-  fieldset { border: 1px solid var(--sim-border); border-radius: 14px; padding: 14px 16px; background: var(--sim-card); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03); }
-  legend { color: var(--sim-plum); font-weight: 700; padding: 0 8px; font-size: 13px; letter-spacing: 1px; text-transform: uppercase; }
+
+  /* ── Status Strips ── */
+  .status-strips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; width: 100%; }
+  .status-strip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 10px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 1px solid var(--sim-glass-border); background: var(--sim-glass); color: var(--sim-plum); box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+  .status-strip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sim-champagne); box-shadow: 0 0 6px rgba(197, 138, 58, 0.4); }
+  .status-strip .dot.ok { background: #2ECC71; box-shadow: 0 0 6px rgba(46, 204, 113, 0.4); }
+  .status-strip .dot.mock { background: var(--sim-gold); box-shadow: 0 0 6px rgba(212, 168, 67, 0.5); }
+
+  /* ── Panel ── */
+  .panel { flex: 1; min-width: 340px; max-width: 520px; display: flex; flex-direction: column; gap: 14px; }
+  fieldset { border: 1px solid var(--sim-border); border-radius: 16px; padding: 16px 18px; background: var(--sim-card); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03); }
+  legend { color: var(--sim-plum); font-weight: 700; padding: 0 8px; font-size: 12px; letter-spacing: 1px; text-transform: uppercase; }
   label { display: block; margin: 8px 0 4px; color: var(--sim-silver); font-size: 13px; font-weight: 500; }
-  select, button { background: var(--sim-warm); color: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 8px; padding: 8px 12px; font-size: 14px; font-family: inherit; }
-  button { cursor: pointer; font-weight: 600; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
-  button:hover, button:focus { border-color: var(--sim-champagne); outline: none; background: var(--sim-cream); }
-  button.primary { background: var(--sim-champagne); color: #FFFFFF; border-color: var(--sim-champagne); font-weight: 700; letter-spacing: 0.5px; }
-  button.primary:hover { background: var(--sim-champagne-soft); border-color: var(--sim-champagne-soft); }
+  select, button { background: var(--sim-warm); color: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 10px; padding: 9px 14px; font-size: 14px; font-family: inherit; }
+  button { cursor: pointer; font-weight: 600; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.1s ease; }
+  button:hover, button:focus { border-color: var(--sim-champagne); outline: none; background: var(--sim-cream); transform: translateY(-1px); }
+  button.primary { background: var(--sim-champagne); color: #FFFFFF; border-color: var(--sim-champagne); font-weight: 700; letter-spacing: 0.5px; box-shadow: 0 4px 12px rgba(197, 138, 58, 0.15); }
+  button.primary:hover { background: var(--sim-champagne-soft); border-color: var(--sim-champagne-soft); box-shadow: 0 6px 16px rgba(197, 138, 58, 0.2); }
+  button.secondary { background: var(--sim-plum); color: var(--sim-cream); border-color: var(--sim-plum); font-weight: 700; letter-spacing: 0.5px; }
+  button.secondary:hover { background: var(--sim-plum-light); border-color: var(--sim-plum-light); }
   .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .btn-row + .note { margin-top: 10px; }
   #scenario-now { color: var(--sim-champagne); font-weight: 700; }
-  #log { background: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 10px; padding: 10px; height: 200px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: var(--sim-cream); line-height: 1.5; }
+  #log { background: var(--sim-dark); border: 1px solid var(--sim-border); border-radius: 12px; padding: 12px; height: 180px; overflow-y: auto; font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; color: var(--sim-cream); line-height: 1.5; }
   .note { color: var(--sim-silver); font-size: 12px; margin: 8px 0 0; line-height: 1.4; }
   ul.instructions { margin: 8px 0 0 20px; padding: 0; color: var(--sim-dark); line-height: 1.6; font-size: 13px; }
   ul.instructions li { margin-bottom: 4px; }
   ul.instructions strong { color: var(--sim-plum); }
+
+  /* ── Section grouping ── */
+  .section-primary { border-color: rgba(197, 138, 58, 0.4); background: rgba(255, 255, 255, 0.9); }
+  .section-primary legend { color: var(--sim-champagne); }
+  .section-advanced { border-color: rgba(122, 110, 94, 0.25); background: rgba(250, 244, 234, 0.6); }
+  .section-advanced legend { color: var(--sim-silver); font-size: 11px; }
+
+  /* ── Mobile ── */
+  @media (max-width: 720px) {
+    iframe { width: 100%; max-width: 600px; height: 500px; }
+    .layout { padding: 16px; }
+    .panel { min-width: 100%; max-width: 100%; }
+  }
 </style>
 </head>
 <body>
 <header class="page">
-  <h1>K Scan Glasses Virtual Alpha Simulator</h1>
-  <p>Desktop-browser stand-in for the Meta Ray-Ban Display runtime. No glasses, camera, or microphone required.</p>
+  <h1>K Scan Glasses HUD</h1>
+  <p class="tagline">Projected glasses demo · Privacy-first style intelligence for wearable commerce</p>
+  <p class="subtitle">Luxury fashion-tech visual commerce · Investor preview</p>
   <span class="demo-label">Investor Demo Alpha</span>
+  <p class="disclosure">Public investor preview · Mock bridge · Mock analysis · No camera or microphone access</p>
 </header>
 <div class="layout">
-  <div class="frame-wrap">
-    <div class="frame-head"><span>K Scan Glasses App — 600×600</span><span>SIM</span></div>
-    <iframe id="app-frame" title="K Scan app under simulation"></iframe>
+  <div class="hud-frame">
+    <div class="hud-frame-head"><div class="hud-dot" aria-hidden="true"></div><span>K Scan Glasses App — 600×600</span><span>SIM</span></div>
+    <div class="frame-wrap">
+      <iframe id="app-frame" title="K Scan app under simulation"></iframe>
+    </div>
+    <div class="status-strips">
+      <div class="status-strip" id="privacy-strip"><div class="dot ok" aria-hidden="true"></div>Privacy Gate: simulated local check</div>
+      <div class="status-strip" id="bridge-strip"><div class="dot mock" aria-hidden="true"></div>Phone Bridge: simulated</div>
+    </div>
   </div>
 
   <div class="panel">
-    <fieldset>
-      <legend>How to demo</legend>
+    <fieldset class="section-primary">
+      <legend>Primary Demo Flow</legend>
       <ul class="instructions">
         <li>Click <strong>Start Scan</strong> below, or click inside the app and press <strong>Enter</strong> on “K Scan”.</li>
         <li><strong>Arrow keys</strong> move focus. <strong>Enter</strong> selects.</li>
         <li><strong>Escape</strong> or <strong>ArrowLeft</strong> goes back.</li>
-        <li>Pick a capture scenario, then scan again to demo failures.</li>
+        <li>Pick a scenario, then scan again to test different flows.</li>
       </ul>
       <div class="btn-row">
         <button id="start-scan" class="primary">Start Scan</button>
@@ -89,20 +140,20 @@
     </fieldset>
 
     <fieldset>
-      <legend>Capture scenario</legend>
-      <p>Active: <span id="scenario-now">success</span></p>
-      <label for="capture-scenario">Respond to capture-photo with:</label>
+      <legend>Scenario Controls</legend>
+      <p>Active capture: <span id="scenario-now">success</span></p>
+      <label for="capture-scenario">Capture scenario:</label>
       <select id="capture-scenario">
         <option value="success">success — synthetic fashion fixture</option>
-        <option value="oversized">oversized — exceeds bridge size cap (rejected before analyze)</option>
+        <option value="oversized">oversized — exceeds bridge size cap</option>
         <option value="invalid">invalid payload — not a data URL</option>
         <option value="cancel">cancelled capture</option>
         <option value="error">generic capture error</option>
         <option value="permission">permission denied</option>
         <option value="timeout">timeout — never respond</option>
-        <option value="phone-asleep">phone asleep — no response (same as timeout)</option>
-        <option value="late-success">late success — respond after app timeout (ignored)</option>
-        <option value="mismatched-id">mismatched requestId — ignored by app</option>
+        <option value="phone-asleep">phone asleep — no response</option>
+        <option value="late-success">late success — after app timeout</option>
+        <option value="mismatched-id">mismatched requestId — ignored</option>
       </select>
       <div class="btn-row">
         <button id="trigger-success">Send success now</button>
@@ -114,7 +165,7 @@
     </fieldset>
 
     <fieldset>
-      <legend>Backend scenario (reloads app iframe)</legend>
+      <legend>Backend scenario</legend>
       <label for="backend-scenario">Analyze behavior via ?mockAnalyze=</label>
       <select id="backend-scenario">
         <option value="">default (app env: mock or live)</option>
@@ -124,16 +175,29 @@
         <option value="http-500">HTTP 500 (server error)</option>
         <option value="timeout">timeout</option>
         <option value="malformed">malformed JSON</option>
-        <option value="offline">simulated network failure / backend unavailable</option>
+        <option value="offline">simulated network failure</option>
       </select>
       <div class="btn-row"><button id="reload-app">Reload app with scenario</button></div>
-      <p class="note">“offline” is a simulated network error for demo purposes — not production offline support.</p>
+      <p class="note">“offline” is a simulated network error for demo purposes.</p>
+    </fieldset>
+
+    <fieldset class="section-advanced">
+      <legend>Advanced Failure Tests</legend>
+      <p class="note">These are available for QA and engineering review. They do not affect the primary investor demo.</p>
+      <div class="btn-row">
+        <button id="trigger-permission">Send permission denied</button>
+        <button id="trigger-cancel">Send cancelled capture</button>
+        <button id="trigger-timeout">Send timeout</button>
+        <button id="trigger-late">Send late success</button>
+        <button id="trigger-mismatch">Send mismatched ID</button>
+      </div>
     </fieldset>
 
     <fieldset>
-      <legend>Message log (types only — never payloads)</legend>
+      <legend>Message log</legend>
       <div id="log" aria-live="polite"></div>
       <div class="btn-row"><button id="clear-log">Clear log</button></div>
+      <p class="note">Logs message types and scenario labels only — never payloads, images, or tokens.</p>
     </fieldset>
   </div>
 </div>
@@ -147,12 +211,28 @@
   var captureSelect = document.getElementById('capture-scenario');
   var backendSelect = document.getElementById('backend-scenario');
   var scenarioNow = document.getElementById('scenario-now');
+  var privacyStrip = document.getElementById('privacy-strip');
+  var bridgeStrip = document.getElementById('bridge-strip');
 
   var pendingRequestId = null;
-  var answeredRequestIds = {}; // dedupe: app sends canonical + legacy request
+  var answeredRequestIds = {};
 
-  // Log format: [HH:MM:SS] direction: message-type (label)
-  // SECURITY: never log payloads, base64, sizes, dimensions, or results.
+  function updateStrips() {
+    var capture = captureSelect.value;
+    var backend = backendSelect.value || 'default';
+    var privacyText = 'Privacy Gate: simulated local check';
+    var privacyDot = 'dot ok';
+    if (capture === 'permission') { privacyText = 'Privacy gate: permission scenario'; privacyDot = 'dot'; }
+    if (capture === 'oversized') { privacyText = 'Privacy gate: oversized rejected'; privacyDot = 'dot'; }
+    privacyStrip.innerHTML = '<div class="' + privacyDot + '" aria-hidden="true"></div>' + privacyText;
+
+    var bridgeText = 'Phone Bridge: simulated';
+    if (backend === 'offline') bridgeText = 'Bridge: simulated network failure';
+    else if (backend === 'timeout') bridgeText = 'Bridge: simulated timeout';
+    else bridgeText = 'Bridge: mock phone handoff ready';
+    bridgeStrip.innerHTML = '<div class="dot mock" aria-hidden="true"></div>' + bridgeText;
+  }
+
   function log(direction, type, label) {
     var time = new Date().toISOString().slice(11, 19);
     var suffix = label ? ' (' + label + ')' : '';
@@ -177,9 +257,9 @@
   function loadApp() {
     frame.src = appUrl();
     logInfo('app iframe loaded: dat=parent sim=1' + (backendSelect.value ? ' mockAnalyze=' + backendSelect.value : ''));
+    updateStrips();
   }
 
-  // ── Synthetic fixtures (canvas-generated, no real photos/faces) ──
   function makeFixture() {
     var canvas = document.createElement('canvas');
     canvas.width = 640;
@@ -188,15 +268,14 @@
     ctx.fillStyle = '#10151d';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Stylized synthetic "jacket" silhouette — clearly not a real photo.
     ctx.fillStyle = '#27445c';
-    ctx.fillRect(170, 140, 300, 380); // torso
-    ctx.fillRect(90, 160, 90, 280);   // left sleeve
-    ctx.fillRect(460, 160, 90, 280);  // right sleeve
+    ctx.fillRect(170, 140, 300, 380);
+    ctx.fillRect(90, 160, 90, 280);
+    ctx.fillRect(460, 160, 90, 280);
     ctx.strokeStyle = '#00E5FF';
     ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(320, 140); ctx.lineTo(320, 520); // zipper
+    ctx.moveTo(320, 140); ctx.lineTo(320, 520);
     ctx.stroke();
     ctx.fillStyle = '#E0E0E0';
     ctx.font = 'bold 28px sans-serif';
@@ -204,9 +283,6 @@
     return canvas.toDataURL('image/jpeg', 0.85);
   }
 
-  // Oversized fixture: valid JPEG data-URL prefix padded past the app's
-  // bridge size cap (8M chars), so the bridge rejects it BEFORE the
-  // sanitizer/analyze run. Synthetic padding — no real image data.
   function makeOversizedFixture() {
     return makeFixture() + new Array(9 * 1024 * 1024).join('A');
   }
@@ -222,7 +298,7 @@
       return;
     }
     if (scenario === 'late-success') {
-      logInfo('simulator: scenario=late-success — will respond after 12s (app should have timed out by then)');
+      logInfo('simulator: scenario=late-success — will respond after 12s');
       setTimeout(function () {
         if (!frame.contentWindow) return;
         post({ type: 'photo-captured', requestId: requestId, base64: makeFixture() });
@@ -265,7 +341,6 @@
   }
 
   window.addEventListener('message', function (event) {
-    // Only accept messages from our own iframe, same origin.
     if (event.origin !== window.location.origin) return;
     if (!frame.contentWindow || event.source !== frame.contentWindow) return;
 
@@ -274,7 +349,7 @@
 
     if (data.type === 'capture-photo' || data.type === 'REQUEST_CAPTURE') {
       var requestId = typeof data.requestId === 'string' ? data.requestId : 'unknown';
-      if (answeredRequestIds[requestId]) return; // dedupe canonical+legacy pair
+      if (answeredRequestIds[requestId]) return;
       answeredRequestIds[requestId] = true;
       pendingRequestId = requestId;
       log('app → simulator', 'capture-photo', captureSelect.value);
@@ -285,12 +360,13 @@
   captureSelect.addEventListener('change', function () {
     scenarioNow.textContent = captureSelect.value;
     logInfo('capture scenario set: ' + captureSelect.value);
+    updateStrips();
   });
+  backendSelect.addEventListener('change', updateStrips);
 
   document.getElementById('reload-app').addEventListener('click', loadApp);
   document.getElementById('clear-log').addEventListener('click', function () { logEl.textContent = ''; });
 
-  // Same-origin convenience triggers for non-engineer testers.
   document.getElementById('start-scan').addEventListener('click', function () {
     try {
       var doc = frame.contentWindow && frame.contentWindow.document;
@@ -300,7 +376,7 @@
         btn.click();
         logInfo('simulator: Start Scan clicked');
       } else {
-        logInfo('simulator: scan button not available on current screen — press Escape in the app to go Home');
+        logInfo('simulator: scan button not available — press Escape in the app to go Home');
       }
     } catch (e) {
       logInfo('simulator: could not reach app document');
@@ -325,6 +401,26 @@
   });
   document.getElementById('trigger-oversized').addEventListener('click', function () {
     if (pendingRequestId) respond(pendingRequestId, 'oversized');
+    else logInfo('simulator: no pending capture request');
+  });
+  document.getElementById('trigger-permission').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'permission');
+    else logInfo('simulator: no pending capture request');
+  });
+  document.getElementById('trigger-cancel').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'cancel');
+    else logInfo('simulator: no pending capture request');
+  });
+  document.getElementById('trigger-timeout').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'timeout');
+    else logInfo('simulator: no pending capture request');
+  });
+  document.getElementById('trigger-late').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'late-success');
+    else logInfo('simulator: no pending capture request');
+  });
+  document.getElementById('trigger-mismatch').addEventListener('click', function () {
+    if (pendingRequestId) respond(pendingRequestId, 'mismatched-id');
     else logInfo('simulator: no pending capture request');
   });
 

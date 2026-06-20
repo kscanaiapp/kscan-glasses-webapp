@@ -34,6 +34,7 @@ const els = {
   processingText: document.getElementById('processing-text'),
   processingSub: document.getElementById('processing-sub'),
   resultsList: document.getElementById('results-list'),
+  resultsMatch: document.getElementById('results-match'),
   resultsEmpty: document.getElementById('results-empty'),
   errorMessage: document.getElementById('error-message'),
   hud: null,
@@ -130,7 +131,7 @@ function createText(tag, className, value) {
   return node;
 }
 
-function createProductCard(product) {
+function createProductCard(product, sourceType) {
   const card = document.createElement('button');
   card.type = 'button';
   card.className = 'row product-card focusable';
@@ -151,14 +152,26 @@ function createProductCard(product) {
 
   const meta = document.createElement('div');
   meta.className = 'product-meta';
+
+  const sourcePill = document.createElement('span');
+  sourcePill.className = `source-pill ${sourceType}`;
+  sourcePill.textContent = sourceType === 'retail' ? 'Retail — demo' : sourceType === 'resale' ? 'Resale — demo' : 'Suggested — demo';
+  meta.appendChild(sourcePill);
+
   meta.appendChild(createText('p', 'brand', safeText(product.brand, 'Unknown Brand')));
   meta.appendChild(createText('p', 'name', safeText(product.name, 'Unknown item')));
 
   const priceText = safeText(product.priceRange || product.price, 'Price unavailable');
   meta.appendChild(createText('p', 'price', priceText));
 
-  const action = createText('p', 'product-action', 'Save');
-  meta.appendChild(action);
+  const actions = document.createElement('div');
+  actions.className = 'product-actions';
+
+  const saveAction = createText('span', 'product-action-btn primary-action', 'Save Look');
+  const phoneAction = createText('span', 'product-action-btn', 'Open on Phone');
+  actions.appendChild(saveAction);
+  actions.appendChild(phoneAction);
+  meta.appendChild(actions);
   card.appendChild(meta);
 
   // Enter/click on a result card saves metadata (brand/name/price only —
@@ -170,24 +183,76 @@ function createProductCard(product) {
       price: safeText(product.priceRange || product.price, 'Price unavailable'),
     });
     if (result.saved) {
-      action.textContent = 'Saved';
+      saveAction.textContent = 'Saved';
       card.classList.add('saved');
     } else if (result.reason === 'duplicate') {
-      action.textContent = 'Saved';
+      saveAction.textContent = 'Saved';
       card.classList.add('saved');
     } else {
-      action.textContent = 'Unable to save';
+      saveAction.textContent = 'Unable to save';
     }
   });
   return card;
 }
 
+function buildSourceType(index, total) {
+  if (index < 2) return 'retail';
+  if (index < 3 || (total >= 4 && index === 3)) return 'resale';
+  return 'suggested';
+}
+
+function renderStyleMatch(data) {
+  const panel = els.resultsMatch;
+  if (!panel) return;
+  panel.innerHTML = '';
+
+  const styleMeta = data?.style_metadata && typeof data.style_metadata === 'object' ? data.style_metadata : {};
+  const detectedStyle = safeText(styleMeta.detected_style || styleMeta.style, 'Modern Minimalist Layering');
+  const attributes = Array.isArray(styleMeta.attributes) ? styleMeta.attributes : ['Cream knit', 'tailored outerwear', 'soft neutral palette'];
+  const confidence = Number.isFinite(styleMeta.confidence) ? styleMeta.confidence : 94;
+  const scanMode = safeText(styleMeta.scan_mode || styleMeta.mode, 'Outfit');
+
+  const card = document.createElement('div');
+  card.className = 'glass-card gold-border style-match-card';
+
+  const header = document.createElement('div');
+  header.className = 'style-match-header';
+  header.appendChild(createText('span', 'style-match-title', 'Style Match'));
+
+  const badgeRow = document.createElement('div');
+  badgeRow.style.display = 'flex';
+  badgeRow.style.gap = '8px';
+  badgeRow.style.flexWrap = 'wrap';
+  badgeRow.appendChild(createText('span', 'confidence-badge', `${confidence}% Match`));
+  badgeRow.appendChild(createText('span', 'scan-mode-pill', `Scan Mode: ${scanMode}`));
+  header.appendChild(badgeRow);
+  card.appendChild(header);
+
+  card.appendChild(createText('div', 'detected-style', detectedStyle));
+
+  const attrRow = document.createElement('div');
+  attrRow.className = 'style-attributes';
+  attributes.slice(0, 5).forEach((attr) => {
+    attrRow.appendChild(createText('span', 'attr-pill', safeText(attr, '')));
+  });
+  card.appendChild(attrRow);
+
+  const disclaimer = document.createElement('p');
+  disclaimer.className = 'source-disclaimer';
+  disclaimer.textContent = 'Mock demo data — no live inventory or pricing';
+  card.appendChild(disclaimer);
+
+  panel.appendChild(card);
+}
+
 function renderProducts(data) {
   const products = Array.isArray(data?.products) ? data.products : [];
   els.resultsList.innerHTML = '';
+  renderStyleMatch(data);
 
   if (!products.length) {
     els.resultsEmpty.classList.remove('hidden');
+    if (els.resultsMatch) els.resultsMatch.classList.add('hidden');
     registerFocusMatrix('results', [
       [document.getElementById('results-back-btn')],
       [document.getElementById('retry-empty-btn')],
@@ -196,9 +261,29 @@ function renderProducts(data) {
   }
 
   els.resultsEmpty.classList.add('hidden');
+  if (els.resultsMatch) els.resultsMatch.classList.remove('hidden');
 
-  products.forEach((product) => {
-    const card = createProductCard(product);
+  // Group by source type for visual grouping
+  let currentSource = null;
+  const total = products.length;
+
+  products.forEach((product, index) => {
+    const sourceType = buildSourceType(index, total);
+    if (sourceType !== currentSource) {
+      currentSource = sourceType;
+      const groupHeader = document.createElement('div');
+      groupHeader.className = 'source-group';
+      const sourceHeader = document.createElement('div');
+      sourceHeader.className = 'source-header';
+      const dot = document.createElement('span');
+      dot.className = `source-dot ${sourceType}`;
+      sourceHeader.appendChild(dot);
+      const labelText = sourceType === 'retail' ? 'Retail — demo source' : sourceType === 'resale' ? 'Resale — demo source' : 'Suggested Sources';
+      sourceHeader.appendChild(document.createTextNode(labelText));
+      groupHeader.appendChild(sourceHeader);
+      els.resultsList.appendChild(groupHeader);
+    }
+    const card = createProductCard(product, sourceType);
     els.resultsList.appendChild(card);
   });
 
@@ -331,7 +416,7 @@ function renderLibrary() {
 
   const rows = [];
 
-  panel.appendChild(createText('h2', null, 'Saved Items'));
+  panel.appendChild(createText('h2', null, 'Saved Looks'));
   const savedItems = [
     ...guest.savedItems.map((item) => ({ item, isExample: false })),
     ...examples.savedItems.map((item) => ({ item, isExample: true })),

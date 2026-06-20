@@ -722,3 +722,297 @@ body.prod #dat-hud {
   background: rgba(224, 224, 224, 0.08);
   margin: 8px 0;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Investor-ready HUD polish — warm palette, glassmorphism,
+   Style Match card, confidence badge, scan mode pill,
+   retail / resale source split, privacy gate & bridge strips.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Warm champagne scan reticle (complements existing cyan) ── */
+.reticle-warm .reticle-corners::before,
+.reticle-warm .reticle-corners::after,
+.reticle-warm .reticle-corners .rc-bl,
+.reticle-warm .reticle-corners .rc-br {
+  border-color: rgba(212, 168, 67, 0.45);
+}
+.reticle-warm.scan-active .reticle-corners::before,
+.reticle-warm.scan-active .reticle-corners::after,
+.reticle-warm.scan-active .reticle-corners .rc-bl,
+.reticle-warm.scan-active .reticle-corners .rc-br {
+  border-color: var(--champagne);
+  box-shadow: 0 0 8px rgba(212, 168, 67, 0.35);
+}
+.reticle-warm .scan-target::before,
+.reticle-warm .scan-target::after {
+  background: rgba(212, 168, 67, 0.45);
+}
+.reticle-warm .scan-target .st-dot {
+  background: var(--champagne);
+  box-shadow: 0 0 10px rgba(212, 168, 67, 0.55);
+}
+.reticle-warm.scan-active .scan-target .st-dot {
+  animation: target-pulse-warm 1.2s ease-in-out infinite;
+}
+@keyframes target-pulse-warm {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
+  50% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; }
+}
+
+/* ── Home screen warm lighting ── */
+#home {
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(0, 229, 255, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(184, 41, 247, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 20% 80%, rgba(212, 168, 67, 0.03) 0%, transparent 50%),
+    var(--bg);
+}
+
+/* ── Status strips (home screen) ── */
+.home-status-strips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 10px var(--safe-zone) 0;
+}
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(212, 168, 67, 0.25);
+  background: rgba(26, 21, 16, 0.55);
+  color: var(--champagne-soft);
+}
+.status-pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--champagne);
+  box-shadow: 0 0 5px rgba(212, 168, 67, 0.4);
+}
+.status-pill .dot.ok { background: #2ECC71; box-shadow: 0 0 5px rgba(46, 204, 113, 0.4); }
+.status-pill .dot.mock { background: var(--gold-sim); box-shadow: 0 0 5px rgba(255, 213, 74, 0.4); }
+
+/* ── Glassmorphism cards ── */
+.glass-card {
+  background: rgba(17, 17, 17, 0.72);
+  border: 1px solid rgba(232, 236, 241, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+.glass-card:hover {
+  background: rgba(21, 21, 21, 0.82);
+  border-color: rgba(212, 168, 67, 0.2);
+  transform: translateY(-1px);
+}
+.glass-card.gold-border {
+  border-color: rgba(212, 168, 67, 0.25);
+}
+.glass-card.gold-border:hover {
+  border-color: rgba(212, 168, 67, 0.4);
+}
+
+/* ── Style Match card ── */
+.style-match-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  margin-bottom: 14px;
+}
+.style-match-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.style-match-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--champagne-soft);
+}
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  background: rgba(212, 168, 67, 0.12);
+  color: var(--champagne-soft);
+  border: 1px solid rgba(212, 168, 67, 0.3);
+}
+.scan-mode-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--cyan-primary);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+}
+.detected-style {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1.25;
+  letter-spacing: 0.2px;
+}
+.style-attributes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attr-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  background: rgba(232, 236, 241, 0.06);
+  color: var(--chrome);
+  border: 1px solid rgba(232, 236, 241, 0.1);
+}
+
+/* ── Source split cards ── */
+.source-group {
+  margin-bottom: 14px;
+}
+.source-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--champagne-soft);
+  opacity: 0.85;
+}
+.source-header .source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--champagne);
+  box-shadow: 0 0 6px rgba(212, 168, 67, 0.4);
+}
+.source-header .source-dot.resale { background: var(--purple-deep); box-shadow: 0 0 6px rgba(184, 41, 247, 0.4); }
+.source-header .source-dot.suggested { background: var(--cyan-primary); box-shadow: 0 0 6px rgba(0, 229, 255, 0.4); }
+.source-disclaimer {
+  font-size: 11px;
+  color: #6B788C;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  margin-top: 2px;
+}
+
+/* ── Product card enhancements ── */
+.product-card .source-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  background: rgba(212, 168, 67, 0.08);
+  color: var(--champagne-soft);
+  border: 1px solid rgba(212, 168, 67, 0.2);
+}
+.product-card .source-pill.resale {
+  background: rgba(184, 41, 247, 0.08);
+  color: var(--purple-deep);
+  border-color: rgba(184, 41, 247, 0.2);
+}
+.product-card .source-pill.suggested {
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--cyan-primary);
+  border-color: rgba(0, 229, 255, 0.2);
+}
+.product-card .product-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.product-card .product-action-btn {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--chrome);
+  letter-spacing: 0.5px;
+  transition: color 0.15s ease;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.product-card .product-action-btn:hover {
+  color: var(--white);
+}
+.product-card .product-action-btn.primary-action {
+  color: var(--champagne-soft);
+}
+.product-card .product-action-btn.primary-action:hover {
+  color: var(--gold-sim);
+}
+
+/* ── Investor-friendly home updates ── */
+.home-brand {
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: var(--white);
+  text-transform: uppercase;
+}
+.home-brand::after {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 2px;
+  background: var(--champagne);
+  margin: 8px auto 0;
+  border-radius: 1px;
+  opacity: 0.7;
+}
+.home-tagline {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--cyan-dim);
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+}
+.home-investor-note {
+  font-size: 11px;
+  color: #6B788C;
+  letter-spacing: 0.5px;
+  text-align: center;
+  padding: 6px var(--safe-zone) 0;
+  line-height: 1.4;
+}
+
