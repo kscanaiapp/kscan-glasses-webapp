@@ -1482,7 +1482,12 @@ Before deploying to any staging host:
 
 **Staging URL:** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app
 
-**Simulator URL:** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app/simulator.html
+**Public Demo URL:** https://kscan-glasses-demo.vercel.app  
+*(Separate public demo — no Vercel SSO required. Uses mock-only flows for safety.)*
+
+**Simulator URL (public demo):** https://kscan-glasses-demo.vercel.app/simulator.html
+
+**Simulator URL (protected preview):** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app/simulator.html
 
 ### What works in the demo
 
@@ -1507,7 +1512,9 @@ Before deploying to any staging host:
 
 ### How to demo
 
-1. Open the staging URL in Chrome/Edge.
+1. Open the **public demo URL** in Chrome/Edge:
+   `https://kscan-glasses-demo.vercel.app`
+   (No login required. For the internal protected preview, use the staging URL.)
 2. For the glasses HUD view: set DevTools viewport to 600×600.
 3. For the simulator control room: open `/simulator.html` in a second tab.
 4. In the simulator:
