@@ -838,6 +838,155 @@ for (const pattern of googlePatterns) {
 
 // ─────────────────────────────────────────────────────────────────
 
+// ---------------------------------------------------------------------------
+// H. TextScan Phase 26 - Supabase live session bridge
+// ---------------------------------------------------------------------------
+console.log('\n=== H. TextScan Phase 26 ===');
+
+const packageJson = JSON.parse(readFile(path.join(root, 'package.json')) || '{}');
+const packageLock = readFile(path.join(root, 'package-lock.json'));
+const supabaseClientPath = path.join(srcDir, 'services', 'supabaseClient.js');
+const supabaseClientContent = readFile(supabaseClientPath);
+const simulatorContent = readFile(path.join(root, 'simulator.html'));
+const docsTextScanContent = readFile(path.join(root, 'docs', 'meta-textscan-adapter.md'));
+
+fileExists(supabaseClientPath)
+  ? pass('H.supabase:client-module', 'exact Meta Supabase client module exists', 'src/services/supabaseClient.js')
+  : fail('H.supabase:client-module', 'src/services/supabaseClient.js exists', 'MISSING');
+
+(packageJson.dependencies && packageJson.dependencies['@supabase/supabase-js'] && packageLock.includes('node_modules/@supabase/supabase-js'))
+  ? pass('H.supabase:dependency', '@supabase/supabase-js dependency + lockfile', 'found')
+  : fail('H.supabase:dependency', '@supabase/supabase-js dependency + lockfile', 'missing');
+
+const serviceRolePatterns = ['SERVICE_ROLE', 'SUPABASE_SERVICE', 'service_role'];
+const clientSecretHits = serviceRolePatterns.filter((s) => `${supabaseClientContent}\n${textScanContent}\n${mainContent}`.includes(s));
+clientSecretHits.length === 0
+  ? pass('H.secrets:no-service-role', 'no service-role references in client TextScan path', 'clean')
+  : fail('H.secrets:no-service-role', 'no service-role references', `FOUND: ${clientSecretHits.join(', ')}`);
+
+!`${supabaseClientContent}\n${textScanContent}\n${mainContent}`.includes('GEMINI_API_KEY')
+  ? pass('H.secrets:no-gemini-key', 'no Gemini API key in client TextScan path', 'clean')
+  : fail('H.secrets:no-gemini-key', 'no Gemini API key', 'FOUND');
+
+envExampleRaw.includes('VITE_SUPABASE_URL=')
+  ? pass('H.env:supabase-url', 'VITE_SUPABASE_URL in .env.example', 'present')
+  : fail('H.env:supabase-url', 'VITE_SUPABASE_URL in .env.example', 'missing');
+
+envExampleRaw.includes('VITE_SUPABASE_ANON_KEY=')
+  ? pass('H.env:supabase-anon', 'VITE_SUPABASE_ANON_KEY in .env.example', 'present')
+  : fail('H.env:supabase-anon', 'VITE_SUPABASE_ANON_KEY in .env.example', 'missing');
+
+envExampleRaw.includes('VITE_MOCK_TEXTSCAN=false')
+  ? pass('H.env:mock-default-false', 'VITE_MOCK_TEXTSCAN=false in .env.example', 'present')
+  : fail('H.env:mock-default-false', 'VITE_MOCK_TEXTSCAN=false', 'missing');
+
+envExampleRaw.includes('local simulator/dev only') && envExampleRaw.includes('Runtime window.__KSCAN_CONFIG__ takes precedence')
+  ? pass('H.env:mock-docs', 'mock dev-only + runtime precedence documented', 'found')
+  : fail('H.env:mock-docs', 'mock dev-only + runtime precedence documented', 'missing');
+
+(supabaseClientContent.includes('window.__KSCAN_CONFIG__') && supabaseClientContent.indexOf('window.__KSCAN_CONFIG__') < supabaseClientContent.indexOf('import.meta.env.VITE_SUPABASE_URL'))
+  ? pass('H.supabase:runtime-precedence', 'runtime config read before Vite env fallback', 'found')
+  : fail('H.supabase:runtime-precedence', 'window.__KSCAN_CONFIG__ before import.meta.env', 'not found');
+
+[
+  ['supabaseSession', 'runtime full session'],
+  ['SUPABASE_SESSION', 'runtime uppercase session'],
+  ['supabaseAccessToken', 'runtime token'],
+  ['AUTH_TOKEN', 'runtime auth token'],
+  ['access_token', 'URL token'],
+  ['history.replaceState', 'URL token scrub'],
+  ['kscan:supabase-session', 'postMessage session'],
+  ['kscan:supabase-token', 'postMessage token'],
+  ['auth.setSession', 'Supabase session hydration'],
+  ['auth.getSession', 'SDK session read'],
+].forEach(([pattern, label]) => {
+  supabaseClientContent.includes(pattern)
+    ? pass(`H.supabase:${label}`, `${pattern} implemented`, 'found')
+    : fail(`H.supabase:${label}`, `${pattern} implemented`, 'missing');
+});
+
+[
+  ["scan-identify", 'adapter invokes scan-identify'],
+  ["mode: 'text'", 'adapter sends mode:text'],
+  ['textQuery', 'adapter sends textQuery'],
+  ['source', 'adapter sends source'],
+  ['clientTimestamp', 'adapter sends clientTimestamp'],
+  ['MAX_TEXT_QUERY_LEN = 500', 'query cap constant'],
+  ['clampText(trimmed, MAX_TEXT_QUERY_LEN)', 'outgoing query capped'],
+  ['hasSupabaseConfig()', 'config checked before live invoke'],
+  ['getSupabaseSession()', 'session checked before live invoke'],
+  ['CONFIG_REQUIRED', 'missing config error code'],
+  ['AUTH_REQUIRED', 'missing auth error code'],
+  ['isDemo,', 'mock/live demo flag mapping'],
+  ['liveRequestInFlight', 'adapter concurrency latch'],
+  ['authRetried', '401 auth retry guard'],
+  ['networkRetries < NETWORK_RETRY_DELAYS_MS.length', 'network retry guard'],
+  ['TOTAL_TIMEOUT_MS = 8000', '8 second timeout budget'],
+  ['spokenSummary', 'spokenSummary mapping'],
+  ['MAX_HUD_ERROR_LEN = 35', 'HUD error length helper'],
+].forEach(([pattern, label]) => {
+  textScanContent.includes(pattern)
+    ? pass(`H.textscan:${label}`, pattern, 'found')
+    : fail(`H.textscan:${label}`, pattern, 'missing');
+});
+
+!textScanContent.includes('imageBase64')
+  ? pass('H.textscan:no-imageBase64', 'imageBase64 absent', 'clean')
+  : fail('H.textscan:no-imageBase64', 'imageBase64 absent', 'FOUND');
+
+!/source:\s*['"]manual['"]|source\s*=\s*['"]manual['"]/.test(textScanContent)
+  ? pass('H.textscan:no-manual-source', 'manual source label absent from Meta TextScan adapter', 'clean')
+  : fail('H.textscan:no-manual-source', 'manual source label absent', 'FOUND');
+
+textScanContent.includes('buildTextScanStyleMatch(mockResponse, capped, true)')
+  ? pass('H.textscan:mock-demo-true', 'mock mode sets meta.isDemo true', 'found')
+  : fail('H.textscan:mock-demo-true', 'mock mode sets meta.isDemo true', 'missing');
+
+textScanContent.includes('buildTextScanStyleMatch(response, capped, false)')
+  ? pass('H.textscan:live-demo-false', 'live mode sets meta.isDemo false', 'found')
+  : fail('H.textscan:live-demo-false', 'live mode sets meta.isDemo false', 'missing');
+
+!indexHtmlContent.includes('<input type="text"') && !indexHtmlContent.includes('<textarea') && !indexHtmlContent.includes("type='text'")
+  ? pass('H.hud:no-text-inputs', 'no HUD text input or textarea', 'clean')
+  : fail('H.hud:no-text-inputs', 'no HUD text input or textarea', 'FOUND');
+
+apiContent.includes('/api/analyze')
+  ? pass('H.image:path-preserved', 'image scan /api/analyze path preserved', 'found')
+  : fail('H.image:path-preserved', '/api/analyze path preserved', 'missing');
+
+!`${textScanContent}\n${supabaseClientContent}`.includes('onrender.com')
+  ? pass('H.backend:no-render-textscan', 'TextScan adapter does not call Render', 'clean')
+  : fail('H.backend:no-render-textscan', 'no Render TextScan route', 'FOUND');
+
+[
+  'live-missing-config',
+  'live-no-session',
+  'live-session',
+  'live-url-token',
+  'kscan:textscan-live-status',
+  'rapid-textscan',
+].forEach((pattern) => {
+  simulatorContent.includes(pattern)
+    ? pass(`H.simulator:${pattern}`, 'simulator TextScan control/status exists', 'found')
+    : fail(`H.simulator:${pattern}`, 'simulator TextScan control/status exists', 'missing');
+});
+
+docsTextScanContent.includes('Passive Session Injection') && docsTextScanContent.includes('phone companion app')
+  ? pass('H.docs:session-injection', 'passive session injection documented', 'found')
+  : fail('H.docs:session-injection', 'passive session injection documented', 'missing');
+
+try {
+  const changed = execSync('git diff --name-only', { cwd: root, encoding: 'utf8' })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const googleChanged = changed.filter((name) => /kscan-google-glasses|google-glasses|android-xr|gemini-glasses|\\bxr\\b/i.test(name));
+  googleChanged.length === 0
+    ? pass('H.scope:no-google-changed', 'no Google/Gemini/Android XR files changed', 'clean')
+    : fail('H.scope:no-google-changed', 'no Google/Gemini/Android XR files changed', googleChanged.join(', '));
+} catch (err) {
+  warn('H.scope:no-google-changed', 'git diff check available', `skipped: ${err.message}`);
+}
+
 console.log('\n=== Summary ===');
 console.log(`FAIL:  ${failCount}`);
 console.log(`WARN:  ${warnCount}`);

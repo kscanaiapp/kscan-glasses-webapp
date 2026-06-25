@@ -183,7 +183,22 @@
 
     <fieldset>
       <legend>TextScan Scenarios</legend>
-      <p class="note">Text-origin fashion queries via the Meta webapp TextScan adapter. Uses mock scenarios when VITE_MOCK_TEXTSCAN=true.</p>
+      <p class="note">Text-origin fashion queries via the Meta webapp TextScan adapter. Mock mode never calls Supabase. Live tests use placeholder config/tokens only.</p>
+      <label for="textscan-mode">TextScan mode:</label>
+      <select id="textscan-mode">
+        <option value="mock">mock scenarios</option>
+        <option value="live-missing-config">live: missing Supabase config</option>
+        <option value="live-no-session">live: config, no session</option>
+        <option value="live-session">live: injected mock session</option>
+        <option value="live-url-token">live: URL token injection</option>
+      </select>
+      <div class="btn-row">
+        <button id="reload-textscan">Reload TextScan mode</button>
+        <button id="inject-session">Post mock session</button>
+        <button id="inject-token">Post mock token</button>
+        <button id="rapid-textscan">Rapid duplicate</button>
+      </div>
+      <p class="note">Session controls send redacted placeholder credentials and never print token values.</p>
       <div class="btn-row">
         <button data-textscan="black-blazer">Black Blazer</button>
         <button data-textscan="quiet-luxury">Quiet Luxury</button>
@@ -227,6 +242,7 @@
   var logEl = document.getElementById('log');
   var captureSelect = document.getElementById('capture-scenario');
   var backendSelect = document.getElementById('backend-scenario');
+  var textScanModeSelect = document.getElementById('textscan-mode');
   var scenarioNow = document.getElementById('scenario-now');
   var privacyStrip = document.getElementById('privacy-strip');
   var bridgeStrip = document.getElementById('bridge-strip');
@@ -266,14 +282,40 @@
     var params = new URLSearchParams();
     params.set('dat', 'parent');
     params.set('sim', '1');
+    var textScanMode = textScanModeSelect.value || 'mock';
+    params.set('textscanMode', textScanMode === 'mock' ? 'mock' : 'live');
+    if (textScanMode === 'live-url-token') {
+      params.set('access_token', 'mock-access-token');
+    }
     var backend = backendSelect.value;
     if (backend) params.set('mockAnalyze', backend);
     return '/?' + params.toString();
   }
 
+  function applyTextScanRuntimeConfig() {
+    var textScanMode = textScanModeSelect.value || 'mock';
+    try {
+      if (!frame.contentWindow) return;
+      var existing = frame.contentWindow.__KSCAN_CONFIG__ || {};
+      var next = Object.assign({}, existing, { KSCAN_SIMULATOR: true });
+      if (textScanMode === 'live-no-session' || textScanMode === 'live-session' || textScanMode === 'live-url-token') {
+        next.SUPABASE_URL = 'https://example.supabase.co';
+        next.SUPABASE_ANON_KEY = 'mock-anon-key';
+        frame.contentWindow.__KSCAN_CONFIG__ = next;
+        logInfo('simulator: placeholder Supabase config injected');
+        return;
+      }
+      next.SUPABASE_URL = '';
+      next.SUPABASE_ANON_KEY = '';
+      frame.contentWindow.__KSCAN_CONFIG__ = next;
+    } catch (e) {
+      logInfo('simulator: runtime config injection unavailable');
+    }
+  }
+
   function loadApp() {
     frame.src = appUrl();
-    logInfo('app iframe loaded: dat=parent sim=1' + (backendSelect.value ? ' mockAnalyze=' + backendSelect.value : ''));
+    logInfo('app iframe loaded: dat=parent sim=1 textscan=' + (textScanModeSelect.value || 'mock') + (backendSelect.value ? ' mockAnalyze=' + backendSelect.value : ''));
     updateStrips();
   }
 
@@ -307,6 +349,55 @@
   function post(message) {
     if (!frame.contentWindow) return;
     frame.contentWindow.postMessage(message, window.location.origin);
+  }
+
+  function postMockSession() {
+    applyTextScanRuntimeConfig();
+    post({
+      type: 'kscan:supabase-session',
+      session: {
+        access_token: 'mock-access-token',
+        refresh_token: 'mock-refresh-token'
+      }
+    });
+    log('simulator -> app', 'kscan:supabase-session', 'redacted mock');
+  }
+
+  function postMockToken() {
+    applyTextScanRuntimeConfig();
+    post({
+      type: 'kscan:supabase-token',
+      accessToken: 'mock-access-token'
+    });
+    log('simulator -> app', 'kscan:supabase-token', 'redacted mock');
+  }
+
+  function clickTextScanScenario(scenarioId, repeat) {
+    try {
+      applyTextScanRuntimeConfig();
+      if (textScanModeSelect.value === 'live-session') postMockSession();
+      var win = frame.contentWindow;
+      var doc = win && win.document;
+      var presetBtn = null;
+      var presets = doc ? doc.querySelectorAll('.textscan-preset') : [];
+      for (var i = 0; i < presets.length; i++) {
+        var query = presets[i].dataset.query || '';
+        if (query.indexOf(scenarioId.split('-')[0]) >= 0) {
+          presetBtn = presets[i];
+          break;
+        }
+      }
+      if (presetBtn) {
+        win.focus();
+        presetBtn.click();
+        if (repeat) presetBtn.click();
+        logInfo('simulator: TextScan scenario activated: ' + scenarioId + (repeat ? ' rapid duplicate' : ''));
+      } else {
+        logInfo('simulator: TextScan preset not found for: ' + scenarioId);
+      }
+    } catch (e) {
+      logInfo('simulator: TextScan trigger failed');
+    }
   }
 
   function respond(requestId, scenario) {
@@ -372,6 +463,17 @@
       log('app → simulator', 'capture-photo', captureSelect.value);
       respond(requestId, captureSelect.value);
     }
+
+    if (data.type === 'kscan:textscan-live-status') {
+      log('app -> simulator', 'kscan:textscan-live-status', (data.mode || 'unknown') + '/' + (data.status || 'unknown'));
+    }
+  });
+
+  frame.addEventListener('load', function () {
+    applyTextScanRuntimeConfig();
+    if (textScanModeSelect.value === 'live-session') {
+      setTimeout(postMockSession, 100);
+    }
   });
 
   captureSelect.addEventListener('change', function () {
@@ -380,8 +482,18 @@
     updateStrips();
   });
   backendSelect.addEventListener('change', updateStrips);
+  textScanModeSelect.addEventListener('change', function () {
+    logInfo('textscan mode set: ' + textScanModeSelect.value);
+    updateStrips();
+  });
 
   document.getElementById('reload-app').addEventListener('click', loadApp);
+  document.getElementById('reload-textscan').addEventListener('click', loadApp);
+  document.getElementById('inject-session').addEventListener('click', postMockSession);
+  document.getElementById('inject-token').addEventListener('click', postMockToken);
+  document.getElementById('rapid-textscan').addEventListener('click', function () {
+    clickTextScanScenario('black-blazer', true);
+  });
   document.getElementById('clear-log').addEventListener('click', function () { logEl.textContent = ''; });
 
   document.getElementById('start-scan').addEventListener('click', function () {
@@ -445,6 +557,8 @@
   document.querySelectorAll('[data-textscan]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var scenarioId = btn.dataset.textscan;
+      clickTextScanScenario(scenarioId, false);
+      return;
       try {
         var win = frame.contentWindow;
         if (win && win.startTextScan) {

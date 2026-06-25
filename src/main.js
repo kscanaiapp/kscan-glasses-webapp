@@ -21,11 +21,14 @@ import { loadGuestLibrary, recordGuestScan, saveGuestItem, getStubLibraryExample
 import { buildMockStyleMatch, makeEmptyStyleMatch } from './styleMatchContract.js';
 import {
   analyzeTextQuery,
-  validateTextScanQuery,
   TEXTSCAN_ERROR_CODES,
-  TEXTSCAN_SIMULATOR_SCENARIOS,
-  runSimulatorScenario,
+  textScanErrorToStyleMatch,
 } from './services/textScan.js';
+import {
+  getSupabaseRuntimeStatus,
+  hasSupabaseConfig,
+  listenForSupabaseSessionMessages,
+} from './services/supabaseClient.js';
 
 const STATE = FLOW_STATES;
 
@@ -61,11 +64,14 @@ function updateHud() {
   const betaStatus = getBetaBridgeStatus();
   const datState = betaStatus.enabled ? 'BETA' : (datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING'));
   const analyzeState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') ? 'MOCK' : 'REAL';
-  const textscanState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true') ? 'MOCK' : 'REAL';
+  const textscanState = isTextScanMockEnabled() ? 'MOCK' : 'LIVE';
   const backendState = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim() ? 'OK' : 'MISSING';
+  const supabaseStatus = getSupabaseRuntimeStatus();
+  const supabaseState = supabaseStatus.configured ? 'OK' : 'MISSING';
+  const accountState = supabaseStatus.linked ? 'LINKED' : 'REQUIRED';
   const flow = getFlowState();
 
-  els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | TEXTSCAN: ${textscanState} | BACKEND: ${backendState} | FLOW: ${flow}`;
+  els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | TEXTSCAN: ${textscanState} | SUPABASE: ${supabaseState} | ACCOUNT: ${accountState} | SOURCE: PRESET | BACKEND: ${backendState} | FLOW: ${flow}`;
 }
 
 function updateBridgeBadge() {
@@ -437,6 +443,26 @@ export async function startScan() {
 let textScanInFlight = false;
 let textScanToken = 0;
 
+function isTextScanMockEnabled() {
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('textscanMode');
+  if (params.get('sim') === '1' && mode === 'live') return false;
+  if (params.get('sim') === '1' && mode === 'mock') return true;
+  return import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true';
+}
+
+function emitTextScanStatus(payload) {
+  if (typeof window === 'undefined' || !window.parent || window.parent === window) return;
+  try {
+    window.parent.postMessage({
+      type: 'kscan:textscan-live-status',
+      ...payload,
+    }, window.location.origin);
+  } catch {
+    // Simulator status events are best effort and metadata-only.
+  }
+}
+
 function renderTextScanResult(styleMatch) {
   const panel = els.textscanResults;
   if (!panel) return;
@@ -444,6 +470,10 @@ function renderTextScanResult(styleMatch) {
 
   const sm = styleMatch && typeof styleMatch === 'object' ? styleMatch : {};
   const hasError = sm.error && typeof sm.error === 'object';
+  const sourceLabel = safeText(sm.meta?.sourceLabel, 'SOURCE PRESET');
+  const modeLabel = sm.meta?.isDemo ? 'TEXTSCAN MOCK' : 'TEXTSCAN LIVE';
+  const supabaseLabel = hasSupabaseConfig() ? 'SUPABASE READY' : 'SUPABASE MISSING';
+  const linkedLabel = getSupabaseRuntimeStatus().linked ? 'ACCOUNT LINKED' : 'SIGN IN REQUIRED';
 
   const card = document.createElement('div');
   card.className = 'textscan-result-card';
@@ -456,6 +486,14 @@ function renderTextScanResult(styleMatch) {
     header.appendChild(createText('span', 'confidence-badge', sm.meta.confidenceLabel));
   }
   card.appendChild(header);
+
+  const badgeStrip = document.createElement('div');
+  badgeStrip.className = 'textscan-status-strip';
+  badgeStrip.appendChild(createText('span', 'scan-mode-pill', modeLabel));
+  badgeStrip.appendChild(createText('span', hasSupabaseConfig() ? 'scan-mode-pill' : 'scan-mode-pill warn', supabaseLabel));
+  badgeStrip.appendChild(createText('span', getSupabaseRuntimeStatus().linked ? 'scan-mode-pill' : 'scan-mode-pill warn', linkedLabel));
+  badgeStrip.appendChild(createText('span', 'scan-mode-pill', sourceLabel));
+  card.appendChild(badgeStrip);
 
   // Summary
   if (sm.summary) {
@@ -518,6 +556,7 @@ export async function startTextScan(query) {
   if (textScanInFlight) return;
   textScanInFlight = true;
   const token = ++textScanToken;
+  const source = 'preset';
 
   if (els.textscanResults) els.textscanResults.dataset.lastQuery = query;
 
@@ -527,9 +566,15 @@ export async function startTextScan(query) {
     els.processingText.textContent = 'Analyzing text...';
     if (els.processingSub) els.processingSub.textContent = 'Fashion AI is working';
 
-    const isMock = import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true';
+    const isMock = isTextScanMockEnabled();
+    emitTextScanStatus({
+      mode: isMock ? 'mock' : 'live',
+      source,
+      status: isMock ? 'configured' : (hasSupabaseConfig() ? 'configured' : 'missing-config'),
+    });
 
-    const styleMatch = await analyzeTextQuery(query, { source: 'manual', mock: isMock });
+    const styleMatch = await analyzeTextQuery(query, { source, mock: isMock });
+    if (styleMatch.meta) styleMatch.meta.sourceLabel = 'SOURCE PRESET';
 
     if (token !== textScanToken) return;
 
@@ -549,29 +594,18 @@ export async function startTextScan(query) {
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');
+    emitTextScanStatus({
+      mode: isMock ? 'mock' : 'live',
+      source,
+      status: styleMatch.error ? 'failed' : 'completed',
+    });
   } catch (error) {
     if (token !== textScanToken) return;
 
     const errorCode = error.code || TEXTSCAN_ERROR_CODES.UNKNOWN;
-    const userMessage = error.userMessage || 'Something went wrong. Try again.';
-
-    const errorMatch = {
-      id: `textscan_err_${Date.now()}`,
-      source: 'textscan',
-      confidence: 0,
-      summary: userMessage,
-      intent: {
-        style: null, occasion: null, colors: [], materials: [], silhouette: null, keywords: [],
-      },
-      items: { retail: [], resale: [], suggested: [] },
-      actions: { canSave: false, canOpenOnPhone: false },
-      meta: {
-        scanModeLabel: 'Text Scan',
-        confidenceLabel: 'Unavailable',
-        isDemo: import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true',
-      },
-      error: { code: errorCode, message: userMessage, canRetry: error.canRetry !== false },
-    };
+    const userMessage = error.userMessage || 'Something went wrong.';
+    const errorMatch = textScanErrorToStyleMatch(error, query, isMock);
+    if (errorMatch.meta) errorMatch.meta.sourceLabel = 'SOURCE PRESET';
 
     renderTextScanResult(errorMatch);
 
@@ -583,6 +617,15 @@ export async function startTextScan(query) {
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');
+    emitTextScanStatus({
+      mode: isMock ? 'mock' : 'live',
+      source,
+      status: errorCode === TEXTSCAN_ERROR_CODES.AUTH_REQUIRED
+        ? 'auth-required'
+        : errorCode === TEXTSCAN_ERROR_CODES.CONFIG_REQUIRED
+          ? 'missing-config'
+          : 'failed',
+    });
   } finally {
     if (token === textScanToken) textScanInFlight = false;
   }
@@ -716,17 +759,25 @@ function renderSettingsStatus(panel) {
 
   const simBadge = sim.active ? '<span class="status-badge on">On</span>' : '<span class="status-badge off">Off</span>';
   const supabaseBadge = isStubMode() ? '<span class="status-badge off">Unconfigured</span>' : '<span class="status-badge on">Live</span>';
-  const authBadge = session ? '<span class="status-badge on">Live</span>' : '<span class="status-badge off">Guest</span>';
+  const supabaseRuntime = getSupabaseRuntimeStatus();
+  const textscanSupabaseBadge = supabaseRuntime.configured
+    ? '<span class="status-badge on">Configured</span>'
+    : '<span class="status-badge off">Missing</span>';
+  const authBadge = supabaseRuntime.linked
+    ? '<span class="status-badge on">Linked</span>'
+    : (session ? '<span class="status-badge warn">Stub</span>' : '<span class="status-badge off">Required</span>');
 
   const voiceEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_VOICE_PLACEHOLDER === 'true';
   const voiceBadge = voiceEnabled
     ? '<span class="status-badge warn">future device test</span>'
     : '<span class="status-badge off">future device test</span>';
 
-  const textscanMock = import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true';
+  const textscanMock = isTextScanMockEnabled();
   const textscanBadge = textscanMock
     ? '<span class="status-badge warn">Mock</span>'
-    : '<span class="status-badge off">Real (needs auth)</span>';
+    : (supabaseRuntime.configured && supabaseRuntime.linked
+      ? '<span class="status-badge on">Live</span>'
+      : '<span class="status-badge off">Live blocked</span>');
 
   const mobileBridgeEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOBILE_BRIDGE_PLACEHOLDER === 'true';
   const mobileBridgeBadge = mobileBridgeEnabled
@@ -748,9 +799,11 @@ function renderSettingsStatus(panel) {
   status.appendChild(makeRow('Simulator', simBadge));
   status.appendChild(makeRow('Backend', backendBadge));
   status.appendChild(makeRow('Supabase', supabaseBadge));
+  status.appendChild(makeRow('TextScan Supabase', textscanSupabaseBadge));
   status.appendChild(makeRow('Account', authBadge));
   status.appendChild(makeRow('Voice', voiceBadge));
   status.appendChild(makeRow('TextScan', textscanBadge));
+  status.appendChild(makeRow('TextScan Source', '<span class="status-badge on">Preset</span>'));
   status.appendChild(makeRow('Mobile bridge', mobileBridgeBadge));
   status.appendChild(makeRow('Connectivity', connectivityBadge));
 }
@@ -871,6 +924,11 @@ function initMobileBridgeDebug() {
 }
 
 function init() {
+  listenForSupabaseSessionMessages();
+  window.addEventListener('kscan:supabase-session-linked', () => {
+    updateHud();
+    if (currentView === 'settings') renderSettings();
+  });
   initNavigation({ onBack });
   registerMatrices();
   wireButtons();
@@ -880,6 +938,7 @@ function init() {
   mountSimulatorBadge(document.getElementById('app'));
   showScreen('home', false);
   setState(STATE.IDLE);
+  if (import.meta.env.DEV) window.startTextScan = startTextScan;
 }
 
 init();

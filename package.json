@@ -11,14 +11,16 @@
     "verify:models": "node scripts/verify-models.js",
     "download:models": "node scripts/download-models.js",
     "postinstall": "node scripts/copy-mediapipe-wasm.js",
+    "test:textscan": "node scripts/textscan-live-tests.js",
     "test:static": "node scripts/static-tests.js",
     "test:contract": "node scripts/contract-tests.js",
-    "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract"
+    "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"
   },
   "devDependencies": {
     "vite": "^7.1.0"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35"
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@supabase/supabase-js": "^2.108.2"
   }
 }

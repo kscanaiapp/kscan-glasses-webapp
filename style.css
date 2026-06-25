@@ -699,6 +699,9 @@ body {
   color: var(--chrome);
   font-size: 14px;
   line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
   z-index: 20;
 }
@@ -719,10 +722,19 @@ body.prod #dat-hud {
 .status-row {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   color: var(--chrome);
   font-size: 15px;
   padding: 2px 0;
+  min-width: 0;
+}
+
+.status-row > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-badge {
@@ -735,6 +747,9 @@ body.prod #dat-hud {
   letter-spacing: 0.5px;
   text-transform: uppercase;
   white-space: nowrap;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-badge.on {
@@ -1119,6 +1134,7 @@ body.prod #dat-hud {
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+  min-width: 0;
 }
 
 .textscan-result-title {
@@ -1127,6 +1143,9 @@ body.prod #dat-hud {
   color: var(--silver);
   text-transform: uppercase;
   letter-spacing: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .textscan-result-summary {
@@ -1135,12 +1154,18 @@ body.prod #dat-hud {
   color: var(--white);
   line-height: 1.4;
   margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .textscan-intent-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .textscan-intent-pill {
@@ -1154,6 +1179,10 @@ body.prod #dat-hud {
   color: var(--cyan-primary);
   font-size: 12px;
   font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .textscan-intent-pill.empty {
@@ -1168,8 +1197,35 @@ body.prod #dat-hud {
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .textscan-retry-btn {
   margin-top: 8px;
+}
+
+.textscan-status-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  max-width: 100%;
+  margin: -2px 0 10px;
+  overflow: hidden;
+}
+
+.textscan-status-strip .scan-mode-pill {
+  max-width: 135px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.scan-mode-pill.warn {
+  background: rgba(197, 138, 58, 0.08);
+  color: var(--champagne-soft);
+  border-color: rgba(197, 138, 58, 0.35);
 }

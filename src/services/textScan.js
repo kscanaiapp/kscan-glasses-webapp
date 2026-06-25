@@ -1,22 +1,17 @@
-// TextScan adapter for Meta Ray-Ban Display webapp.
-//
-// Bridges text-origin fashion queries to the canonical scan-identify Edge Function
-// (mode: 'text'). Returns a StyleMatch-compatible shape for the HUD renderer.
-//
-// Architecture note:
-//   - This is a Meta-webapp-only adapter. No Google glasses abstraction.
-//   - Supabase auth is a future seam; when the app installs @supabase/supabase-js
-//     and wires a real client, the TODOs below become live calls.
-//   - Until then, live calls return AUTH_REQUIRED and the UI falls back to
-//     simulator/mock mode.
-//
-// Phase 25 build: 2026-06-20
+// TextScan adapter for the Meta Ray-Ban Display webapp.
+// Meta-only: calls the canonical scan-identify Edge Function with mode: 'text'.
 
-// ═══════════════════════════════════════════════════════════════════
-// Error codes
-// ═══════════════════════════════════════════════════════════════════
+import {
+  getSupabaseClient,
+  getSupabaseSession,
+  hasSupabaseConfig,
+  invokeSupabaseFunction,
+  listenForSupabaseSessionMessages,
+  refreshSupabaseSession,
+} from './supabaseClient.js';
 
 export const TEXTSCAN_ERROR_CODES = {
+  CONFIG_REQUIRED: 'CONFIG_REQUIRED',
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   EMPTY_QUERY: 'EMPTY_QUERY',
   INVALID_INPUT: 'INVALID_INPUT',
@@ -24,29 +19,35 @@ export const TEXTSCAN_ERROR_CODES = {
   MALFORMED_RESPONSE: 'MALFORMED_RESPONSE',
   NON_FASHION: 'NON_FASHION',
   TIMEOUT: 'TIMEOUT',
+  BUSY: 'BUSY',
   UNKNOWN: 'UNKNOWN',
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// HUD-safe messages (≤ 60 chars where possible)
-// ═══════════════════════════════════════════════════════════════════
-
-const SAFE_EMPTY_MESSAGE = 'Enter a fashion description to start.';
-const SAFE_AUTH_MESSAGE = 'Sign in to analyze fashion requests.';
-const SAFE_NETWORK_MESSAGE = 'Connection failed. Try again.';
-const SAFE_MALFORMED_MESSAGE = 'Unexpected response. Try again.';
-const SAFE_NON_FASHION_MESSAGE = 'Not a fashion query. Try again.';
-const SAFE_TIMEOUT_MESSAGE = 'Taking too long. Try again.';
-const SAFE_UNKNOWN_MESSAGE = 'Something went wrong. Try again.';
-const SAFE_INVALID_MESSAGE = 'Invalid input. Describe a fashion item.';
-
+const EDGE_FUNCTION = 'scan-identify';
 const MAX_TEXT_QUERY_LEN = 500;
+const MAX_SPOKEN_SUMMARY_LEN = 120;
+const MAX_HUD_ERROR_LEN = 35;
+const TOTAL_TIMEOUT_MS = 8000;
+const NETWORK_RETRY_DELAYS_MS = [250, 700];
 
-// ═══════════════════════════════════════════════════════════════════
-// Helpers
-// ═══════════════════════════════════════════════════════════════════
+const SAFE_MESSAGES = {
+  [TEXTSCAN_ERROR_CODES.CONFIG_REQUIRED]: 'Supabase missing.',
+  [TEXTSCAN_ERROR_CODES.AUTH_REQUIRED]: 'Sign in required.',
+  [TEXTSCAN_ERROR_CODES.EMPTY_QUERY]: 'Pick a fashion phrase.',
+  [TEXTSCAN_ERROR_CODES.INVALID_INPUT]: 'Invalid fashion phrase.',
+  [TEXTSCAN_ERROR_CODES.NETWORK_ERROR]: 'Connection failed.',
+  [TEXTSCAN_ERROR_CODES.MALFORMED_RESPONSE]: 'Unexpected response.',
+  [TEXTSCAN_ERROR_CODES.NON_FASHION]: 'Not a fashion query.',
+  [TEXTSCAN_ERROR_CODES.TIMEOUT]: 'Taking too long.',
+  [TEXTSCAN_ERROR_CODES.BUSY]: 'TextScan already running.',
+  [TEXTSCAN_ERROR_CODES.UNKNOWN]: 'Something went wrong.',
+};
 
-function safeText(value, fallback) {
+let liveRequestInFlight = false;
+
+listenForSupabaseSessionMessages();
+
+function safeText(value, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
@@ -63,37 +64,56 @@ function clampConfidence(value) {
   return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Input validation (mirrors KScan mobile app rules)
-// ═══════════════════════════════════════════════════════════════════
+function clampText(value, max) {
+  const text = safeText(value, '');
+  return text.length > max ? text.slice(0, max).trim() : text;
+}
+
+function safeHudMessage(code, fallback) {
+  const message = safeText(SAFE_MESSAGES[code], fallback || SAFE_MESSAGES[TEXTSCAN_ERROR_CODES.UNKNOWN]);
+  return message.length <= MAX_HUD_ERROR_LEN ? message : `${message.slice(0, MAX_HUD_ERROR_LEN - 1).trim()}…`;
+}
+
+function safeSpokenSummary(value, fallback) {
+  const text = safeText(value, fallback || SAFE_MESSAGES[TEXTSCAN_ERROR_CODES.UNKNOWN])
+    .replace(/[A-Za-z0-9+/]{80,}={0,2}/g, '[redacted]');
+  return text.length <= MAX_SPOKEN_SUMMARY_LEN ? text : `${text.slice(0, MAX_SPOKEN_SUMMARY_LEN - 1).trim()}…`;
+}
+
+function makeTextScanError(code, options = {}) {
+  const err = new Error(code);
+  err.code = code;
+  err.userMessage = safeHudMessage(code, options.userMessage);
+  err.spokenSummary = safeSpokenSummary(options.spokenSummary || err.userMessage, err.userMessage);
+  err.canRetry = options.canRetry !== false;
+  return err;
+}
+
+function normalizeSource(source) {
+  const value = safeText(source, 'preset').toLowerCase();
+  return value === 'manual' ? 'preset' : value;
+}
 
 export function validateTextScanQuery(value) {
   if (typeof value !== 'string') {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
   const trimmed = value.trim();
   if (!trimmed) {
-    return { valid: false, message: SAFE_EMPTY_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.EMPTY_QUERY, message: SAFE_MESSAGES.EMPTY_QUERY };
   }
   if (trimmed.length < 3) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
-  }
-  if (trimmed.length > MAX_TEXT_QUERY_LEN) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
-  // Reject base64-like payloads
   if (/^[A-Za-z0-9+/]{40,}={0,2}$/.test(trimmed)) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
-
-  // Reject code blocks
   if (trimmed.includes('```') || trimmed.includes('`')) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
-  // Reject prompt injection patterns
   const lower = trimmed.toLowerCase();
   const injections = [
     'ignore previous instructions',
@@ -108,36 +128,26 @@ export function validateTextScanQuery(value) {
     'override instructions',
   ];
   if (injections.some((p) => lower.includes(p))) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
-  // Reject email addresses
   if (/[\w.+-]+@[\w.-]+\.\w+/.test(trimmed)) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
-
-  // Reject phone numbers
   if (/(\+?\d[\d\s-]{7,}\d)/.test(trimmed)) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
-
-  // Reject SSN-like patterns
   if (/\b\d{3}[\s-]\d{2}[\s-]\d{4}\b/.test(trimmed)) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
-  // Reject excessive non-alphanumeric characters
   const nonAlphaNum = (trimmed.match(/[^a-zA-Z0-9\s]/g) || []).length;
   if (nonAlphaNum / trimmed.length > 0.30) {
-    return { valid: false, message: SAFE_INVALID_MESSAGE };
+    return { valid: false, code: TEXTSCAN_ERROR_CODES.INVALID_INPUT, message: SAFE_MESSAGES.INVALID_INPUT };
   }
 
   return { valid: true };
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Edge response → StyleMatch adapter
-// ═══════════════════════════════════════════════════════════════════
 
 function normalizeEdgeAttributes(rawAttrs) {
   if (!rawAttrs || typeof rawAttrs !== 'object' || Array.isArray(rawAttrs)) {
@@ -153,17 +163,12 @@ function normalizeEdgeAttributes(rawAttrs) {
   }
 
   const a = rawAttrs;
-
-  // colorPalette is string[] from edge; take first as primary color
   const colorPalette = safeArray(a.colorPalette);
-  const color = colorPalette.length > 0 ? colorPalette[0] : safeText(a.color, null);
-
-  // styleTags is string[] from edge
-  const styleTags = safeArray(a.styleTags);
+  const styleTags = safeArray(a.styleTags ?? a.styleDescriptors);
 
   return {
     category: safeText(a.category || a.itemType, null),
-    color,
+    color: colorPalette.length > 0 ? colorPalette[0] : safeText(a.color, null),
     material: safeText(a.materialEstimate || a.material, null),
     silhouette: safeText(a.silhouette, null),
     occasion: safeText(a.occasion, null),
@@ -172,36 +177,45 @@ function normalizeEdgeAttributes(rawAttrs) {
   };
 }
 
-/**
- * Build a canonical StyleMatch from a scan-identify text-mode response.
- *
- * @param {object} response - raw edge function response
- * @param {string} query - original text query
- * @param {boolean} isDemo - whether this is mock/simulator mode
- * @returns {object} canonical StyleMatch shape
- */
+function isMalformedEdgeResponse(response) {
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return true;
+  const status = safeText(response.status, '').toLowerCase();
+  if (!status) return true;
+  if (status.includes('non')) return false;
+  if (status === 'failed') return false;
+  if (!response.attributes || typeof response.attributes !== 'object' || Array.isArray(response.attributes)) return true;
+  return false;
+}
+
 export function buildTextScanStyleMatch(response, query, isDemo = false) {
   const r = response && typeof response === 'object' ? response : {};
   const status = safeText(r.status, '').toLowerCase();
   const isNonFashion = status.includes('non');
-  const isFailed = status === 'failed' || (!status && !r.attributes);
+  const isMalformed = isMalformedEdgeResponse(r);
+  const isFailed = status === 'failed' || isMalformed;
 
-  const userMessage = safeText(r.userMessage, '');
   const attrs = normalizeEdgeAttributes(r.attributes);
   const confidence = isNonFashion ? 0 : attrs.confidenceScore;
-
-  const summary = isNonFashion
-    ? SAFE_NON_FASHION_MESSAGE
-    : isFailed
-      ? SAFE_UNKNOWN_MESSAGE
-      : userMessage || 'Analyzed your fashion request.';
+  const userMessage = safeText(r.userMessage, '');
+  const errorCode = isNonFashion
+    ? TEXTSCAN_ERROR_CODES.NON_FASHION
+    : isMalformed
+      ? TEXTSCAN_ERROR_CODES.MALFORMED_RESPONSE
+      : TEXTSCAN_ERROR_CODES.UNKNOWN;
+  const summary = isNonFashion || isFailed
+    ? safeHudMessage(errorCode)
+    : userMessage || 'Analyzed your fashion request.';
+  const spokenSummary = safeSpokenSummary(
+    isNonFashion || isFailed ? summary : userMessage || 'TextScan found a fashion style match.',
+    summary,
+  );
 
   return {
     id: makeId('textscan'),
     source: 'textscan',
     confidence,
     summary,
-
+    spokenSummary,
     intent: {
       style: attrs.styleDescriptors.length > 0 ? attrs.styleDescriptors.join(', ') : null,
       occasion: attrs.occasion,
@@ -210,29 +224,20 @@ export function buildTextScanStyleMatch(response, query, isDemo = false) {
       silhouette: attrs.silhouette,
       keywords: attrs.styleDescriptors,
     },
-
-    items: {
-      retail: [],
-      resale: [],
-      suggested: [],
-    },
-
+    items: { retail: [], resale: [], suggested: [] },
     actions: {
       canSave: !isNonFashion && !isFailed,
       canOpenOnPhone: false,
     },
-
     meta: {
-      scanModeLabel: 'Text Scan',
+      scanModeLabel: 'TextScan',
       confidenceLabel: confidence !== null ? `${Math.round(confidence * 100)}%` : 'Unavailable',
       isDemo,
     },
-
-    // Error envelope (only present on failure)
     ...(isFailed || isNonFashion
       ? {
           error: {
-            code: isNonFashion ? TEXTSCAN_ERROR_CODES.NON_FASHION : TEXTSCAN_ERROR_CODES.UNKNOWN,
+            code: errorCode,
             message: summary,
             canRetry: !isNonFashion,
           },
@@ -241,101 +246,187 @@ export function buildTextScanStyleMatch(response, query, isDemo = false) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Live backend call (future seam — Supabase client not yet installed)
-// ═══════════════════════════════════════════════════════════════════
-
-/**
- * Check whether the app has a live Supabase session for TextScan calls.
- *
- * TODO: replace with real session check when @supabase/supabase-js is installed.
- * For now, the app runs in stub mode and live calls are disabled.
- */
-function hasLiveSession() {
-  // Phase 25: no real Supabase client. Return false until auth is wired.
-  return false;
+function buildErrorStyleMatch(error, query, isDemo = false) {
+  const code = error?.code || TEXTSCAN_ERROR_CODES.UNKNOWN;
+  const message = safeHudMessage(code, error?.userMessage);
+  return {
+    id: makeId('textscan_err'),
+    source: 'textscan',
+    confidence: 0,
+    summary: message,
+    spokenSummary: safeSpokenSummary(error?.spokenSummary || message, message),
+    intent: { style: null, occasion: null, colors: [], materials: [], silhouette: null, keywords: [] },
+    items: { retail: [], resale: [], suggested: [] },
+    actions: { canSave: false, canOpenOnPhone: false },
+    meta: {
+      scanModeLabel: 'TextScan',
+      confidenceLabel: 'Unavailable',
+      isDemo,
+    },
+    error: {
+      code,
+      message,
+      canRetry: error?.canRetry !== false,
+    },
+  };
 }
 
-/**
- * Invoke the scan-identify Edge Function with mode: 'text'.
- *
- * TODO: wire real supabase.functions.invoke when @supabase/supabase-js is installed
- * and the app has an authenticated session.
- */
-async function invokeScanIdentify(textQuery, source) {
-  // Future implementation:
-  // const { data, error } = await supabase.functions.invoke('scan-identify', {
-  //   body: {
-  //     mode: 'text',
-  //     textQuery,
-  //     source,
-  //     clientTimestamp: new Date().toISOString(),
-  //   },
-  // });
-  // if (error) throw new Error(TEXTSCAN_ERROR_CODES.NETWORK_ERROR);
-  // return data;
-
-  throw new Error(TEXTSCAN_ERROR_CODES.AUTH_REQUIRED);
+function readRuntimeMockFlag() {
+  if (typeof window === 'undefined') return false;
+  const config = window.__KSCAN_CONFIG__;
+  if (!config || typeof config !== 'object') return false;
+  return (config.KSCAN_SIMULATOR === true || config.DEV === true) && config.VITE_MOCK_TEXTSCAN === true;
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Main adapter
-// ═══════════════════════════════════════════════════════════════════
+function isMockMode(options) {
+  if (options.mock === true) return true;
+  if (readRuntimeMockFlag()) return true;
+  const env = import.meta.env || {};
+  return env.DEV === true && env.VITE_MOCK_TEXTSCAN === 'true';
+}
 
-/**
- * Analyze a fashion text query via the canonical TextScan path.
- *
- * @param {string} textQuery - normalized fashion text query (3–500 chars)
- * @param {object} options
- * @param {string} [options.source='manual'] - source label for tracing
- * @param {boolean} [options.mock=false] - force mock mode (simulator)
- * @returns {Promise<object>} canonical StyleMatch shape
- */
-export async function analyzeTextQuery(textQuery, options = {}) {
-  const source = safeText(options.source, 'manual');
-  const trimmed = safeText(textQuery, '');
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const id = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => {
+      clearTimeout(id);
+      reject(new DOMException('Aborted', 'AbortError'));
+    }, { once: true });
+  });
+}
 
-  // 1. Validate input
-  const validation = validateTextScanQuery(trimmed);
-  if (!validation.valid) {
-    const err = new Error(TEXTSCAN_ERROR_CODES.INVALID_INPUT);
-    err.userMessage = validation.message;
-    err.code = TEXTSCAN_ERROR_CODES.INVALID_INPUT;
-    err.canRetry = false;
-    throw err;
+function invokeErrorStatus(error) {
+  return error?.status || error?.context?.status || error?.cause?.status || error?.response?.status || 0;
+}
+
+function isAuthError(error) {
+  const status = invokeErrorStatus(error);
+  const message = safeText(error?.message, '').toLowerCase();
+  return status === 401 || status === 403 || message.includes('jwt') || message.includes('auth');
+}
+
+function isRetryableNetworkError(error) {
+  const status = invokeErrorStatus(error);
+  if (status >= 500) return true;
+  if (error?.name === 'AbortError') return false;
+  return !status;
+}
+
+async function invokeScanIdentify(textQuery, source, signal) {
+  const { data, error } = await invokeSupabaseFunction(EDGE_FUNCTION, {
+    body: {
+      mode: 'text',
+      textQuery,
+      source,
+      clientTimestamp: new Date().toISOString(),
+    },
+    signal,
+  });
+
+  if (error) {
+    error.status = invokeErrorStatus(error);
+    throw error;
   }
-
-  // 2. Mock/simulator mode — no backend call
-  if (options.mock) {
-    const mockResponse = await runMockScenario(trimmed, source);
-    return buildTextScanStyleMatch(mockResponse, trimmed, true);
+  if (isMalformedEdgeResponse(data)) {
+    throw makeTextScanError(TEXTSCAN_ERROR_CODES.MALFORMED_RESPONSE, { canRetry: true });
   }
+  return data;
+}
 
-  // 3. Check live session availability
-  if (!hasLiveSession()) {
-    const err = new Error(TEXTSCAN_ERROR_CODES.AUTH_REQUIRED);
-    err.userMessage = SAFE_AUTH_MESSAGE;
-    err.code = TEXTSCAN_ERROR_CODES.AUTH_REQUIRED;
-    err.canRetry = false;
-    throw err;
-  }
+async function invokeWithRetry(textQuery, source) {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TOTAL_TIMEOUT_MS);
+  let authRetried = false;
+  let networkRetries = 0;
 
-  // 4. Live backend call (future seam)
   try {
-    const response = await invokeScanIdentify(trimmed, source);
-    return buildTextScanStyleMatch(response, trimmed, false);
-  } catch (error) {
-    const err = new Error(TEXTSCAN_ERROR_CODES.NETWORK_ERROR);
-    err.userMessage = SAFE_NETWORK_MESSAGE;
-    err.code = TEXTSCAN_ERROR_CODES.NETWORK_ERROR;
-    err.canRetry = true;
-    throw err;
+    while (Date.now() - startedAt < TOTAL_TIMEOUT_MS) {
+      try {
+        return await invokeScanIdentify(textQuery, source, controller.signal);
+      } catch (error) {
+        if (error?.code === TEXTSCAN_ERROR_CODES.CONFIG_REQUIRED) {
+          throw makeTextScanError(TEXTSCAN_ERROR_CODES.CONFIG_REQUIRED, { canRetry: false });
+        }
+        if (error?.code === TEXTSCAN_ERROR_CODES.AUTH_REQUIRED) {
+          throw makeTextScanError(TEXTSCAN_ERROR_CODES.AUTH_REQUIRED, { canRetry: false });
+        }
+        if (error?.code === TEXTSCAN_ERROR_CODES.MALFORMED_RESPONSE) throw error;
+        if (error?.name === 'AbortError') {
+          throw makeTextScanError(TEXTSCAN_ERROR_CODES.TIMEOUT, { canRetry: true });
+        }
+        if (isAuthError(error) && !authRetried) {
+          authRetried = true;
+          const refreshed = await refreshSupabaseSession();
+          if (refreshed.linked) continue;
+          throw makeTextScanError(TEXTSCAN_ERROR_CODES.AUTH_REQUIRED, { canRetry: false });
+        }
+        if (isRetryableNetworkError(error) && networkRetries < NETWORK_RETRY_DELAYS_MS.length) {
+          const delay = NETWORK_RETRY_DELAYS_MS[networkRetries];
+          networkRetries += 1;
+          if (Date.now() - startedAt + delay >= TOTAL_TIMEOUT_MS) {
+            throw makeTextScanError(TEXTSCAN_ERROR_CODES.TIMEOUT, { canRetry: true });
+          }
+          await sleep(delay, controller.signal);
+          continue;
+        }
+        throw makeTextScanError(TEXTSCAN_ERROR_CODES.NETWORK_ERROR, { canRetry: true });
+      }
+    }
+    throw makeTextScanError(TEXTSCAN_ERROR_CODES.TIMEOUT, { canRetry: true });
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Mock scenarios (simulator / dev-only)
-// ═══════════════════════════════════════════════════════════════════
+export async function analyzeTextQuery(textQuery, options = {}) {
+  const source = normalizeSource(options.source || 'preset');
+  const trimmed = safeText(textQuery, '');
+  const capped = clampText(trimmed, MAX_TEXT_QUERY_LEN);
+  const mock = isMockMode(options);
+
+  const validation = validateTextScanQuery(capped);
+  if (!validation.valid) {
+    throw makeTextScanError(validation.code, {
+      userMessage: validation.message,
+      spokenSummary: validation.message,
+      canRetry: validation.code !== TEXTSCAN_ERROR_CODES.EMPTY_QUERY,
+    });
+  }
+
+  if (mock) {
+    const mockResponse = await runMockScenario(capped, source);
+    return buildTextScanStyleMatch(mockResponse, capped, true);
+  }
+
+  if (liveRequestInFlight) {
+    throw makeTextScanError(TEXTSCAN_ERROR_CODES.BUSY, { canRetry: true });
+  }
+  liveRequestInFlight = true;
+
+  try {
+    if (!hasSupabaseConfig() || !getSupabaseClient()) {
+      throw makeTextScanError(TEXTSCAN_ERROR_CODES.CONFIG_REQUIRED, { canRetry: false });
+    }
+
+    const session = await getSupabaseSession();
+    if (options.requireAuth !== false && !session.linked) {
+      throw makeTextScanError(TEXTSCAN_ERROR_CODES.AUTH_REQUIRED, { canRetry: false });
+    }
+
+    const response = await invokeWithRetry(capped, source);
+    return buildTextScanStyleMatch(response, capped, false);
+  } catch (error) {
+    if (error?.code && TEXTSCAN_ERROR_CODES[error.code]) throw error;
+    throw makeTextScanError(TEXTSCAN_ERROR_CODES.UNKNOWN, { canRetry: true });
+  } finally {
+    liveRequestInFlight = false;
+  }
+}
 
 const MOCK_SCENARIOS = {
   'black oversized blazer': {
@@ -353,7 +444,6 @@ const MOCK_SCENARIOS = {
     userMessage: 'Black oversized blazer with structured shoulders.',
     recommendedProducts: [],
   },
-
   'quiet luxury office outfit': {
     status: 'completed',
     attributes: {
@@ -369,7 +459,6 @@ const MOCK_SCENARIOS = {
     userMessage: 'Quiet luxury office outfit in neutral tones.',
     recommendedProducts: [],
   },
-
   'blue bag': {
     status: 'completed',
     attributes: {
@@ -385,7 +474,6 @@ const MOCK_SCENARIOS = {
     userMessage: 'Structured navy leather handbag.',
     recommendedProducts: [],
   },
-
   'minimal white sneakers': {
     status: 'completed',
     attributes: {
@@ -401,7 +489,6 @@ const MOCK_SCENARIOS = {
     userMessage: 'Minimal white low-top sneakers.',
     recommendedProducts: [],
   },
-
   'streetwear hoodie minimal': {
     status: 'completed',
     attributes: {
@@ -417,55 +504,38 @@ const MOCK_SCENARIOS = {
     userMessage: 'Minimal streetwear hoodie in relaxed fit.',
     recommendedProducts: [],
   },
-
   'non fashion test': {
     status: 'non_fashion',
     userMessage: "This doesn't appear to be a fashion query.",
     recommendedProducts: [],
   },
-
   'asdf random': {
     status: 'non_fashion',
     userMessage: "This doesn't appear to be a fashion query.",
     recommendedProducts: [],
   },
-
   'network failure': {
     status: 'failed',
-    userMessage: 'Connection failed. Try again.',
+    userMessage: 'Connection failed.',
     recommendedProducts: [],
   },
-
   'malformed response': {
     status: 'completed',
-    attributes: {
-      category: 'Unknown',
-      confidenceScore: 'not-a-number',
-    },
     userMessage: 'Unexpected response.',
     recommendedProducts: [],
   },
 };
 
-async function runMockScenario(query, source) {
-  // Small delay to simulate network latency
-  await new Promise((resolve) => setTimeout(resolve, 800));
+async function runMockScenario(query) {
+  await new Promise((resolve) => setTimeout(resolve, 250));
 
   const lower = query.toLowerCase().trim();
+  if (MOCK_SCENARIOS[lower]) return MOCK_SCENARIOS[lower];
 
-  // Exact match first
-  if (MOCK_SCENARIOS[lower]) {
-    return MOCK_SCENARIOS[lower];
-  }
-
-  // Partial match
   for (const [key, scenario] of Object.entries(MOCK_SCENARIOS)) {
-    if (lower.includes(key.split(' ')[0]) || key.includes(lower.split(' ')[0])) {
-      return scenario;
-    }
+    if (lower.includes(key.split(' ')[0]) || key.includes(lower.split(' ')[0])) return scenario;
   }
 
-  // Default: successful generic fashion response
   return {
     status: 'completed',
     attributes: {
@@ -480,34 +550,25 @@ async function runMockScenario(query, source) {
   };
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Simulator scenario registry (for external simulator control)
-// ═══════════════════════════════════════════════════════════════════
-
 export const TEXTSCAN_SIMULATOR_SCENARIOS = [
-  { id: 'black-blazer', label: 'Black Oversized Blazer', query: 'black oversized blazer', source: 'manual' },
-  { id: 'quiet-luxury', label: 'Quiet Luxury Office', query: 'quiet luxury office outfit', source: 'manual' },
-  { id: 'blue-bag', label: 'Blue Bag', query: 'blue bag', source: 'manual' },
-  { id: 'white-sneakers', label: 'Minimal White Sneakers', query: 'minimal white sneakers', source: 'manual' },
-  { id: 'streetwear-hoodie', label: 'Streetwear Hoodie', query: 'streetwear hoodie minimal', source: 'manual' },
-  { id: 'non-fashion', label: 'Non-Fashion Test', query: 'asdf random', source: 'manual' },
-  { id: 'network-fail', label: 'Network Failure', query: 'network failure', source: 'manual' },
-  { id: 'malformed', label: 'Malformed Response', query: 'malformed response', source: 'manual' },
+  { id: 'black-blazer', label: 'Black Oversized Blazer', query: 'black oversized blazer', source: 'preset' },
+  { id: 'quiet-luxury', label: 'Quiet Luxury Office', query: 'quiet luxury office outfit', source: 'preset' },
+  { id: 'blue-bag', label: 'Blue Bag', query: 'blue bag', source: 'preset' },
+  { id: 'white-sneakers', label: 'Minimal White Sneakers', query: 'minimal white sneakers', source: 'preset' },
+  { id: 'streetwear-hoodie', label: 'Streetwear Hoodie', query: 'streetwear hoodie minimal', source: 'preset' },
+  { id: 'non-fashion', label: 'Non-Fashion Test', query: 'asdf random', source: 'preset' },
+  { id: 'network-fail', label: 'Network Failure', query: 'network failure', source: 'preset' },
+  { id: 'malformed', label: 'Malformed Response', query: 'malformed response', source: 'preset' },
 ];
 
-/**
- * Run a simulator scenario by ID.
- * @param {string} scenarioId - one of TEXTSCAN_SIMULATOR_SCENARIOS[].id
- * @returns {Promise<object>} StyleMatch result
- */
 export async function runSimulatorScenario(scenarioId) {
   const scenario = TEXTSCAN_SIMULATOR_SCENARIOS.find((s) => s.id === scenarioId);
   if (!scenario) {
-    const err = new Error(TEXTSCAN_ERROR_CODES.UNKNOWN);
-    err.userMessage = 'Unknown scenario. Try again.';
-    err.code = TEXTSCAN_ERROR_CODES.UNKNOWN;
-    err.canRetry = false;
-    throw err;
+    throw makeTextScanError(TEXTSCAN_ERROR_CODES.UNKNOWN, { canRetry: false });
   }
   return analyzeTextQuery(scenario.query, { source: scenario.source, mock: true });
+}
+
+export function textScanErrorToStyleMatch(error, query, isDemo = false) {
+  return buildErrorStyleMatch(error, query, isDemo);
 }
