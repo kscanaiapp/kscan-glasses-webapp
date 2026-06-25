@@ -12,6 +12,7 @@
     "download:models": "node scripts/download-models.js",
     "postinstall": "node scripts/copy-mediapipe-wasm.js",
     "test:textscan": "node scripts/textscan-live-tests.js",
+    "test:smoke": "node scripts/textscan-live-smoke.js",
     "test:static": "node scripts/static-tests.js",
     "test:contract": "node scripts/contract-tests.js",
     "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"

@@ -987,6 +987,150 @@ try {
   warn('H.scope:no-google-changed', 'git diff check available', `skipped: ${err.message}`);
 }
 
+// ---------------------------------------------------------------------------
+// I. Phase 27 — Local QA + Pre-Deployment Readiness
+// ---------------------------------------------------------------------------
+console.log('\n=== I. Phase 27 Local QA ===');
+
+const smokeScriptPath = path.join(root, 'scripts', 'textscan-live-smoke.js');
+const smokeScriptContent = readFile(smokeScriptPath);
+const qaDocPath = path.join(root, 'docs', 'meta-textscan-live-qa.md');
+const qaDocContent = readFile(qaDocPath);
+
+fileExists(smokeScriptPath)
+  ? pass('I.smoke:script-exists', 'textscan-live-smoke.js exists', 'found')
+  : fail('I.smoke:script-exists', 'textscan-live-smoke.js exists', 'MISSING');
+
+if (smokeScriptContent) {
+  !smokeScriptContent.includes('process.env.VITE_SUPABASE_URL')
+    ? fail('I.smoke:reads-env', 'reads config from env', 'NOT found')
+    : pass('I.smoke:reads-env', 'reads config from env', 'found');
+
+  smokeScriptContent.includes('SKIPPED: missing live QA env/session')
+    ? pass('I.smoke:skip-message', 'prints skip message when env missing', 'found')
+    : fail('I.smoke:skip-message', 'prints skip message when env missing', 'NOT found');
+
+  smokeScriptContent.includes('redact')
+    ? pass('I.smoke:redacts-tokens', 'redacts token values', 'found')
+    : fail('I.smoke:redacts-tokens', 'redacts token values', 'NOT found');
+
+  !smokeScriptContent.includes('console.log(ACCESS_TOKEN') && !smokeScriptContent.includes('console.log(REFRESH_TOKEN')
+    ? pass('I.smoke:no-token-log', 'does not log raw tokens', 'clean')
+    : fail('I.smoke:no-token-log', 'does not log raw tokens', 'FOUND');
+
+  smokeScriptContent.includes("mode: 'text'")
+    ? pass('I.smoke:mode-text', 'invokes mode:text', 'found')
+    : fail('I.smoke:mode-text', 'invokes mode:text', 'NOT found');
+
+  smokeScriptContent.includes("source: 'preset'")
+    ? pass('I.smoke:source-preset', 'uses source:preset', 'found')
+    : fail('I.smoke:source-preset', 'uses source:preset', 'NOT found');
+
+  smokeScriptContent.includes('process.exit(0)')
+    ? pass('I.smoke:exits-zero', 'exits zero on skip/pass', 'found')
+    : fail('I.smoke:exits-zero', 'exits zero on skip/pass', 'NOT found');
+
+  smokeScriptContent.includes('process.exit(1)')
+    ? pass('I.smoke:exits-nonzero', 'exits nonzero on failure', 'found')
+    : fail('I.smoke:exits-nonzero', 'exits nonzero on failure', 'NOT found');
+}
+
+// Session injection completeness
+supabaseClientContent.includes('window.__KSCAN_CONFIG__')
+  ? pass('I.session:runtime-config', 'runtime config session injection', 'found')
+  : fail('I.session:runtime-config', 'runtime config session injection', 'NOT found');
+
+supabaseClientContent.includes('history.replaceState')
+  ? pass('I.session:url-scrub', 'URL token scrub with replaceState', 'found')
+  : fail('I.session:url-scrub', 'URL token scrub with replaceState', 'NOT found');
+
+!supabaseClientContent.includes('window.location.href =') && !supabaseClientContent.includes('window.location.search =')
+  ? pass('I.session:no-reload-scrub', 'no reload-causing scrub pattern', 'clean')
+  : fail('I.session:no-reload-scrub', 'no reload-causing scrub pattern', 'FOUND');
+
+supabaseClientContent.includes('kscan:supabase-session')
+  ? pass('I.session:postmessage-session', 'postMessage session type', 'found')
+  : fail('I.session:postmessage-session', 'postMessage session type', 'NOT found');
+
+supabaseClientContent.includes('kscan:supabase-token')
+  ? pass('I.session:postmessage-token', 'postMessage token type', 'found')
+  : fail('I.session:postmessage-token', 'postMessage token type', 'NOT found');
+
+// spokenSummary checks
+textScanContent.includes('spokenSummary')
+  ? pass('I.spoken:exists', 'spokenSummary field exists', 'found')
+  : fail('I.spoken:exists', 'spokenSummary field exists', 'NOT found');
+
+textScanContent.includes('MAX_SPOKEN_SUMMARY_LEN = 120')
+  ? pass('I.spoken:max-120', 'spokenSummary capped at 120 chars', 'found')
+  : fail('I.spoken:max-120', 'spokenSummary capped at 120 chars', 'NOT found');
+
+// No forbidden APIs
+const allClientSrc = `${textScanContent}\n${supabaseClientContent}\n${mainContent}\n${indexHtmlContent}`;
+
+!allClientSrc.includes('speechSynthesis')
+  ? pass('I.forbidden:no-speech-synthesis', 'no speechSynthesis', 'clean')
+  : fail('I.forbidden:no-speech-synthesis', 'no speechSynthesis', 'FOUND');
+
+!allClientSrc.includes('getUserMedia')
+  ? pass('I.forbidden:no-getUserMedia', 'no getUserMedia', 'clean')
+  : fail('I.forbidden:no-getUserMedia', 'no getUserMedia', 'FOUND');
+
+!allClientSrc.includes('navigator.geolocation')
+  ? pass('I.forbidden:no-geolocation', 'no geolocation', 'clean')
+  : fail('I.forbidden:no-geolocation', 'no geolocation', 'FOUND');
+
+// D-pad preset existence
+indexHtmlContent.includes('textscan-preset focusable')
+  ? pass('I.dpad:presets-focusable', 'TextScan presets have .focusable', 'found')
+  : fail('I.dpad:presets-focusable', 'TextScan presets have .focusable', 'NOT found');
+
+indexHtmlContent.includes('data-query="black oversized blazer"')
+  ? pass('I.dpad:preset-query-attr', 'preset data-query attribute present', 'found')
+  : fail('I.dpad:preset-query-attr', 'preset data-query attribute present', 'NOT found');
+
+mainContent.includes("source: 'preset'") || mainContent.includes('const source = \'preset\'')
+  ? pass('I.dpad:source-preset', 'TextScan uses source:preset', 'found')
+  : fail('I.dpad:source-preset', 'TextScan uses source:preset', 'NOT found');
+
+// HUD containment CSS
+const styleContent = readFile(path.join(root, 'style.css'));
+
+styleContent.includes('text-overflow: ellipsis') && styleContent.includes('overflow: hidden')
+  ? pass('I.hud:containment-css', 'HUD containment CSS exists', 'found')
+  : fail('I.hud:containment-css', 'HUD containment CSS exists', 'NOT found');
+
+// No hardcoded http:// backend URLs in app source (excluding env example comments)
+const httpHits = [];
+for (const [label, content] of [['textScan.js', textScanContent], ['supabaseClient.js', supabaseClientContent]]) {
+  if (/http:\/\/[^l]/.test(content) && !content.includes('http://localhost')) {
+    httpHits.push(label);
+  }
+}
+httpHits.length === 0
+  ? pass('I.https:no-hardcoded-http', 'no hardcoded http:// backend URLs', 'clean')
+  : fail('I.https:no-hardcoded-http', 'no hardcoded http:// URLs', `FOUND in: ${httpHits.join(', ')}`);
+
+// QA doc exists
+fileExists(qaDocPath)
+  ? pass('I.docs:qa-doc', 'meta-textscan-live-qa.md exists', 'found')
+  : fail('I.docs:qa-doc', 'meta-textscan-live-qa.md exists', 'MISSING');
+
+if (qaDocContent) {
+  qaDocContent.includes('Phase 28')
+    ? pass('I.docs:phase28-handoff', 'Phase 28 handoff noted', 'found')
+    : fail('I.docs:phase28-handoff', 'Phase 28 handoff noted', 'NOT found');
+
+  qaDocContent.includes('600')
+    ? pass('I.docs:600x600-referenced', '600x600 viewport referenced', 'found')
+    : fail('I.docs:600x600-referenced', '600x600 viewport referenced', 'NOT found');
+}
+
+// Image scan unchanged
+apiContent.includes('/api/analyze')
+  ? pass('I.image:path-preserved', 'image scan /api/analyze preserved', 'found')
+  : fail('I.image:path-preserved', '/api/analyze preserved', 'missing');
+
 console.log('\n=== Summary ===');
 console.log(`FAIL:  ${failCount}`);
 console.log(`WARN:  ${warnCount}`);

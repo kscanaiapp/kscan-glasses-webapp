@@ -560,13 +560,13 @@ export async function startTextScan(query) {
 
   if (els.textscanResults) els.textscanResults.dataset.lastQuery = query;
 
+  const isMock = isTextScanMockEnabled();
+
   try {
     setState(STATE.ANALYZING);
     showScreen('processing');
     els.processingText.textContent = 'Analyzing text...';
     if (els.processingSub) els.processingSub.textContent = 'Fashion AI is working';
-
-    const isMock = isTextScanMockEnabled();
     emitTextScanStatus({
       mode: isMock ? 'mock' : 'live',
       source,
