@@ -19,6 +19,13 @@ import { mountSimulatorBadge, getSimulatorState } from './simulatorMode.js';
 import { getSession, signInStub, signOut, isStubMode } from './authSession.js';
 import { loadGuestLibrary, recordGuestScan, saveGuestItem, getStubLibraryExamples } from './libraryStore.js';
 import { buildMockStyleMatch, makeEmptyStyleMatch } from './styleMatchContract.js';
+import {
+  analyzeTextQuery,
+  validateTextScanQuery,
+  TEXTSCAN_ERROR_CODES,
+  TEXTSCAN_SIMULATOR_SCENARIOS,
+  runSimulatorScenario,
+} from './services/textScan.js';
 
 const STATE = FLOW_STATES;
 
@@ -41,6 +48,7 @@ const els = {
   resultsMatch: document.getElementById('results-match'),
   resultsEmpty: document.getElementById('results-empty'),
   errorMessage: document.getElementById('error-message'),
+  textscanResults: document.getElementById('textscan-results'),
   hud: null,
 };
 
@@ -53,10 +61,11 @@ function updateHud() {
   const betaStatus = getBetaBridgeStatus();
   const datState = betaStatus.enabled ? 'BETA' : (datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING'));
   const analyzeState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') ? 'MOCK' : 'REAL';
+  const textscanState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true') ? 'MOCK' : 'REAL';
   const backendState = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim() ? 'OK' : 'MISSING';
   const flow = getFlowState();
 
-  els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | BACKEND: ${backendState} | FLOW: ${flow}`;
+  els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | TEXTSCAN: ${textscanState} | BACKEND: ${backendState} | FLOW: ${flow}`;
 }
 
 function updateBridgeBadge() {
@@ -125,6 +134,14 @@ function showScreen(viewId, pushHistory = true) {
   if (viewId === 'settings') renderSettings();
 
   if (viewId === 'results') {
+    // Check if TextScan result is active
+    const textscanCard = els.textscanResults?.querySelector('.textscan-result-card');
+    const retryBtn = els.textscanResults?.querySelector('.textscan-retry-btn');
+    if (textscanCard && !els.textscanResults.classList.contains('hidden')) {
+      const focusTarget = retryBtn || document.getElementById('results-back-btn');
+      focusTarget?.focus();
+      return;
+    }
     const firstCard = els.resultsList.querySelector('.product-card.focusable');
     if (firstCard) {
       firstCard.focus();
@@ -394,6 +411,13 @@ export async function startScan() {
     // should replace this adapter call with their own adapter that still returns
     // a canonical StyleMatch. The UI consumes ONLY the canonical shape.
     const styleMatch = buildMockStyleMatch(response);
+
+    // Reset textscan results container before showing image scan results
+    if (els.textscanResults) els.textscanResults.classList.add('hidden');
+    if (els.textscanResults) els.textscanResults.innerHTML = '';
+    if (els.resultsMatch) els.resultsMatch.classList.remove('hidden');
+    if (els.resultsList) els.resultsList.classList.remove('hidden');
+
     renderProducts(styleMatch);
     setState(STATE.SUCCESS);
     showScreen('results');
@@ -406,11 +430,171 @@ export async function startScan() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// TextScan flow
+// ═══════════════════════════════════════════════════════════════════
+
+let textScanInFlight = false;
+let textScanToken = 0;
+
+function renderTextScanResult(styleMatch) {
+  const panel = els.textscanResults;
+  if (!panel) return;
+  panel.innerHTML = '';
+
+  const sm = styleMatch && typeof styleMatch === 'object' ? styleMatch : {};
+  const hasError = sm.error && typeof sm.error === 'object';
+
+  const card = document.createElement('div');
+  card.className = 'textscan-result-card';
+
+  // Header
+  const header = document.createElement('div');
+  header.className = 'textscan-result-header';
+  header.appendChild(createText('span', 'textscan-result-title', 'Text Scan Result'));
+  if (sm.meta?.confidenceLabel) {
+    header.appendChild(createText('span', 'confidence-badge', sm.meta.confidenceLabel));
+  }
+  card.appendChild(header);
+
+  // Summary
+  if (sm.summary) {
+    card.appendChild(createText('div', 'textscan-result-summary', sm.summary));
+  }
+
+  // Error
+  if (hasError) {
+    card.appendChild(createText('div', 'textscan-error', sm.error.message));
+  }
+
+  // Intent pills
+  const intentGrid = document.createElement('div');
+  intentGrid.className = 'textscan-intent-grid';
+
+  const intent = sm.intent || {};
+  const addPill = (label, value) => {
+    if (Array.isArray(value) && value.length === 0) return;
+    if (value === null || value === undefined || value === '') return;
+    const display = Array.isArray(value) ? value.join(', ') : String(value);
+    const pill = createText('span', 'textscan-intent-pill', `${label}: ${display}`);
+    intentGrid.appendChild(pill);
+  };
+
+  addPill('Style', intent.style);
+  addPill('Occasion', intent.occasion);
+  if (Array.isArray(intent.colors) && intent.colors.length > 0) {
+    intent.colors.forEach((c) => addPill('Color', c));
+  }
+  if (Array.isArray(intent.materials) && intent.materials.length > 0) {
+    intent.materials.forEach((m) => addPill('Material', m));
+  }
+  addPill('Silhouette', intent.silhouette);
+  if (Array.isArray(intent.keywords) && intent.keywords.length > 0) {
+    intent.keywords.slice(0, 5).forEach((k) => addPill('Tag', k));
+  }
+
+  if (intentGrid.children.length === 0) {
+    intentGrid.appendChild(createText('span', 'textscan-intent-pill empty', 'No details available'));
+  }
+  card.appendChild(intentGrid);
+
+  // Retry button for errors
+  if (hasError && sm.error.canRetry) {
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'btn btn-primary focusable textscan-retry-btn';
+    retryBtn.textContent = 'Try Again';
+    retryBtn.addEventListener('click', () => {
+      const lastQuery = panel.dataset.lastQuery;
+      if (lastQuery) startTextScan(lastQuery);
+    });
+    card.appendChild(retryBtn);
+  }
+
+  panel.appendChild(card);
+}
+
+export async function startTextScan(query) {
+  if (textScanInFlight) return;
+  textScanInFlight = true;
+  const token = ++textScanToken;
+
+  if (els.textscanResults) els.textscanResults.dataset.lastQuery = query;
+
+  try {
+    setState(STATE.ANALYZING);
+    showScreen('processing');
+    els.processingText.textContent = 'Analyzing text...';
+    if (els.processingSub) els.processingSub.textContent = 'Fashion AI is working';
+
+    const isMock = import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true';
+
+    const styleMatch = await analyzeTextQuery(query, { source: 'manual', mock: isMock });
+
+    if (token !== textScanToken) return;
+
+    recordGuestScan({
+      productCount: 0,
+      topBrand: styleMatch.intent?.style || '',
+      topName: styleMatch.summary?.slice(0, 40) || '',
+    });
+
+    renderTextScanResult(styleMatch);
+
+    if (els.resultsMatch) els.resultsMatch.classList.add('hidden');
+    if (els.resultsList) els.resultsList.classList.add('hidden');
+    if (els.resultsEmpty) els.resultsEmpty.classList.add('hidden');
+    if (els.textscanResults) els.textscanResults.classList.remove('hidden');
+
+    setState(STATE.SUCCESS);
+    showScreen('results');
+    focusFirstInView('results');
+  } catch (error) {
+    if (token !== textScanToken) return;
+
+    const errorCode = error.code || TEXTSCAN_ERROR_CODES.UNKNOWN;
+    const userMessage = error.userMessage || 'Something went wrong. Try again.';
+
+    const errorMatch = {
+      id: `textscan_err_${Date.now()}`,
+      source: 'textscan',
+      confidence: 0,
+      summary: userMessage,
+      intent: {
+        style: null, occasion: null, colors: [], materials: [], silhouette: null, keywords: [],
+      },
+      items: { retail: [], resale: [], suggested: [] },
+      actions: { canSave: false, canOpenOnPhone: false },
+      meta: {
+        scanModeLabel: 'Text Scan',
+        confidenceLabel: 'Unavailable',
+        isDemo: import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true',
+      },
+      error: { code: errorCode, message: userMessage, canRetry: error.canRetry !== false },
+    };
+
+    renderTextScanResult(errorMatch);
+
+    if (els.resultsMatch) els.resultsMatch.classList.add('hidden');
+    if (els.resultsList) els.resultsList.classList.add('hidden');
+    if (els.resultsEmpty) els.resultsEmpty.classList.add('hidden');
+    if (els.textscanResults) els.textscanResults.classList.remove('hidden');
+
+    setState(STATE.SUCCESS);
+    showScreen('results');
+    focusFirstInView('results');
+  } finally {
+    if (token === textScanToken) textScanInFlight = false;
+  }
+}
+
 function onBack() {
   if (currentView === 'home') return;
   if (currentView === 'processing') {
     scanToken += 1; // invalidate in-flight scan
     scanInFlight = false;
+    textScanToken += 1; // invalidate any in-flight text scan
+    textScanInFlight = false;
     setState(STATE.IDLE);
   }
   const previous = screenHistory.pop() || 'home';
@@ -539,6 +723,11 @@ function renderSettingsStatus(panel) {
     ? '<span class="status-badge warn">future device test</span>'
     : '<span class="status-badge off">future device test</span>';
 
+  const textscanMock = import.meta.env.DEV && import.meta.env.VITE_MOCK_TEXTSCAN === 'true';
+  const textscanBadge = textscanMock
+    ? '<span class="status-badge warn">Mock</span>'
+    : '<span class="status-badge off">Real (needs auth)</span>';
+
   const mobileBridgeEnabled = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOBILE_BRIDGE_PLACEHOLDER === 'true';
   const mobileBridgeBadge = mobileBridgeEnabled
     ? '<span class="status-badge warn">prepared</span>'
@@ -561,6 +750,7 @@ function renderSettingsStatus(panel) {
   status.appendChild(makeRow('Supabase', supabaseBadge));
   status.appendChild(makeRow('Account', authBadge));
   status.appendChild(makeRow('Voice', voiceBadge));
+  status.appendChild(makeRow('TextScan', textscanBadge));
   status.appendChild(makeRow('Mobile bridge', mobileBridgeBadge));
   status.appendChild(makeRow('Connectivity', connectivityBadge));
 }
@@ -616,6 +806,14 @@ function wireButtons() {
   document.getElementById('library-btn').addEventListener('click', () => showScreen('library'));
   document.getElementById('settings-btn').addEventListener('click', () => showScreen('settings'));
 
+  // Wire TextScan preset buttons
+  document.querySelectorAll('.textscan-preset').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const query = btn.dataset.query;
+      if (query) startTextScan(query);
+    });
+  });
+
   document.getElementById('library-back-btn').addEventListener('click', onBack);
   document.getElementById('settings-back-btn').addEventListener('click', onBack);
   document.getElementById('results-back-btn').addEventListener('click', onBack);
@@ -627,14 +825,18 @@ function wireButtons() {
   document.getElementById('cancel-btn').addEventListener('click', () => {
     scanToken += 1; // invalidate any in-flight scan
     scanInFlight = false;
+    textScanToken += 1; // invalidate any in-flight text scan
+    textScanInFlight = false;
     setState(STATE.IDLE);
     showScreen('home', false);
   });
 }
 
 function registerMatrices() {
+  const textscanPresets = Array.from(document.querySelectorAll('.textscan-preset'));
   registerFocusMatrix('home', [
     [document.getElementById('scan-btn')],
+    ...textscanPresets.map((el) => [el]),
     [document.getElementById('library-btn')],
     [document.getElementById('settings-btn')],
   ]);

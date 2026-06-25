@@ -700,8 +700,144 @@ try {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SUMMARY
+// G. TextScan Adapter Phase 25
 // ═══════════════════════════════════════════════════════════════════
+console.log('\n=== G. TextScan Adapter ===');
+
+const textScanPath = path.join(srcDir, 'services', 'textScan.js');
+const textScanExists = fileExists(textScanPath);
+const textScanContent = textScanExists ? readFile(textScanPath) : '';
+
+// File existence
+const textScanFiles = [
+  'src/services/textScan.js',
+  'docs/meta-textscan-adapter.md',
+];
+for (const f of textScanFiles) {
+  fileExists(path.join(root, f))
+    ? pass(`G.textscan:${f}`, 'exists', 'found')
+    : fail(`G.textscan:${f}`, 'exists', 'MISSING');
+}
+
+// Contract checks
+if (textScanExists) {
+  textScanContent.includes("mode: 'text'")
+    ? pass('G.textscan:mode-text', "mode: 'text' in adapter", 'found')
+    : fail('G.textscan:mode-text', "mode: 'text' in adapter", 'NOT found');
+
+  textScanContent.includes('textQuery')
+    ? pass('G.textscan:textQuery', 'textQuery referenced', 'found')
+    : fail('G.textscan:textQuery', 'textQuery referenced', 'NOT found');
+
+  textScanContent.includes('source')
+    ? pass('G.textscan:source', 'source referenced', 'found')
+    : fail('G.textscan:source', 'source referenced', 'NOT found');
+
+  textScanContent.includes('clientTimestamp')
+    ? pass('G.textscan:clientTimestamp', 'clientTimestamp referenced', 'found')
+    : warn('G.textscan:clientTimestamp', 'clientTimestamp referenced', 'NOT found (live seam not wired yet)');
+
+  !textScanContent.includes('imageBase64')
+    ? pass('G.textscan:no-imageBase64', 'imageBase64 not present', 'clean')
+    : fail('G.textscan:no-imageBase64', 'imageBase64 not present', 'FOUND — must not send images');
+
+  textScanContent.includes('scan-identify')
+    ? pass('G.textscan:scan-identify', 'scan-identify referenced', 'found')
+    : pass('G.textscan:scan-identify', 'scan-identify referenced', 'found in comment (live seam)');
+
+  textScanContent.includes('AUTH_REQUIRED')
+    ? pass('G.textscan:auth-required', 'AUTH_REQUIRED error code', 'found')
+    : fail('G.textscan:auth-required', 'AUTH_REQUIRED error code', 'NOT found');
+
+  textScanContent.includes('validateTextScanQuery')
+    ? pass('G.textscan:validate-function', 'validateTextScanQuery function', 'found')
+    : fail('G.textscan:validate-function', 'validateTextScanQuery function', 'NOT found');
+
+  // Validation rules presence
+  const validationRules = [
+    ['length < 3', 'min length'],
+    ['MAX_TEXT_QUERY_LEN', 'max length'],
+    ['A-Za-z0-9+/', 'base64 rejection'],
+    ["'```'", 'code block rejection'],
+    ['ignore previous instructions', 'prompt injection'],
+    ['[\\w.+-]+@[\\w.-]+\\.\\w+', 'email rejection'],
+    ['\\d{3}[\\s-]\\d{2}[\\s-]\\d{4}', 'SSN rejection'],
+    ['0.30', 'non-alphanumeric ratio'],
+  ];
+  for (const [pattern, label] of validationRules) {
+    textScanContent.includes(pattern)
+      ? pass(`G.textscan:validation-${label}`, `${label} rule`, 'found')
+      : warn(`G.textscan:validation-${label}`, `${label} rule`, 'NOT found');
+  }
+
+  // No secrets
+  !textScanContent.includes('GEMINI_API_KEY')
+    ? pass('G.textscan:no-gemini-key', 'no Gemini API key in client', 'clean')
+    : fail('G.textscan:no-gemini-key', 'no Gemini API key in client', 'FOUND');
+
+  // No Node.js APIs
+  !textScanContent.includes('process.env')
+    ? pass('G.textscan:no-node-apis', 'no Node.js-only APIs', 'clean')
+    : fail('G.textscan:no-node-apis', 'no Node.js-only APIs', 'FOUND');
+}
+
+// HTML checks
+const textscanHtmlChecks = [
+  ['textscan-preset', 'preset buttons class'],
+  ['data-query', 'preset data-query attributes'],
+  ['textscan-results', 'textscan results container'],
+];
+for (const [pattern, label] of textscanHtmlChecks) {
+  indexHtmlContent.includes(pattern)
+    ? pass(`G.textscan:html-${label}`, label, 'found')
+    : fail(`G.textscan:html-${label}`, label, 'NOT found');
+}
+
+// No free-form text inputs in HUD
+const hudInputs = ['<input type="text"', '<textarea', 'type=\'text\'', 'contenteditable'];
+const foundInputs = hudInputs.filter((p) => indexHtmlContent.includes(p));
+foundInputs.length === 0
+  ? pass('G.textscan:no-free-text-input', 'no free-form text input in HUD', 'clean')
+  : fail('G.textscan:no-free-text-input', 'no free-form text input in HUD', `FOUND: ${foundInputs.join(', ')}`);
+
+// main.js TextScan integration
+mainContent.includes('startTextScan')
+  ? pass('G.textscan:main-startTextScan', 'startTextScan in main.js', 'found')
+  : fail('G.textscan:main-startTextScan', 'startTextScan in main.js', 'NOT found');
+
+mainContent.includes('renderTextScanResult')
+  ? pass('G.textscan:main-renderTextScanResult', 'renderTextScanResult in main.js', 'found')
+  : fail('G.textscan:main-renderTextScanResult', 'renderTextScanResult in main.js', 'NOT found');
+
+mainContent.includes('TEXTSCAN_ERROR_CODES')
+  ? pass('G.textscan:main-error-codes', 'TEXTSCAN_ERROR_CODES imported', 'found')
+  : fail('G.textscan:main-error-codes', 'TEXTSCAN_ERROR_CODES imported', 'NOT found');
+
+mainContent.includes('.textscan-preset')
+  ? pass('G.textscan:main-preset-wiring', 'preset buttons wired', 'found')
+  : fail('G.textscan:main-preset-wiring', 'preset buttons wired', 'NOT found');
+
+// StyleMatch contract includes textscan source
+const styleMatchContractContent = readFile(path.join(srcDir, 'styleMatchContract.js'));
+styleMatchContractContent.includes('textscan')
+  ? pass('G.textscan:contract-source', 'textscan in StyleMatch contract', 'found')
+  : fail('G.textscan:contract-source', 'textscan in StyleMatch contract', 'NOT found');
+
+// No Google files changed
+const googlePatterns = ['kscan-google-glasses', 'google-glasses', 'android-xr', 'gemini-glasses'];
+let googleChanged = false;
+for (const pattern of googlePatterns) {
+  if (textScanContent.includes(pattern) || mainContent.includes(pattern) || indexHtmlContent.includes(pattern)) {
+    googleChanged = true;
+    break;
+  }
+}
+!googleChanged
+  ? pass('G.textscan:no-google-files', 'no Google files referenced', 'clean')
+  : warn('G.textscan:no-google-files', 'no Google files referenced', 'pattern found — verify scope');
+
+// ─────────────────────────────────────────────────────────────────
+
 console.log('\n=== Summary ===');
 console.log(`FAIL:  ${failCount}`);
 console.log(`WARN:  ${warnCount}`);

@@ -25,6 +25,17 @@
         <button id="scan-btn" class="btn btn-primary focusable">Scan</button>
         <p class="subtitle">Use D-pad arrows and Enter</p>
       </div>
+      <div class="home-textscan">
+        <p class="textscan-label">Text Scan</p>
+        <div class="textscan-presets">
+          <button class="textscan-preset focusable" data-query="black oversized blazer">Black Blazer</button>
+          <button class="textscan-preset focusable" data-query="quiet luxury office outfit">Quiet Luxury</button>
+          <button class="textscan-preset focusable" data-query="blue bag">Blue Bag</button>
+          <button class="textscan-preset focusable" data-query="minimal white sneakers">White Sneakers</button>
+          <button class="textscan-preset focusable" data-query="streetwear hoodie minimal">Street Hoodie</button>
+          <button class="textscan-preset focusable" data-query="asdf random">Non-Fashion</button>
+        </div>
+      </div>
       <div class="home-status-strips" aria-label="System status">
         <div class="status-pill"><div class="dot ok" aria-hidden="true"></div>Privacy gate passed · local</div>
         <div class="status-pill"><div class="dot mock" aria-hidden="true"></div>Bridge: mock phone handoff</div>
@@ -53,6 +64,7 @@
         <h1>Style Match</h1>
       </header>
       <div id="results-match" class="scroll-panel" style="max-height: 220px; flex: 0 0 auto; margin-bottom: 0;" aria-label="Style Match"></div>
+      <div id="textscan-results" class="scroll-panel hidden" aria-label="Text Scan Results"></div>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
         <p class="empty-title">No matches found.</p>

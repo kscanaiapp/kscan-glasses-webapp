@@ -1061,3 +1061,115 @@ body.prod #dat-hud {
   line-height: 1.4;
 }
 
+
+/* ── TextScan preset section ── */
+.home-textscan {
+  padding: 0 var(--safe-zone) 8px;
+}
+
+.textscan-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--silver);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.textscan-presets {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.textscan-preset {
+  min-height: 36px;
+  border: 1px solid rgba(232, 236, 241, 0.08);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--chrome);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: 0.2px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+}
+
+.textscan-preset:hover,
+.textscan-preset.focused {
+  border-color: var(--cyan-primary);
+  background: rgba(0, 229, 255, 0.08);
+  color: var(--white);
+}
+
+/* ── TextScan result view ── */
+.textscan-result-card {
+  background: var(--panel);
+  border: 1px solid rgba(232, 236, 241, 0.08);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.textscan-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.textscan-result-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--silver);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.textscan-result-summary {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--white);
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.textscan-intent-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.textscan-intent-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(0, 229, 255, 0.08);
+  border: 1px solid rgba(0, 229, 255, 0.15);
+  color: var(--cyan-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.textscan-intent-pill.empty {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
+  color: #5A6A7D;
+  font-weight: 500;
+}
+
+.textscan-error {
+  color: var(--red-danger);
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+
+.textscan-retry-btn {
+  margin-top: 8px;
+}

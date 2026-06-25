@@ -181,6 +181,23 @@
       <p class="note">“offline” is a simulated network error for demo purposes.</p>
     </fieldset>
 
+    <fieldset>
+      <legend>TextScan Scenarios</legend>
+      <p class="note">Text-origin fashion queries via the Meta webapp TextScan adapter. Uses mock scenarios when VITE_MOCK_TEXTSCAN=true.</p>
+      <div class="btn-row">
+        <button data-textscan="black-blazer">Black Blazer</button>
+        <button data-textscan="quiet-luxury">Quiet Luxury</button>
+        <button data-textscan="blue-bag">Blue Bag</button>
+        <button data-textscan="white-sneakers">White Sneakers</button>
+        <button data-textscan="streetwear-hoodie">Street Hoodie</button>
+      </div>
+      <div class="btn-row">
+        <button data-textscan="non-fashion">Non-Fashion Test</button>
+        <button data-textscan="network-fail">Network Failure</button>
+        <button data-textscan="malformed">Malformed Response</button>
+      </div>
+    </fieldset>
+
     <fieldset class="section-advanced">
       <legend>Advanced Failure Tests</legend>
       <p class="note">These are available for QA and engineering review. They do not affect the primary investor demo.</p>
@@ -422,6 +439,42 @@
   document.getElementById('trigger-mismatch').addEventListener('click', function () {
     if (pendingRequestId) respond(pendingRequestId, 'mismatched-id');
     else logInfo('simulator: no pending capture request');
+  });
+
+  // TextScan simulator controls — trigger preset scenarios via postMessage
+  document.querySelectorAll('[data-textscan]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var scenarioId = btn.dataset.textscan;
+      try {
+        var win = frame.contentWindow;
+        if (win && win.startTextScan) {
+          // Find the preset button in the app and click it
+          var doc = win.document;
+          var presetBtn = doc.querySelector('.textscan-preset[data-query*="' + scenarioId.replace('-', ' ') + '"]');
+          if (!presetBtn) {
+            // Fallback: try matching by scenario name parts
+            var presets = doc.querySelectorAll('.textscan-preset');
+            for (var i = 0; i < presets.length; i++) {
+              if (presets[i].dataset.query && presets[i].dataset.query.indexOf(scenarioId.split('-')[0]) >= 0) {
+                presetBtn = presets[i];
+                break;
+              }
+            }
+          }
+          if (presetBtn) {
+            win.focus();
+            presetBtn.click();
+            logInfo('simulator: TextScan scenario activated: ' + scenarioId);
+          } else {
+            logInfo('simulator: TextScan preset not found for: ' + scenarioId);
+          }
+        } else {
+          logInfo('simulator: app not ready for TextScan');
+        }
+      } catch (e) {
+        logInfo('simulator: TextScan trigger failed: ' + (e.message || 'unknown'));
+      }
+    });
   });
 
   loadApp();
