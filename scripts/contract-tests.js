@@ -260,7 +260,7 @@ async function runCapture(scenario) {
   try {
     const promise = bridge.capturePhoto({ timeoutMs: 200 });
     // allow emit
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => { setTimeout(r, 5); });
     await scenario({ promise, requestId: () => postedRequestId });
     return promise;
   } finally {
@@ -292,7 +292,7 @@ async function runCapture(scenario) {
     result = await runCapture(async ({ promise, requestId }) => {
       dispatchMessage({ origin: 'null', source: parentStub, data: { type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG } });
       dispatchMessage({ origin: 'https://attacker.example', source: {}, data: { type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG } });
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => { setTimeout(r, 20); });
       dispatchMessage(trustedEvent({ type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG }));
       await promise;
     });
@@ -363,7 +363,7 @@ async function runCapture(scenario) {
   try {
     await runCapture(async ({ promise, requestId }) => {
       promise.catch(() => {}); // prevent unhandled rejection during timeout wait
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => { setTimeout(r, 250); });
       dispatchMessage(trustedEvent({ type: 'photo-captured', requestId: requestId(), base64: VALID_JPEG }));
       await promise;
     });

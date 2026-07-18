@@ -241,7 +241,9 @@ function generateMockImage(variant = 'standard') {
 }
 
 function waitMs(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function validateCapturePayload(payload) {

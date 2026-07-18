@@ -587,9 +587,11 @@ try {
   }
 
   const withTimeout = (p, ms, label) =>
-    Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} hung`)), ms))]);
+    Promise.race([p, new Promise((_, rej) => {
+      setTimeout(() => rej(new Error(`${label} hung`)), ms);
+    })]);
   // Let the mock socket open and the client send its request (macrotask).
-  const tick = () => new Promise((r) => setTimeout(r, 5));
+  const tick = () => new Promise((r) => { setTimeout(r, 5); });
 
   // Success path.
   {

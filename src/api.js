@@ -109,7 +109,9 @@ function normalizeAnalyzeResponse(json) {
 }
 
 function waitMs(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function shouldRetry(error) {

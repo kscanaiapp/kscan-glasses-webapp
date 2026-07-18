@@ -527,7 +527,9 @@ const MOCK_SCENARIOS = {
 };
 
 async function runMockScenario(query) {
-  await new Promise((resolve) => setTimeout(resolve, 250));
+  await new Promise((resolve) => {
+    setTimeout(resolve, 250);
+  });
 
   const lower = query.toLowerCase().trim();
   if (MOCK_SCENARIOS[lower]) return MOCK_SCENARIOS[lower];

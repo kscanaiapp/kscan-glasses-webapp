@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:simulator": "vite build --config vite.simulator.config.js",
     "verify:artifacts": "node scripts/verify-artifacts.js",
+    "lint": "eslint .",
     "preview": "vite preview",
     "copy:wasm": "node scripts/copy-mediapipe-wasm.js",
     "verify:models": "node scripts/verify-models.js",
@@ -23,6 +24,7 @@
     "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"
   },
   "devDependencies": {
+    "eslint": "9.39.4",
     "vite": "^7.1.0"
   },
   "dependencies": {

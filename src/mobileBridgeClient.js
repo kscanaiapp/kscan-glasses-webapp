@@ -167,7 +167,9 @@ export class MobileBridgeClient {
   }
 
   _delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   _ensureConnected() {

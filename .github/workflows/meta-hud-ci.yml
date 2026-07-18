@@ -1,0 +1,68 @@
+# Meta HUD CI — safe, non-live validation for the hardware-validation
+# candidate. Runs on pushes and PRs touching this repository's code.
+#
+# HARD RULES:
+#   - No live backend calls (no test:smoke, no live scan-identify,
+#     no live /api/analyze).
+#   - No deployment of any kind.
+#   - No secrets are required or used.
+
+name: meta-hud-ci
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'phase-**'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (locked)
+        run: npm ci
+
+      - name: Verify MediaPipe model assets
+        run: npm run verify:models
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Production build
+        run: npm run build
+
+      - name: Simulator (LOCAL QA) build
+        run: npm run build:simulator
+
+      - name: Static tests
+        run: npm run test:static
+
+      - name: Contract tests
+        run: npm run test:contract
+
+      - name: TextScan tests (mocked)
+        run: npm run test:textscan
+
+      - name: Security tests
+        run: npm run test:security
+
+      - name: Bridge lifecycle tests
+        run: npm run test:bridge
+
+      - name: Privacy and containment tests
+        run: npm run test:privacy
+
+      - name: Production artifact assertion
+        run: npm run verify:artifacts
