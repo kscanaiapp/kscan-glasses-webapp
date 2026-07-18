@@ -17,6 +17,7 @@
     "test:smoke": "node scripts/textscan-live-smoke.js",
     "test:static": "node scripts/static-tests.js",
     "test:security": "node scripts/security-tests.js",
+    "test:bridge": "node scripts/bridge-lifecycle-tests.js",
     "test:contract": "node scripts/contract-tests.js",
     "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"
   },

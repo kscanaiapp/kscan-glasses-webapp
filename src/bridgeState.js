@@ -1,4 +1,5 @@
-// Bridge state scaffold — Phase 28A.
+// Bridge state scaffold — Phase 28A, hardened for the hardware-validation
+// candidate (Phase 31 WS7: explicit settle on cancel/timeout/supersede).
 //
 // Minimal, safe client-side state machine for the future DAT/camera bridge.
 // This scaffold lets the simulator (and later the Meta runtime) drive HUD
@@ -14,10 +15,19 @@
 //   - This scaffold never triggers real camera capture and never posts
 //     image data anywhere.
 //
-// Origin note: events are accepted from the same origin only (simulator
-// parent frame). The accepted-origin policy must be revisited during real
-// Meta runtime / hardware validation (see VITE_DAT_PARENT_ORIGIN pattern in
-// datBridge.js).
+// LIFECYCLE RULES (do not weaken):
+//   - Every pending requestCapture() promise is ALWAYS settled — resolve,
+//     reject, timeout, cancel, or supersede. Never silently dropped.
+//   - Cancel/Back/replacement scans reject with a safe code
+//     (BRIDGE_CANCELLED / BRIDGE_SUPERSEDED / BRIDGE_TIMEOUT / STALE_CAPTURE).
+//   - Inbound events carrying a requestId that does not match the active
+//     request are stale and ignored.
+//
+// Origin note: inbound trust is evaluated by the canonical evaluator in
+// src/messageTrust.js (same-origin default; explicit allowlist for hardware
+// testing; no wildcards; source pinned to the parent window).
+
+import { buildMessageOriginAllowlist, evaluateMessageTrust } from './messageTrust.js';
 
 export const BRIDGE_STATUS = {
   IDLE: 'idle',
@@ -26,6 +36,13 @@ export const BRIDGE_STATUS = {
   SUCCESS: 'success',
   ERROR: 'error',
   TIMEOUT: 'timeout',
+};
+
+export const BRIDGE_CANCEL_CODES = {
+  CANCELLED: 'BRIDGE_CANCELLED',
+  SUPERSEDED: 'BRIDGE_SUPERSEDED',
+  TIMEOUT: 'BRIDGE_TIMEOUT',
+  STALE: 'STALE_CAPTURE',
 };
 
 const REQUEST_TIMEOUT_MS = 10000;
@@ -41,6 +58,7 @@ const listeners = new Set();
 let listenerInstalled = false;
 let timeoutId = null;
 let pendingRequest = null;
+let requestSeq = 0;
 
 // Maps inbound event types (including kscan: aliases) to scaffold actions.
 const TYPE_ALIASES = {
@@ -62,6 +80,12 @@ function devLog(status) {
   } catch {
     // env unavailable (e.g. tests) — stay silent
   }
+}
+
+function makeBridgeError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
 }
 
 function clampErrorText(value) {
@@ -126,11 +150,40 @@ function clearPendingTimeout() {
   }
 }
 
-function clearPendingRequest() {
-  if (pendingRequest) {
-    if (pendingRequest.timeoutId) clearTimeout(pendingRequest.timeoutId);
-    pendingRequest = null;
-  }
+/**
+ * Settle the pending request promise with a rejection carrying a safe code.
+ * Clears the per-request timeout and releases the request reference.
+ * Returns true when a pending promise was settled.
+ */
+function rejectPendingRequest(code, message) {
+  if (!pendingRequest) return false;
+  const pending = pendingRequest;
+  pendingRequest = null;
+  if (pending.timeoutId) clearTimeout(pending.timeoutId);
+  pending.reject(makeBridgeError(code, message));
+  return true;
+}
+
+/**
+ * Settle the pending request promise with a success value.
+ * Clears the per-request timeout and releases the request reference.
+ */
+function resolvePendingRequest(value) {
+  if (!pendingRequest) return false;
+  const pending = pendingRequest;
+  pendingRequest = null;
+  if (pending.timeoutId) clearTimeout(pending.timeoutId);
+  pending.resolve(value);
+  return true;
+}
+
+// Whether an inbound event belongs to the active request. Events that carry
+// no requestId are accepted for compatibility with the simulator scaffold;
+// events carrying a mismatched requestId are stale.
+function matchesActiveRequest(data) {
+  const incomingId = typeof data?.requestId === 'string' && data.requestId ? data.requestId : null;
+  if (!incomingId) return true; // legacy/untagged event — accepted
+  return Boolean(pendingRequest) && pendingRequest.requestId === incomingId;
 }
 
 function armTimeout() {
@@ -138,12 +191,7 @@ function armTimeout() {
   timeoutId = setTimeout(() => {
     if (state.status === BRIDGE_STATUS.REQUESTING || state.status === BRIDGE_STATUS.CAPTURING) {
       setStatus(BRIDGE_STATUS.TIMEOUT, { lastError: 'Bridge timed out.' });
-      if (pendingRequest) {
-        const err = new Error('Bridge timed out.');
-        err.code = 'BRIDGE_TIMEOUT';
-        pendingRequest.reject(err);
-        pendingRequest = null;
-      }
+      rejectPendingRequest(BRIDGE_CANCEL_CODES.TIMEOUT, 'Bridge timed out.');
     }
   }, REQUEST_TIMEOUT_MS);
 }
@@ -157,49 +205,60 @@ export function subscribeBridgeState(fn) {
 /** Simulator/dev helper — resets scaffold to idle. Safe metadata only. */
 export function resetBridgeState() {
   clearPendingTimeout();
-  if (pendingRequest) {
-    const err = new Error('Bridge reset.');
-    err.code = 'BRIDGE_ERROR';
-    pendingRequest.reject(err);
-    pendingRequest = null;
-  }
+  rejectPendingRequest('BRIDGE_ERROR', 'Bridge reset.');
   setStatus(BRIDGE_STATUS.IDLE);
 }
 
-export function requestCapture(options = {}) {
+/**
+ * Explicitly cancel the active capture request (user Cancel/Back, screen
+ * exit, or replacement scan). Settles the pending promise with
+ * BRIDGE_CANCELLED, clears the timeout, returns the state machine to idle.
+ * Idempotent: safe to call with nothing pending.
+ */
+export function cancelBridgeCapture() {
+  clearPendingTimeout();
+  const hadPending = rejectPendingRequest(BRIDGE_CANCEL_CODES.CANCELLED, 'Capture cancelled.');
+  if (state.status === BRIDGE_STATUS.REQUESTING || state.status === BRIDGE_STATUS.CAPTURING) {
+    setStatus(BRIDGE_STATUS.IDLE);
+  }
+  return hadPending;
+}
+
+/** True while a capture request promise is pending. */
+export function hasPendingCapture() {
+  return pendingRequest !== null;
+}
+
+export function requestCapture() {
   return new Promise((resolve, reject) => {
-    clearPendingRequest();
+    // A replacement scan supersedes any older pending request — explicitly,
+    // so the older caller never hangs.
+    rejectPendingRequest(BRIDGE_CANCEL_CODES.SUPERSEDED, 'Superseded by a new capture request.');
     clearPendingTimeout();
 
-    pendingRequest = {
-      resolve: (value) => {
-        clearPendingRequest();
-        resolve(value);
-      },
-      reject: (error) => {
-        clearPendingRequest();
-        reject(error);
-      },
-      startedAt: Date.now(),
-    };
+    requestSeq += 1;
+    const requestId = `capture-${requestSeq}`;
+    const requestTimeoutId = setTimeout(() => {
+      if (pendingRequest && pendingRequest.requestId === requestId) {
+        rejectPendingRequest(BRIDGE_CANCEL_CODES.TIMEOUT, 'Bridge timed out.');
+        setStatus(BRIDGE_STATUS.TIMEOUT, { lastError: 'Bridge timed out.' });
+      }
+    }, REQUEST_TIMEOUT_MS);
+
+    pendingRequest = { requestId, resolve, reject, timeoutId: requestTimeoutId };
 
     setStatus(BRIDGE_STATUS.REQUESTING);
-    armTimeout();
 
     try {
-      const message = { type: 'capture.request', source: 'kscan-glasses-webapp' };
       // TODO: Restrict target origin to the actual phone/DAT bridge origin after hardware validation.
-      window.parent.postMessage(message, '*');
+      window.parent.postMessage({ type: 'capture.request', source: 'kscan-glasses-webapp', requestId }, '*');
       // TODO: Replace scaffold postMessage contract with real DAT/mobile bridge call after hardware validation.
       // Optional outbound compatibility alias
-      window.parent.postMessage({ type: 'capture-photo', source: 'kscan-glasses-webapp' }, '*');
-    } catch (error) {
-      clearPendingTimeout();
+      window.parent.postMessage({ type: 'capture-photo', source: 'kscan-glasses-webapp', requestId }, '*');
+    } catch {
+      const settled = rejectPendingRequest('BRIDGE_ERROR', 'Failed to request capture.');
       setStatus(BRIDGE_STATUS.ERROR, { lastError: 'Failed to request capture.' });
-      clearPendingRequest();
-      const err = new Error('Failed to request capture.');
-      err.code = 'BRIDGE_ERROR';
-      reject(err);
+      if (!settled) reject(makeBridgeError('BRIDGE_ERROR', 'Failed to request capture.'));
     }
   });
 }
@@ -212,7 +271,6 @@ export function requestCapture(options = {}) {
 //   or VITE_BRIDGE_ALLOWED_ORIGINS (comma-separated).
 // No wildcard is honored — origins must be listed explicitly. The event
 // source must additionally be the approved parent window.
-import { buildMessageOriginAllowlist, evaluateMessageTrust } from './messageTrust.js';
 
 const BRIDGE_MESSAGE_TYPES = new Set(Object.keys(TYPE_ALIASES));
 
@@ -282,39 +340,36 @@ export function initBridgeStateListener() {
       return;
     }
     if (kind === 'success' || kind === 'photoCaptured') {
+      // Stale events (requestId of an already-settled/superseded request)
+      // are ignored entirely — they can never render or resolve late.
+      if (!matchesActiveRequest(data)) return;
       clearPendingTimeout();
       const metadata = sanitizeMetadata(data.metadata);
       const image = data.image || data.imageData || data.base64;
 
       if (!validateImagePayload(image)) {
         setStatus(BRIDGE_STATUS.ERROR, { lastError: 'Invalid image payload' });
-        if (pendingRequest) {
-          const err = new Error('Invalid image payload');
-          err.code = 'CAPTURE_INVALID';
-          pendingRequest.reject(err);
-          pendingRequest = null;
-        }
+        rejectPendingRequest('CAPTURE_INVALID', 'Invalid image payload');
         return;
       }
 
-      if (pendingRequest) {
-        pendingRequest.resolve({ image, metadata });
-        pendingRequest = null;
-      }
+      resolvePendingRequest({ image, metadata });
       setStatus(BRIDGE_STATUS.SUCCESS, { imageMetadata: metadata });
       return;
     }
     if (kind === 'error' || kind === 'photoCaptureError') {
+      if (!matchesActiveRequest(data)) return;
       clearPendingTimeout();
       const errorText = clampErrorText(data.error || data.code || data.message);
       setStatus(BRIDGE_STATUS.ERROR, { lastError: errorText });
-      if (pendingRequest) {
-        const err = new Error(errorText);
-        err.code = 'BRIDGE_ERROR';
-        pendingRequest.reject(err);
-        pendingRequest = null;
-      }
+      rejectPendingRequest('BRIDGE_ERROR', errorText);
       return;
     }
   });
 }
+
+// Test-only hooks. Not imported by the app entry point.
+export const __bridgeTestHooks = {
+  matchesActiveRequest,
+  getPendingRequestId: () => (pendingRequest ? pendingRequest.requestId : null),
+};

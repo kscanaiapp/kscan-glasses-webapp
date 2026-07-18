@@ -30,7 +30,7 @@ import {
   listenForSupabaseSessionMessages,
   signOutSupabaseSession,
 } from './services/supabaseClient.js';
-import { initBridgeStateListener, subscribeBridgeState, BRIDGE_STATUS, requestCapture, getBridgeState } from './bridgeState.js';
+import { initBridgeStateListener, subscribeBridgeState, BRIDGE_STATUS, requestCapture, getBridgeState, cancelBridgeCapture } from './bridgeState.js';
 
 const STATE = FLOW_STATES;
 
@@ -297,7 +297,10 @@ function createStyleMatchItemCard(item) {
   actions.className = 'product-actions';
 
   const saveAction = createText('span', 'product-action-btn primary-action', 'Save Look');
-  const phoneAction = createText('span', 'product-action-btn', 'Open on Phone');
+  // Phone handoff is not built in this phase — render an honest, disabled
+  // label instead of a dead affordance (P3-UX-02).
+  const phoneAction = createText('span', 'product-action-btn action-disabled', 'Phone handoff — coming soon');
+  phoneAction.setAttribute('aria-disabled', 'true');
   actions.appendChild(saveAction);
   actions.appendChild(phoneAction);
   meta.appendChild(actions);
@@ -453,6 +456,9 @@ function normalizeScanError(error) {
   if (error?.code === 'BRIDGE_TIMEOUT') return 'Unable to capture. Try again.';
   if (error?.code === 'CAPTURE_INVALID') return "Couldn't read image. Try again.";
   if (error?.code === 'BRIDGE_ERROR') return 'Capture failed. Try again.';
+  if (error?.code === 'BRIDGE_CANCELLED') return 'Scan cancelled.';
+  if (error?.code === 'BRIDGE_SUPERSEDED') return 'Scan replaced. Try again.';
+  if (error?.code === 'STALE_CAPTURE') return 'Capture expired. Try again.';
   if (error?.code === 'PRIVACY_FAILED') return 'Privacy scan failed. Try again.';
   if (error?.code === 'ANALYZE_FAILED') return 'Analysis failed. Try again.';
 
@@ -814,6 +820,7 @@ function onBack() {
     scanInFlight = false;
     textScanToken += 1; // invalidate any in-flight text scan
     textScanInFlight = false;
+    cancelBridgeCapture(); // settle any pending bridge request (BRIDGE_CANCELLED)
     setState(STATE.IDLE);
   }
   const previous = screenHistory.pop() || 'home';
@@ -1123,6 +1130,7 @@ function wireButtons() {
     scanInFlight = false;
     textScanToken += 1; // invalidate any in-flight text scan
     textScanInFlight = false;
+    cancelBridgeCapture(); // settle any pending bridge request (BRIDGE_CANCELLED)
     setState(STATE.IDLE);
     showScreen('home', false);
   });

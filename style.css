@@ -1330,3 +1330,16 @@ body.prod #dat-hud {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Disabled affordances — visible but honest, never focusable (P3-UX-02). */
+.row-disabled {
+  opacity: 0.45;
+  cursor: default;
+  font-style: italic;
+}
+
+.action-disabled {
+  opacity: 0.45;
+  cursor: default;
+  font-style: italic;
+}

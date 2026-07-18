@@ -484,6 +484,12 @@
       respond(requestId, captureSelect.value);
     }
 
+    // Track the app's bridge-scaffold request id so manual capture.* answers
+    // can echo it — lets the app drop stale answers after cancel/timeout.
+    if (data.type === 'capture.request' && typeof data.requestId === 'string') {
+      pendingRequestId = data.requestId;
+    }
+
     if (data.type === 'kscan:textscan-live-status') {
       log('app -> simulator', 'kscan:textscan-live-status', (data.mode || 'unknown') + '/' + (data.status || 'unknown'));
       var tsStrip = document.getElementById('textscan-strip');
@@ -552,6 +558,7 @@
     log('simulator -> app', 'capture.request', 'timeout scenario — no follow-up; app scaffold times out');
   });
   bindBridgeButton('bridge-full-flow', function () {
+    var rid = pendingRequestId || undefined;
     post({ type: 'capture.request' });
     log('simulator -> app', 'capture.request', 'full flow');
     setTimeout(function () {
@@ -561,6 +568,7 @@
     setTimeout(function () {
       post({
         type: 'capture.success',
+        requestId: rid,
         image: getMockBridgeImage(),
         metadata: { timestamp: new Date().toISOString(), size: 123456, width: 640, height: 640 }
       });
