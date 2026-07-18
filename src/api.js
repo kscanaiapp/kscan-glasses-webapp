@@ -26,6 +26,7 @@ export const ANALYZE_ERROR_CODES = {
   INVALID_SHAPE: 'INVALID_SHAPE',
   MOCK_ERROR: 'MOCK_ERROR',
   INVALID_INPUT: 'INVALID_INPUT',
+  LIVE_DISABLED: 'LIVE_DISABLED',
 };
 
 export class AnalyzeError extends Error {
@@ -209,10 +210,57 @@ function readApiEnv() {
       VITE_MOCK_ANALYZE_DELAY_MS: import.meta.env.VITE_MOCK_ANALYZE_DELAY_MS,
       VITE_MOCK_ANALYZE_ERROR: import.meta.env.VITE_MOCK_ANALYZE_ERROR,
       VITE_ENABLE_SIMULATOR: import.meta.env.VITE_ENABLE_SIMULATOR,
+      VITE_ENABLE_PRIVATE_LIVE_ANALYZE: import.meta.env.VITE_ENABLE_PRIVATE_LIVE_ANALYZE,
     };
   } catch {
     return { DEV: false };
   }
+}
+
+// __KSCAN_SIMULATOR_BUILD__ is the compile-time LOCAL QA marker (see
+// vite.simulator.config.js). False/undefined in production builds.
+const SIMULATOR_BUILD =
+  typeof __KSCAN_SIMULATOR_BUILD__ !== 'undefined' && __KSCAN_SIMULATOR_BUILD__ === true;
+
+/**
+ * Live analyze containment (unverified backend dependency).
+ *
+ * POST /api/analyze is currently UNAUTHENTICATED and must never be enabled
+ * silently. A live call happens only when ALL of these hold:
+ *   1. explicit private-QA opt-in — env VITE_ENABLE_PRIVATE_LIVE_ANALYZE=true
+ *      or runtime window.__KSCAN_CONFIG__.ENABLE_PRIVATE_LIVE_ANALYZE === true
+ *   2. a backend URL is configured
+ * Otherwise analyzeImage() is fail-closed (LIVE_DISABLED) outside explicit
+ * mock modes. When backend auth lands, this client remains structurally
+ * ready to attach a JWT — no contract change needed here.
+ */
+export function isPrivateLiveAnalyzeEnabled(envLike = {}, runtimeLike = {}) {
+  if (runtimeLike && runtimeLike.ENABLE_PRIVATE_LIVE_ANALYZE === true) return true;
+  return String(envLike.VITE_ENABLE_PRIVATE_LIVE_ANALYZE || '').toLowerCase() === 'true';
+}
+
+function isMockAnalyzeEnabled(envLike = {}) {
+  if (envLike.DEV === true && envLike.VITE_MOCK_ANALYZE === 'true') return true;
+  // The LOCAL QA simulator build defaults to honest mock so the full
+  // pipeline can be exercised without any live backend. Never true in the
+  // production candidate build.
+  if (SIMULATOR_BUILD && String(envLike.VITE_MOCK_ANALYZE ?? 'true') !== 'false') return true;
+  return false;
+}
+
+/**
+ * Current analyze mode for status surfaces (diagnostics/pills).
+ * One of: 'mock' | 'private-live' | 'live-disabled'.
+ */
+export function getAnalyzeMode(envLike = readApiEnv(), runtimeLike = undefined) {
+  const runtime = runtimeLike === undefined
+    ? (typeof window !== 'undefined' && window.__KSCAN_CONFIG__ && typeof window.__KSCAN_CONFIG__ === 'object'
+      ? window.__KSCAN_CONFIG__
+      : {})
+    : runtimeLike;
+  if (isPrivateLiveAnalyzeEnabled(envLike, runtime)) return 'private-live';
+  if (isMockAnalyzeEnabled(envLike)) return 'mock';
+  return 'live-disabled';
 }
 
 export const ANALYZE_SCENARIOS = ['success', 'empty', 'http-400', 'http-500', 'timeout', 'malformed', 'offline'];
@@ -321,21 +369,36 @@ async function runMockAnalyze(sanitizedBase64, envLike) {
 
 export async function analyzeImage(sanitizedBase64, options = {}) {
   const env = readApiEnv();
+  const runtime = typeof window !== 'undefined' && window.__KSCAN_CONFIG__ && typeof window.__KSCAN_CONFIG__ === 'object'
+    ? window.__KSCAN_CONFIG__
+    : {};
   const locationLike = typeof window !== 'undefined' && window.location ? window.location : {};
 
-  // Simulator scenario override (dev/staging only; inert in production).
-  const scenario = parseAnalyzeScenario(locationLike, env);
+  // Simulator scenario override (dev/staging/LOCAL-QA builds only; inert in
+  // the production candidate). The simulator build flag is folded into the
+  // env handed to the pure scenario parser — its own gate stays unchanged.
+  const scenario = parseAnalyzeScenario(locationLike, { ...env, DEV: env.DEV === true || SIMULATOR_BUILD });
   if (scenario) {
     return runScenarioMock(scenario, sanitizedBase64, env);
   }
 
-  // Legacy dev mock (env-gated).
-  if (env.DEV === true && env.VITE_MOCK_ANALYZE === 'true') {
+  // Honest mock: explicit dev mock, or the LOCAL QA simulator build default.
+  if (isMockAnalyzeEnabled(env)) {
     return runMockAnalyze(sanitizedBase64, env);
   }
 
+  // Live analyze requires the explicit private-QA opt-in. Default is
+  // fail-closed with an honest status — never silently live, never
+  // silently mock in the production candidate.
+  if (!isPrivateLiveAnalyzeEnabled(env, runtime)) {
+    throw new AnalyzeError(
+      ANALYZE_ERROR_CODES.LIVE_DISABLED,
+      'Live analysis is disabled. Private QA configuration required.',
+    );
+  }
+
   return performAnalyzeRequest(sanitizedBase64, {
-    backendUrl: env.VITE_KSCAN_BACKEND_URL,
+    backendUrl: env.VITE_KSCAN_BACKEND_URL || runtime.KSCAN_BACKEND_URL,
     fetchImpl: typeof fetch === 'function' ? fetch.bind(globalThis) : undefined,
     onSlow: options.onSlow,
   });

@@ -12,7 +12,7 @@ import {
 } from './datBridge.js';
 import { isMobileBridgeEnabled } from './mobileBridgeConfig.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
-import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
+import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES, getAnalyzeMode } from './api.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
 import { runScanPipeline, PIPELINE_STAGES, PipelineInvariantError } from './scanPipeline.js';
 import { mountSimulatorBadge, getSimulatorState } from './simulatorMode.js';
@@ -441,6 +441,7 @@ function normalizeScanError(error) {
   }
 
   if (error instanceof AnalyzeError) {
+    if (error.code === ANALYZE_ERROR_CODES.LIVE_DISABLED) return 'Live analysis disabled — private QA config required.';
     if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Unable to connect. Try again.';
@@ -1088,7 +1089,11 @@ function renderDiagnostics() {
     textscanMock ? 'warn' : supabaseRuntime.configured ? 'on' : 'off',
     textscanMock ? 'Mock' : supabaseRuntime.configured ? 'Live-ready' : 'Config required',
   )));
-  status.appendChild(makeRow('Image Scan', badge(bridgeMode ? 'warn' : 'on', bridgeMode ? 'Bridge-ready' : 'Mock')));
+  const analyzeMode = getAnalyzeMode();
+  status.appendChild(makeRow('Image Scan', badge(
+    analyzeMode === 'private-live' ? 'warn' : analyzeMode === 'mock' ? 'on' : 'off',
+    analyzeMode === 'private-live' ? 'Private QA live' : analyzeMode === 'mock' ? 'Mock' : 'LIVE DISABLED',
+  )));
   status.appendChild(makeRow('Last error code', badge(lastSafeErrorCode === 'none' ? 'off' : 'warn', lastSafeErrorCode)));
   status.appendChild(makeRow('Bridge error', badge(bridgeSnap.lastError ? 'warn' : 'off', bridgeSnap.lastError || 'none')));
 
