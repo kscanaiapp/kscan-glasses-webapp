@@ -29,14 +29,43 @@ import {
   hasSupabaseConfig,
   listenForSupabaseSessionMessages,
 } from './services/supabaseClient.js';
+import { initBridgeStateListener, subscribeBridgeState, BRIDGE_STATUS, requestCapture, getBridgeState } from './bridgeState.js';
 
 const STATE = FLOW_STATES;
 
 let currentView = 'home';
 const screenHistory = [];
 let lastDatErrorCode = 'none';
+let lastSafeErrorCode = 'none'; // diagnostics: short error CODE only — never messages with payloads
+let lastBridgeSnapshot = null; // diagnostics: latest bridge state (metadata-only by design)
 let scanInFlight = false;
 let scanToken = 0;
+let pipelineMode = 'image'; // 'image' | 'text' — drives the processing stepper
+
+// Production-representative pipeline steppers (Phase 28A).
+// Image Scan mirrors the real capture → privacy → /api/analyze path.
+// TextScan mirrors preset → session → scan-identify (mode: text).
+const PIPELINE_LABELS = {
+  image: ['Capture', 'Privacy', 'Analyze', 'StyleMatch', 'Results'],
+  text: ['Preset', 'Session', 'scan-identify', 'StyleMatch', 'Results'],
+};
+
+function renderPipeline(mode, activeIndex) {
+  const list = document.getElementById('pipeline-steps');
+  if (!list) return;
+  list.innerHTML = '';
+  const steps = PIPELINE_LABELS[mode] || [];
+  steps.forEach((label, i) => {
+    const li = document.createElement('li');
+    li.className = i < activeIndex
+      ? 'pipeline-step done'
+      : i === activeIndex
+        ? 'pipeline-step active'
+        : 'pipeline-step';
+    li.textContent = label;
+    list.appendChild(li);
+  });
+}
 
 const els = {
   home: document.getElementById('home'),
@@ -44,6 +73,7 @@ const els = {
   results: document.getElementById('results'),
   library: document.getElementById('library'),
   settings: document.getElementById('settings'),
+  diagnostics: document.getElementById('diagnostics'),
   error: document.getElementById('error'),
   processingText: document.getElementById('processing-text'),
   processingSub: document.getElementById('processing-sub'),
@@ -55,7 +85,7 @@ const els = {
   hud: null,
 };
 
-const screens = [els.home, els.processing, els.results, els.library, els.settings, els.error];
+const screens = [els.home, els.processing, els.results, els.library, els.settings, els.diagnostics, els.error];
 
 function updateHud() {
   if (!els.hud || !import.meta.env.DEV) return;
@@ -74,9 +104,24 @@ function updateHud() {
   els.hud.textContent = `DAT: ${datState} | ANALYZE: ${analyzeState} | TEXTSCAN: ${textscanState} | SUPABASE: ${supabaseState} | ACCOUNT: ${accountState} | SOURCE: PRESET | BACKEND: ${backendState} | FLOW: ${flow}`;
 }
 
-function updateBridgeBadge() {
+// Bridge scaffold events (simulator/runtime) override the static badge so
+// the HUD can demonstrate requesting/capturing/success/error/timeout states
+// before real hardware validation. Metadata-only — never payloads.
+function updateBridgeBadge(scaffold) {
   const badge = document.getElementById('bridge-status');
   if (!badge) return;
+
+  if (scaffold && scaffold.status && scaffold.status !== BRIDGE_STATUS.IDLE) {
+    const status = String(scaffold.status).toUpperCase();
+    badge.textContent = `BRIDGE: ${status}`;
+    badge.className = scaffold.status === BRIDGE_STATUS.SUCCESS
+      ? 'bridge-badge ready'
+      : (scaffold.status === BRIDGE_STATUS.ERROR || scaffold.status === BRIDGE_STATUS.TIMEOUT)
+        ? 'bridge-badge pending'
+        : 'bridge-badge mock';
+    setPill('pill-bridge', scaffold.status === BRIDGE_STATUS.SUCCESS ? 'ok' : 'mock', `Bridge: ${status}`);
+    return;
+  }
 
   const betaStatus = getBetaBridgeStatus();
   const datStatus = getDatStatus();
@@ -94,6 +139,35 @@ function updateBridgeBadge() {
     badge.textContent = 'BRIDGE: PENDING';
     badge.className = 'bridge-badge pending';
   }
+  setPill('pill-bridge', datStatus.includes('ready') || betaStatus.enabled ? 'ok' : 'mock',
+    betaStatus.enabled ? 'Bridge: Beta stub' : datStatus.includes('mock') ? 'Bridge: Mock' : datStatus.includes('ready') ? 'Bridge: Ready' : 'Bridge: Pending');
+}
+
+// ─── Home status pills (production-representative, honest states) ───
+
+function setPill(id, dotState, text) {
+  const pill = document.getElementById(id);
+  if (!pill) return;
+  const dot = pill.querySelector('.dot');
+  const label = pill.querySelector('span');
+  if (dot) dot.className = `dot ${dotState}`;
+  if (label) label.textContent = text;
+}
+
+function updateHomeStatusPills() {
+  const supa = getSupabaseRuntimeStatus();
+  const textscanMock = isTextScanMockEnabled();
+
+  setPill(
+    'pill-textscan',
+    textscanMock ? 'mock' : supa.configured ? 'ok' : 'off',
+    textscanMock ? 'TextScan: Mock' : supa.configured ? 'TextScan: Live Ready' : 'TextScan: Config Required',
+  );
+  setPill(
+    'pill-session',
+    supa.linked ? 'ok' : 'off',
+    supa.linked ? 'Session: Linked' : 'Session: Required',
+  );
 }
 
 function setState(next) {
@@ -102,14 +176,17 @@ function setState(next) {
   if (next === STATE.CAPTURING) {
     els.processingText.textContent = 'Capturing...';
     if (sub) sub.textContent = '';
+    renderPipeline('image', 0);
   }
   if (next === STATE.SANITIZING) {
     els.processingText.textContent = 'Protecting privacy...';
     if (sub) sub.textContent = '';
+    renderPipeline('image', 1);
   }
   if (next === STATE.ANALYZING) {
     els.processingText.textContent = 'Analyzing scan...';
     if (sub) sub.textContent = 'Fashion AI is working';
+    renderPipeline(pipelineMode, 2);
   }
   updateHud();
 }
@@ -138,6 +215,7 @@ function showScreen(viewId, pushHistory = true) {
 
   if (viewId === 'library') renderLibrary();
   if (viewId === 'settings') renderSettings();
+  if (viewId === 'diagnostics') renderDiagnostics();
 
   if (viewId === 'results') {
     // Check if TextScan result is active
@@ -368,6 +446,15 @@ function normalizeScanError(error) {
     return 'Something went wrong. Try again.';
   }
 
+  if (error?.code) lastSafeErrorCode = String(error.code).slice(0, 40);
+
+  // Bridge scaffold errors (Phase 29) — not DATBridgeError instances
+  if (error?.code === 'BRIDGE_TIMEOUT') return 'Unable to capture. Try again.';
+  if (error?.code === 'CAPTURE_INVALID') return "Couldn't read image. Try again.";
+  if (error?.code === 'BRIDGE_ERROR') return 'Capture failed. Try again.';
+  if (error?.code === 'PRIVACY_FAILED') return 'Privacy scan failed. Try again.';
+  if (error?.code === 'ANALYZE_FAILED') return 'Analysis failed. Try again.';
+
   if (!(error instanceof DATBridgeError)) {
     return safeText(error?.message, 'Scan failed. Please try again.');
   }
@@ -377,30 +464,110 @@ function normalizeScanError(error) {
   return toUserFriendlyCaptureError(error);
 }
 
+// ─── Hardware test mode (Phase 30) ───────────────────────────────────
+// Canonical activation: ?mode=hardware on the app URL.
+// Advanced runtime activation: window.__KSCAN_CONFIG__.HARDWARE_TEST_MODE = true.
+// Hardware test mode implies USE_REAL_BRIDGE = true so the Scan button uses
+// bridgeState.requestCapture(). It is a TEST mode: Alpha / hardware-pending
+// labels stay on, mock/live labeling is unchanged, privacy pipeline is
+// unchanged, and no secrets are exposed. Default behavior without the flag
+// remains safe simulator/mock.
+function isHardwareTestMode() {
+  if (typeof window === 'undefined') return false;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'hardware') return true;
+  } catch {
+    // location unavailable — fall through to runtime config
+  }
+  const runtime = window.__KSCAN_CONFIG__;
+  return Boolean(runtime && typeof runtime === 'object' && runtime.HARDWARE_TEST_MODE === true);
+}
+
+function shouldUseBridgeCapture() {
+  if (isHardwareTestMode()) return true; // hardware test mode implies real bridge
+  if (typeof window !== 'undefined') {
+    const runtime = window.__KSCAN_CONFIG__;
+    if (runtime && typeof runtime === 'object') {
+      if (runtime.USE_REAL_BRIDGE === true) return true;
+      if (runtime.VITE_USE_REAL_BRIDGE === 'true') return true;
+    }
+  }
+  try {
+    if (import.meta.env.VITE_USE_REAL_BRIDGE === 'true') return true;
+  } catch {
+    // env unavailable
+  }
+  return false;
+}
+
+async function handleBridgeImage(imageData, metadata) {
+  if (typeof imageData !== 'string' || !imageData.trim().startsWith('data:image/')) {
+    const err = new Error('Invalid image payload');
+    err.code = 'CAPTURE_INVALID';
+    throw err;
+  }
+
+  setState(STATE.SANITIZING);
+  renderPipeline('image', 1);
+
+  const sanitized = await sanitizeImageBeforeUpload(imageData);
+
+  setState(STATE.ANALYZING);
+  renderPipeline('image', 2);
+
+  const response = await analyzeImage(sanitized, {
+    onSlow: () => {
+      if (els.processingSub) els.processingSub.textContent = 'Still working...';
+    },
+  });
+
+  return response;
+}
+
+async function runBridgeScanPipeline(token) {
+  setState(STATE.CAPTURING);
+  renderPipeline('image', 0);
+
+  const { image, metadata } = await requestCapture();
+  if (token !== scanToken) return null;
+
+  return await handleBridgeImage(image, metadata);
+}
+
 export async function startScan() {
   if (scanInFlight) return; // prevent duplicate scan triggers while processing
   scanInFlight = true;
   const token = ++scanToken;
+  pipelineMode = 'image';
   try {
     setState(STATE.IDLE);
     lastDatErrorCode = 'none';
     showScreen('processing');
 
-    const { response } = await runScanPipeline({
-      capture: () => capturePhoto(),
-      sanitize: (captured) => sanitizeImageBeforeUpload(captured),
-      analyze: (sanitized) => analyzeImage(sanitized, {
-        onSlow: () => {
-          if (els.processingSub) els.processingSub.textContent = 'Still working...';
+    let response;
+    if (shouldUseBridgeCapture()) {
+      const result = await runBridgeScanPipeline(token);
+      if (token !== scanToken) return; // cancelled mid-flight
+      response = result;
+    } else {
+      const { response: pipelineResponse } = await runScanPipeline({
+        capture: () => capturePhoto(),
+        sanitize: (captured) => sanitizeImageBeforeUpload(captured),
+        analyze: (sanitized) => analyzeImage(sanitized, {
+          onSlow: () => {
+            if (els.processingSub) els.processingSub.textContent = 'Still working...';
+          },
+        }),
+        onStage: (stage) => {
+          if (token !== scanToken) return; // cancelled — ignore stale stage updates
+          if (stage === PIPELINE_STAGES.CAPTURING) setState(STATE.CAPTURING);
+          if (stage === PIPELINE_STAGES.SANITIZING) setState(STATE.SANITIZING);
+          if (stage === PIPELINE_STAGES.ANALYZING) setState(STATE.ANALYZING);
         },
-      }),
-      onStage: (stage) => {
-        if (token !== scanToken) return; // cancelled — ignore stale stage updates
-        if (stage === PIPELINE_STAGES.CAPTURING) setState(STATE.CAPTURING);
-        if (stage === PIPELINE_STAGES.SANITIZING) setState(STATE.SANITIZING);
-        if (stage === PIPELINE_STAGES.ANALYZING) setState(STATE.ANALYZING);
-      },
-    });
+      });
+      response = pipelineResponse;
+    }
 
     if (token !== scanToken) return; // cancelled mid-flight — discard stale result
 
@@ -500,6 +667,12 @@ function renderTextScanResult(styleMatch) {
     card.appendChild(createText('div', 'textscan-result-summary', sm.summary));
   }
 
+  // Passive spoken summary — display-only data from the adapter (already
+  // length-clamped and base64-redacted there). No audio is ever played.
+  if (!hasError && sm.spokenSummary && sm.spokenSummary !== sm.summary) {
+    card.appendChild(createText('p', 'textscan-spoken', `Spoken (passive): ${sm.spokenSummary}`));
+  }
+
   // Error
   if (hasError) {
     card.appendChild(createText('div', 'textscan-error', sm.error.message));
@@ -557,6 +730,7 @@ export async function startTextScan(query) {
   textScanInFlight = true;
   const token = ++textScanToken;
   const source = 'preset';
+  pipelineMode = 'text';
 
   if (els.textscanResults) els.textscanResults.dataset.lastQuery = query;
 
@@ -603,6 +777,7 @@ export async function startTextScan(query) {
     if (token !== textScanToken) return;
 
     const errorCode = error.code || TEXTSCAN_ERROR_CODES.UNKNOWN;
+    lastSafeErrorCode = String(errorCode).slice(0, 40);
     const userMessage = error.userMessage || 'Something went wrong.';
     const errorMatch = textScanErrorToStyleMatch(error, query, isMock);
     if (errorMatch.meta) errorMatch.meta.sourceLabel = 'SOURCE PRESET';
@@ -851,6 +1026,65 @@ function onAuthToggle() {
   focusFirstInView('settings');
 }
 
+// ─── Runtime Diagnostics screen (Phase 30) ──────────────────────────
+// Fast, safe feedback surface for live runtime / hardware testing.
+// Shows short statuses ONLY — never tokens, JWTs, base64, image data,
+// secret env values, or full URLs (backend shows hostname at most,
+// matching the existing Settings policy).
+
+function renderDiagnostics() {
+  const status = document.getElementById('diagnostics-status');
+  if (!status) return;
+  status.innerHTML = '';
+
+  const supabaseRuntime = getSupabaseRuntimeStatus();
+  const bridgeSnap = lastBridgeSnapshot || getBridgeState();
+  const hardware = isHardwareTestMode();
+  const bridgeMode = shouldUseBridgeCapture();
+  const textscanMock = isTextScanMockEnabled();
+  const sim = getSimulatorState();
+
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 0;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 0;
+  const viewportOk = vw === 600 && vh === 600;
+
+  const backendConfigured = Boolean(String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim());
+
+  const badge = (cls, text) => `<span class="status-badge ${cls}">${text}</span>`;
+  const makeRow = (label, badgeHtml) => {
+    const row = document.createElement('div');
+    row.className = 'status-row';
+    row.innerHTML = `<span>${label}</span>${badgeHtml}`;
+    return row;
+  };
+
+  status.appendChild(makeRow('Viewport', badge(viewportOk ? 'on' : 'warn', `${vw}×${vh}${viewportOk ? '' : ' (target 600×600)'}`)));
+  status.appendChild(makeRow('Runtime mode', hardware
+    ? badge('warn', 'Hardware test')
+    : badge(sim.active ? 'warn' : 'off', sim.active ? 'Simulator' : 'Standard')));
+  status.appendChild(makeRow('Bridge mode', badge(bridgeMode ? 'warn' : 'off', bridgeMode ? 'Bridge' : 'Mock')));
+  status.appendChild(makeRow('Bridge status', badge(
+    bridgeSnap.status === 'success' ? 'on' : bridgeSnap.status === 'error' || bridgeSnap.status === 'timeout' ? 'warn' : 'off',
+    bridgeSnap.status,
+  )));
+  status.appendChild(makeRow('Session', badge(supabaseRuntime.linked ? 'on' : 'off', supabaseRuntime.linked ? 'Present' : 'Missing')));
+  status.appendChild(makeRow('Supabase config', badge(supabaseRuntime.configured ? 'on' : 'off', supabaseRuntime.configured ? 'Present' : 'Missing')));
+  status.appendChild(makeRow('Backend URL', badge(backendConfigured ? 'on' : 'off', backendConfigured ? 'Configured' : 'Missing')));
+  status.appendChild(makeRow('Privacy sanitizer', badge('on', 'Ready (lazy-load)')));
+  status.appendChild(makeRow('TextScan', badge(
+    textscanMock ? 'warn' : supabaseRuntime.configured ? 'on' : 'off',
+    textscanMock ? 'Mock' : supabaseRuntime.configured ? 'Live-ready' : 'Config required',
+  )));
+  status.appendChild(makeRow('Image Scan', badge(bridgeMode ? 'warn' : 'on', bridgeMode ? 'Bridge-ready' : 'Mock')));
+  status.appendChild(makeRow('Last error code', badge(lastSafeErrorCode === 'none' ? 'off' : 'warn', lastSafeErrorCode)));
+  status.appendChild(makeRow('Bridge error', badge(bridgeSnap.lastError ? 'warn' : 'off', bridgeSnap.lastError || 'none')));
+
+  registerFocusMatrix('diagnostics', [
+    [document.getElementById('diagnostics-back-btn')],
+    [document.getElementById('diagnostics-refresh-btn')],
+  ]);
+}
+
 function wireButtons() {
   document.getElementById('scan-btn').addEventListener('click', startScan);
   document.getElementById('retry-empty-btn').addEventListener('click', startScan);
@@ -870,6 +1104,9 @@ function wireButtons() {
   document.getElementById('library-back-btn').addEventListener('click', onBack);
   document.getElementById('settings-back-btn').addEventListener('click', onBack);
   document.getElementById('results-back-btn').addEventListener('click', onBack);
+  document.getElementById('diagnostics-back-btn')?.addEventListener('click', onBack);
+  document.getElementById('settings-diagnostics-btn')?.addEventListener('click', () => showScreen('diagnostics'));
+  document.getElementById('diagnostics-refresh-btn')?.addEventListener('click', renderDiagnostics);
   document.getElementById('settings-auth-btn').addEventListener('click', onAuthToggle);
   document.getElementById('error-home-btn').addEventListener('click', () => {
     setState(STATE.IDLE);
@@ -927,6 +1164,7 @@ function init() {
   listenForSupabaseSessionMessages();
   window.addEventListener('kscan:supabase-session-linked', () => {
     updateHud();
+    updateHomeStatusPills();
     if (currentView === 'settings') renderSettings();
   });
   initNavigation({ onBack });
@@ -934,8 +1172,37 @@ function init() {
   wireButtons();
   initStatus();
   updateBridgeBadge();
+  updateHomeStatusPills();
+  // Bridge scaffold: simulator/runtime capture.* events drive the HUD badge
+  // and home pill. Scaffold only — no real camera, metadata only.
+  initBridgeStateListener();
+  subscribeBridgeState((bridge) => {
+    lastBridgeSnapshot = bridge; // metadata-only by bridgeState design
+    updateBridgeBadge(bridge);
+    if (currentView === 'diagnostics') renderDiagnostics();
+    if (currentView === 'processing') {
+      if (bridge.status === BRIDGE_STATUS.REQUESTING) {
+        els.processingText.textContent = 'Requesting capture...';
+        renderPipeline('image', 0);
+      }
+      if (bridge.status === BRIDGE_STATUS.CAPTURING) {
+        els.processingText.textContent = 'Capturing...';
+        renderPipeline('image', 0);
+      }
+      if (bridge.status === BRIDGE_STATUS.ERROR || bridge.status === BRIDGE_STATUS.TIMEOUT) {
+        if (els.processingSub) els.processingSub.textContent = safeText(bridge.lastError, '');
+      }
+    }
+  });
   initMobileBridgeDebug();
   mountSimulatorBadge(document.getElementById('app'));
+  // Hardware test mode: keep the Alpha claim but make the mode visible.
+  // Still not a validation claim — labels stay "pending" until real testing.
+  if (isHardwareTestMode()) {
+    const banner = document.getElementById('alpha-banner');
+    if (banner) banner.textContent = 'ALPHA · HW TEST MODE';
+    setPill('pill-bridge', 'mock', 'Bridge: HW Test');
+  }
   showScreen('home', false);
   setState(STATE.IDLE);
   if (import.meta.env.DEV) window.startTextScan = startTextScan;

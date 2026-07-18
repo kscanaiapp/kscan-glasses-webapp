@@ -109,8 +109,8 @@
   <h1>K Scan Glasses HUD</h1>
   <p class="tagline">Projected glasses demo · Privacy-first style intelligence for wearable commerce</p>
   <p class="subtitle">Luxury fashion-tech visual commerce · Investor preview</p>
-  <span class="demo-label">Investor Demo Alpha</span>
-  <p class="disclosure">Public investor preview · Beta readiness scaffold · Mock bridge · Mock analysis · No camera or microphone access</p>
+  <span class="demo-label">Alpha · Hardware Validation Pending</span>
+  <p class="disclosure">Alpha preview of the current K Scan architecture — Image Scan: capture → on-device privacy sanitize → /api/analyze · TextScan: preset → Supabase session → scan-identify (mode: text) → StyleMatch. Mock and live-ready states are labeled in-app. No camera or microphone access. Not validated on Meta glasses hardware.</p>
 </header>
 <div class="layout">
   <div class="hud-frame">
@@ -120,7 +120,8 @@
     </div>
     <div class="status-strips">
       <div class="status-strip" id="privacy-strip"><div class="dot ok" aria-hidden="true"></div>Privacy Gate: simulated local check</div>
-      <div class="status-strip" id="bridge-strip"><div class="dot mock" aria-hidden="true"></div>Bridge: beta readiness scaffold</div>
+      <div class="status-strip" id="bridge-strip"><div class="dot mock" aria-hidden="true"></div>Bridge: scaffold — validation pending</div>
+      <div class="status-strip" id="textscan-strip"><div class="dot mock" aria-hidden="true"></div>TextScan: idle</div>
     </div>
   </div>
 
@@ -210,6 +211,23 @@
         <button data-textscan="non-fashion">Non-Fashion Test</button>
         <button data-textscan="network-fail">Network Failure</button>
         <button data-textscan="malformed">Malformed Response</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bridge State Scaffold</legend>
+      <p class="note">Drives the app's bridge state machine (src/bridgeState.js) with capture.* events. Image payloads are validated but not stored in bridge state. Watch the BRIDGE badge in the app HUD.</p>
+      <div class="btn-row">
+        <button id="bridge-request">Bridge: request</button>
+        <button id="bridge-capturing">Bridge: capturing</button>
+        <button id="bridge-success">Bridge: success (image)</button>
+        <button id="bridge-success-empty">Bridge: success (no image)</button>
+        <button id="bridge-invalid">Bridge: invalid payload</button>
+        <button id="bridge-error">Bridge: error</button>
+        <button id="bridge-timeout">Bridge: timeout (no reply)</button>
+      </div>
+      <div class="btn-row" style="margin-top: 8px;">
+        <button id="bridge-full-flow" class="secondary">Bridge: full Image Scan flow</button>
       </div>
     </fieldset>
 
@@ -466,7 +484,86 @@
 
     if (data.type === 'kscan:textscan-live-status') {
       log('app -> simulator', 'kscan:textscan-live-status', (data.mode || 'unknown') + '/' + (data.status || 'unknown'));
+      var tsStrip = document.getElementById('textscan-strip');
+      if (tsStrip) {
+        var tsDot = data.status === 'completed' ? 'dot ok' : 'dot mock';
+        tsStrip.innerHTML = '<div class="' + tsDot + '" aria-hidden="true"></div>TextScan: ' + (data.mode || 'unknown') + ' · ' + (data.status || 'unknown');
+      }
     }
+  });
+
+  // ── Bridge state scaffold controls ──
+  // capture.* events for src/bridgeState.js. Payloads are validated by the app
+  // but never stored in bridge state. "timeout" sends only a request so the
+  // app's scaffold timeout fires on its own.
+  // Phase 30: bridge success events reuse the same 640×640 synthetic canvas
+  // fixture as the DAT capture path (makeFixture), generated lazily once.
+  // The previous 1×1 PNG could fail the privacy sanitizer's decode/size
+  // checks; a real-sized synthetic fixture lets the full bridge → privacy →
+  // analyze smoke flow run in a browser. Still synthetic — no real photos.
+  var mockBridgeImage = null;
+  function getMockBridgeImage() {
+    if (!mockBridgeImage) mockBridgeImage = makeFixture();
+    return mockBridgeImage;
+  }
+  function bindBridgeButton(id, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('click', fn);
+  }
+  bindBridgeButton('bridge-request', function () {
+    post({ type: 'capture.request' });
+    log('simulator -> app', 'capture.request', 'bridge scaffold');
+  });
+  bindBridgeButton('bridge-capturing', function () {
+    post({ type: 'capture.capturing' });
+    log('simulator -> app', 'capture.capturing', 'bridge scaffold');
+  });
+  bindBridgeButton('bridge-success', function () {
+    post({
+      type: 'capture.success',
+      image: getMockBridgeImage(),
+      metadata: { timestamp: new Date().toISOString(), size: 123456, width: 640, height: 640 }
+    });
+    log('simulator -> app', 'capture.success', 'with synthetic 640x640 fixture');
+  });
+  bindBridgeButton('bridge-success-empty', function () {
+    post({
+      type: 'capture.success',
+      metadata: { timestamp: new Date().toISOString(), size: 123456, width: 1440, height: 1920 }
+    });
+    log('simulator -> app', 'capture.success', 'missing payload');
+  });
+  bindBridgeButton('bridge-invalid', function () {
+    post({
+      type: 'capture.success',
+      image: 'not-a-data-url',
+      metadata: { timestamp: new Date().toISOString(), size: 123456, width: 1440, height: 1920 }
+    });
+    log('simulator -> app', 'capture.success', 'invalid payload');
+  });
+  bindBridgeButton('bridge-error', function () {
+    post({ type: 'capture.error', error: 'Camera unavailable' });
+    log('simulator -> app', 'capture.error', 'safe message');
+  });
+  bindBridgeButton('bridge-timeout', function () {
+    post({ type: 'capture.request' });
+    log('simulator -> app', 'capture.request', 'timeout scenario — no follow-up; app scaffold times out');
+  });
+  bindBridgeButton('bridge-full-flow', function () {
+    post({ type: 'capture.request' });
+    log('simulator -> app', 'capture.request', 'full flow');
+    setTimeout(function () {
+      post({ type: 'capture.capturing' });
+      log('simulator -> app', 'capture.capturing', 'full flow');
+    }, 400);
+    setTimeout(function () {
+      post({
+        type: 'capture.success',
+        image: getMockBridgeImage(),
+        metadata: { timestamp: new Date().toISOString(), size: 123456, width: 640, height: 640 }
+      });
+      log('simulator -> app', 'capture.success', 'full flow — synthetic fixture');
+    }, 1200);
   });
 
   frame.addEventListener('load', function () {
@@ -558,36 +655,6 @@
     btn.addEventListener('click', function () {
       var scenarioId = btn.dataset.textscan;
       clickTextScanScenario(scenarioId, false);
-      return;
-      try {
-        var win = frame.contentWindow;
-        if (win && win.startTextScan) {
-          // Find the preset button in the app and click it
-          var doc = win.document;
-          var presetBtn = doc.querySelector('.textscan-preset[data-query*="' + scenarioId.replace('-', ' ') + '"]');
-          if (!presetBtn) {
-            // Fallback: try matching by scenario name parts
-            var presets = doc.querySelectorAll('.textscan-preset');
-            for (var i = 0; i < presets.length; i++) {
-              if (presets[i].dataset.query && presets[i].dataset.query.indexOf(scenarioId.split('-')[0]) >= 0) {
-                presetBtn = presets[i];
-                break;
-              }
-            }
-          }
-          if (presetBtn) {
-            win.focus();
-            presetBtn.click();
-            logInfo('simulator: TextScan scenario activated: ' + scenarioId);
-          } else {
-            logInfo('simulator: TextScan preset not found for: ' + scenarioId);
-          }
-        } else {
-          logInfo('simulator: app not ready for TextScan');
-        }
-      } catch (e) {
-        logInfo('simulator: TextScan trigger failed: ' + (e.message || 'unknown'));
-      }
     });
   });
 
