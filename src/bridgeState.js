@@ -204,12 +204,18 @@ export function requestCapture(options = {}) {
   });
 }
 
-// Bridge event origin policy (Phase 30):
-// Default remains same-origin only (simulator parent frame). For hardware /
-// Meta runtime testing, extra origins can be allowed explicitly via:
+// Bridge event origin policy (Phase 30, canonicalized in hardware candidate):
+// the shared evaluator in src/messageTrust.js decides trust. Same-origin is
+// the default; extra origins for hardware/Meta-runtime testing are allowed
+// explicitly via:
 //   window.__KSCAN_CONFIG__.BRIDGE_ALLOWED_ORIGINS = 'https://runtime.example'
 //   or VITE_BRIDGE_ALLOWED_ORIGINS (comma-separated).
-// No wildcard is honored here — origins must be listed explicitly.
+// No wildcard is honored — origins must be listed explicitly. The event
+// source must additionally be the approved parent window.
+import { buildMessageOriginAllowlist, evaluateMessageTrust } from './messageTrust.js';
+
+const BRIDGE_MESSAGE_TYPES = new Set(Object.keys(TYPE_ALIASES));
+
 function readExtraAllowedOrigins() {
   const collected = [];
   try {
@@ -227,16 +233,30 @@ function readExtraAllowedOrigins() {
   } catch {
     // env unavailable
   }
-  return collected
-    .join(',')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s && s !== '*' && (s.startsWith('https://') || s.startsWith('http://localhost')));
+  return collected;
 }
 
-function isAllowedBridgeOrigin(origin) {
-  if (typeof window !== 'undefined' && origin === window.location.origin) return true;
-  return readExtraAllowedOrigins().includes(origin);
+function evaluateBridgeMessageTrust(event) {
+  const selfOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+  const allowlist = buildMessageOriginAllowlist(readExtraAllowedOrigins(), selfOrigin);
+  const approvedSources = [];
+  try {
+    if (window.parent) approvedSources.push(window.parent);
+  } catch {
+    // ignore
+  }
+  try {
+    if (typeof window !== 'undefined' && !approvedSources.includes(window)) approvedSources.push(window);
+  } catch {
+    // ignore
+  }
+  return evaluateMessageTrust(event, {
+    allowlist,
+    selfOrigin,
+    approvedSources,
+    requireSource: true,
+    allowedTypes: BRIDGE_MESSAGE_TYPES,
+  });
 }
 
 export function initBridgeStateListener() {
@@ -244,13 +264,12 @@ export function initBridgeStateListener() {
   listenerInstalled = true;
 
   window.addEventListener('message', (event) => {
-    // Same-origin by default; explicit allowlist for hardware/runtime testing.
-    if (!isAllowedBridgeOrigin(event.origin)) return;
+    // Canonical trust: self/allowlisted origin AND approved parent source
+    // AND a supported capture message type. Untrusted events are dropped.
+    if (!evaluateBridgeMessageTrust(event).trusted) return;
 
-    const data = event?.data;
-    if (!data || typeof data !== 'object' || typeof data.type !== 'string') return;
+    const data = event.data;
     const kind = TYPE_ALIASES[data.type];
-    if (!kind) return;
 
     if (kind === 'request') {
       setStatus(BRIDGE_STATUS.REQUESTING);

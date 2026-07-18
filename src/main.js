@@ -28,6 +28,7 @@ import {
   getSupabaseRuntimeStatus,
   hasSupabaseConfig,
   listenForSupabaseSessionMessages,
+  signOutSupabaseSession,
 } from './services/supabaseClient.js';
 import { initBridgeStateListener, subscribeBridgeState, BRIDGE_STATUS, requestCapture, getBridgeState } from './bridgeState.js';
 
@@ -1019,6 +1020,11 @@ function onAuthToggle() {
   const session = getSession();
   if (session) {
     signOut();
+    // Also clear any bridged Supabase session state: SDK session, bearer
+    // overrides, and app-owned auth markers (session cleanup policy).
+    signOutSupabaseSession().catch(() => {
+      // Best effort — local markers are reset regardless.
+    });
   } else {
     signInStub();
   }

@@ -7,6 +7,11 @@ import { defineConfig } from 'vite';
 // in the separate simulator build (vite.simulator.config.js → dist-simulator/).
 // scripts/verify-artifacts.js asserts this separation after every build.
 export default defineConfig({
+  define: {
+    // Compile-time false: URL-token intake and simulator-only branches are
+    // dead-code-eliminated from this bundle.
+    __KSCAN_SIMULATOR_BUILD__: 'false',
+  },
   build: {
     rollupOptions: {
       input: {
