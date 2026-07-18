@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>K Scan Glasses HUD · Projected glasses demo</title>
+<title>K Scan Glasses HUD · LOCAL QA / NON-PRODUCTION simulator</title>
 <!--
-  DEV-ONLY parent-frame DAT bridge simulator — investor-ready demo control room.
+  LOCAL QA / NON-PRODUCTION parent-frame DAT bridge simulator — QA control room.
 
-  Lives at the repo root: Vite serves it at /simulator.html, and `vite build`
-  bundles it into dist/ via vite.config.js so testers can access it from a
-  deployed staging URL.
+  Lives at the repo root: Vite serves it at /simulator.html in dev, and
+  `npm run build:simulator` (vite.simulator.config.js) bundles it into
+  dist-simulator/ ONLY. The production build (`npm run build`) never emits
+  this page; scripts/verify-artifacts.js asserts that separation.
 
   It loads the app in a 600×600 iframe with ?dat=parent (forces the real
   postMessage bridge path even when VITE_MOCK_DAT=true) and answers the
@@ -110,6 +111,7 @@
   <p class="tagline">Projected glasses demo · Privacy-first style intelligence for wearable commerce</p>
   <p class="subtitle">Luxury fashion-tech visual commerce · Investor preview</p>
   <span class="demo-label">Alpha · Hardware Validation Pending</span>
+  <span class="demo-label" style="border-color:#B3261E;color:#B3261E;background:rgba(179,38,30,0.08);">LOCAL QA / NON-PRODUCTION</span>
   <p class="disclosure">Alpha preview of the current K Scan architecture — Image Scan: capture → on-device privacy sanitize → /api/analyze · TextScan: preset → Supabase session → scan-identify (mode: text) → StyleMatch. Mock and live-ready states are labeled in-app. No camera or microphone access. Not validated on Meta glasses hardware.</p>
 </header>
 <div class="layout">

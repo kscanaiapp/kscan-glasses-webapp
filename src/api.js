@@ -241,20 +241,21 @@ function parseMockDelayMs(envLike) {
 }
 
 function buildMockProducts() {
+  // NOTE: no imageUrl values — public/images/ has no product assets and mock
+  // image URLs previously 404'd (P3-UX-01). Result cards render the existing
+  // intentional placeholder tile when imageUrl is absent (see main.js).
   return [
     {
       brand: 'Aether Loom',
       name: 'Chrome Arc Jacket',
       price: '$189',
       priceRange: '$179-$209',
-      imageUrl: '/images/placeholder-item-1.png',
       url: 'https://example.com/products/chrome-arc-jacket',
     },
     {
       brand: 'Nova Thread',
       name: 'Cyan Edge Utility Vest',
       price: '$124',
-      imageUrl: '/images/placeholder-item-2.png',
       url: 'https://example.com/products/cyan-edge-vest',
     },
     {
@@ -268,7 +269,6 @@ function buildMockProducts() {
       brand: 'Orbit Form',
       name: 'Signal Knit Top',
       price: '$76',
-      imageUrl: '/images/placeholder-item-4.png',
       url: 'https://example.com/products/signal-knit',
     },
   ];
