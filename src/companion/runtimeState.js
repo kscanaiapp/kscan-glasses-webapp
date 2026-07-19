@@ -687,7 +687,13 @@ export function createRuntimeMachine({ sessionManager, now = () => Date.now(), o
     if (reconnectDeadline !== null && t >= reconnectDeadline) {
       reconnectDeadline = null;
       resumeState = null;
+      // Session is retained when still valid so the user can re-pair or the
+      // transport can restore without inventing a new wearable credential.
+      // UI must treat DISCONNECTED as "link down" (pill Off), not "session gone".
       if (sessionManager.isSessionValid()) {
+        settleScan();
+        settleAction();
+        currentResult = null;
         transition(S.DISCONNECTED, { reconnectFailed: true });
       } else {
         toSessionRevoked('reconnect-window-expired');

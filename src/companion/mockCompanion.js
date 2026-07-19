@@ -36,6 +36,10 @@ const state = {
   cancelledRequests: new Set(),
   lastTerminalMessage: null,
   driveTimers: [],
+  /** True while auto-drive timers for the active request are outstanding. */
+  isDriving: false,
+  /** >0 means the next CAPTURE_REQUEST should SCAN_FAILED once, then clear. */
+  failArmToken: 0,
 };
 
 // ── Logging (metadata only — never payloads) ─────────────────────────────
@@ -74,6 +78,7 @@ function send(messageType, payload = {}, { requestId = null, sessionId } = {}) {
 function clearDriveTimers() {
   state.driveTimers.forEach((t) => clearTimeout(t));
   state.driveTimers = [];
+  state.isDriving = false;
 }
 
 function later(ms, fn) {
@@ -83,6 +88,7 @@ function later(ms, fn) {
 // ── Scan drive ───────────────────────────────────────────────────────────
 function driveScan(requestId) {
   if (state.cancelledRequests.has(requestId)) return;
+  state.isDriving = true;
   els.scanStatus.textContent = `Driving scan req=${String(requestId).slice(-8)}`;
   later(200, () => send(T.CAPTURE_STARTED, {}, { requestId }));
   later(600, () => send(T.SCAN_PROCESSING, { stage: 'privacy', stageLabel: 'On-device face masking' }, { requestId }));
@@ -91,6 +97,7 @@ function driveScan(requestId) {
     const builder = FIXTURE_BUILDERS[els.fixtureSelect.value] || FIXTURE_BUILDERS.full;
     const result = builder(requestId);
     send(T.RESULT_SHOW, { result }, { requestId });
+    state.isDriving = false;
     els.scanStatus.textContent = `Result sent (${els.fixtureSelect.value}) req=${String(requestId).slice(-8)}`;
   });
 }
@@ -102,6 +109,14 @@ function handleCaptureRequest(message) {
   if (state.cancelledRequests.has(message.requestId)) state.cancelledRequests.delete(message.requestId);
   state.activeRequestId = message.requestId;
   clearDriveTimers();
+  if (state.failArmToken > 0) {
+    state.failArmToken = 0;
+    later(80, () => {
+      send(T.SCAN_FAILED, { code: 'ANALYZE_FAILED', safeMessage: 'Mock failure' }, { requestId: message.requestId });
+      els.scanStatus.textContent = `Scan failed (queued) req=${String(message.requestId).slice(-8)}`;
+    });
+    return;
+  }
   driveScan(message.requestId);
 }
 
@@ -120,6 +135,10 @@ function handleAction(message) {
 function handleProtocolMessage(message) {
   switch (message.messageType) {
     case T.PAIR_REQUEST:
+      // Re-pair replaces any prior mock session — the HUD is the authority
+      // for whether a wearable session is still live.
+      state.sessionId = null;
+      state.sessionExpiresAt = 0;
       state.hudDeviceId = message.deviceId;
       state.pairingNonce = message.payload.pairingNonce;
       els.sessionStatus.textContent = `Pairing requested by ${message.deviceId.slice(0, 18)}… — approve or deny`;
@@ -217,8 +236,23 @@ wire('btn-revoke', () => {
 });
 
 wire('btn-drop', () => {
-  state.dropped = true;
   clearDriveTimers();
+  // Emit CONNECTION_LOST before going silent. The HUD pauses pong-timeout
+  // during active scans (so an in-flight RESULT_SHOW is not dropped by a
+  // missed probe); explicit loss is the authoritative interrupt signal.
+  if (state.hudDeviceId) {
+    const lost = buildMessage(T.CONNECTION_LOST, {
+      requestId: null,
+      sessionId: null,
+      deviceId: state.hudDeviceId,
+      payload: { reason: 'mock-drop' },
+    });
+    if (lost) {
+      els.frame.contentWindow.postMessage(lost, window.location.origin);
+      log('out', T.CONNECTION_LOST, 'mock-drop');
+    }
+  }
+  state.dropped = true;
   log('drop', 'connection', 'connection dropped — phone silent');
 });
 
@@ -236,10 +270,32 @@ wire('btn-drive-auto', () => {
   if (state.activeRequestId) { clearDriveTimers(); driveScan(state.activeRequestId); }
 });
 
+wire('btn-stop-drive', () => {
+  clearDriveTimers();
+  els.scanStatus.textContent = state.activeRequestId
+    ? `Drive stopped — active req=${String(state.activeRequestId).slice(-8)}`
+    : 'Drive stopped — no active request';
+});
+
 wire('btn-capture-started', () => state.activeRequestId && send(T.CAPTURE_STARTED, {}, { requestId: state.activeRequestId }));
 wire('btn-privacy', () => state.activeRequestId && send(T.SCAN_PROCESSING, { stage: 'privacy' }, { requestId: state.activeRequestId }));
 wire('btn-analyzing', () => state.activeRequestId && send(T.SCAN_PROCESSING, { stage: 'analyzing' }, { requestId: state.activeRequestId }));
-wire('btn-scan-failed', () => state.activeRequestId && send(T.SCAN_FAILED, { code: 'ANALYZE_FAILED', safeMessage: 'Mock failure' }, { requestId: state.activeRequestId }));
+wire('btn-scan-failed', () => {
+  // Only fail an in-flight drive. After RESULT_SHOW, activeRequestId still
+  // names the completed request — sending SCAN_FAILED for it is a no-op on
+  // the HUD (duplicate-terminal/stale) and would miss the new capture.
+  const rid = state.activeRequestId;
+  const inFlight = state.isDriving && rid;
+  clearDriveTimers();
+  if (inFlight) {
+    state.failArmToken = 0;
+    send(T.SCAN_FAILED, { code: 'ANALYZE_FAILED', safeMessage: 'Mock failure' }, { requestId: rid });
+    els.scanStatus.textContent = `Scan failed req=${String(rid).slice(-8)} — Retry for a new request`;
+    return;
+  }
+  state.failArmToken += 1;
+  els.scanStatus.textContent = 'Fail armed — next capture will SCAN_FAILED';
+});
 
 wire('btn-send-result', () => {
   if (!state.activeRequestId) { els.scanStatus.textContent = 'No active request.'; return; }

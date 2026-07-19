@@ -897,10 +897,14 @@ function onBack() {
   }
   // Companion-owned screens delegate Back to the runtime state machine
   // first (dismiss result, cancel pairing, leave reconnect, etc.). The
-  // machine declines with 'navigation-home' when Home is the real target.
+  // machine declines with 'navigation-home' when Home is the real target —
+  // the companion screen is a mode root, so go straight Home rather than
+  // walking history back into the same screen.
   if (companionRuntime && currentView === 'companion') {
     const res = companionRuntime.back();
     if (res && res.accepted) return;
+    showScreen('home', false);
+    return;
   }
   if (companionRuntime && currentView === 'results' && resultsOwner === 'companion'
     && companionRuntime.getSnapshot().state === RUNTIME_STATE.RESULTS) {
@@ -1068,15 +1072,27 @@ function onCompanionStateChange(snapshot, { meta }) {
     if (currentView !== 'processing') showScreen('processing');
     return;
   }
+  // Left the scan-progress states: clear the stepper so no stale active
+  // step survives on the now-hidden processing screen.
+  if (companionScanOnProcessing) clearPipeline();
   companionScanOnProcessing = false;
 
   if (state === RUNTIME_STATE.ERROR) {
     errorOwner = 'companion';
-    showError(COMPANION_ERROR_TEXT[snapshot.lastError] || 'Something went wrong. Try again.');
+    const code = snapshot.lastError && typeof snapshot.lastError === 'object'
+      ? snapshot.lastError.code
+      : snapshot.lastError;
+    showError(COMPANION_ERROR_TEXT[code] || 'Something went wrong. Try again.');
     return;
   }
   if (state === RUNTIME_STATE.RESULTS) {
-    return; // onCompanionResult renders via the result-handoff channel
+    // Fresh result.show paints via onCompanionResult. Returning from
+    // ActionPending/ActionConfirmed also re-emits detail.result → onResult.
+    // If we somehow land here without that paint, restore the results screen.
+    if (snapshot.hasResult && currentView !== 'results') {
+      showScreen('results');
+    }
+    return;
   }
   if (COMPANION_SCREEN_STATES.has(state)) {
     renderCompanionScreen(snapshot, meta);
@@ -1493,8 +1509,10 @@ function renderDiagnostics() {
     )));
     status.appendChild(makeRow('Companion transport', badge(d.transport === TRANSPORT_STATE.OPEN ? 'on' : 'off', d.transport)));
     status.appendChild(makeRow('Companion session', badge(d.sessionValid ? 'on' : 'off', d.sessionValid ? 'Valid' : 'None')));
-    status.appendChild(makeRow('Companion traffic', badge(d.dropped > 0 || d.invalidResults > 0 ? 'warn' : 'off',
-      `tx ${d.sent} · rx ${d.received} · dropped ${d.dropped}`)));
+    status.appendChild(makeRow('Companion traffic', badge(
+      d.dropped > 0 || d.ignored > 0 || d.invalidResults > 0 ? 'warn' : 'off',
+      `tx ${d.sent} · rx ${d.received} · dropped ${d.dropped} · ignored ${d.ignored ?? 0} · bad-result ${d.invalidResults}`,
+    )));
   }
 
   registerFocusMatrix('diagnostics', [
@@ -1513,10 +1531,18 @@ function wireButtons() {
   });
   document.getElementById('retry-empty-btn').addEventListener('click', startScan);
   document.getElementById('error-retry-btn').addEventListener('click', () => {
-    if (errorOwner === 'companion' && companionRuntime) {
+    // Prefer machine state over errorOwner flag — a prior local scan can
+    // clear the flag while the companion machine is still in ERROR.
+    if (companionRuntime && companionRuntime.getSnapshot().state === RUNTIME_STATE.ERROR) {
       errorOwner = 'local';
       const res = companionRuntime.retry();
       if (!res || res.accepted === false) companionRuntime.back(); // e.g. session gone
+      return;
+    }
+    if (errorOwner === 'companion' && companionRuntime) {
+      errorOwner = 'local';
+      const res = companionRuntime.retry();
+      if (!res || res.accepted === false) companionRuntime.back();
       return;
     }
     startScan();

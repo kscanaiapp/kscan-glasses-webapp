@@ -39,7 +39,7 @@ export function createCompanionRuntime({ transport, deviceId = makeHudDeviceId()
   if (!transport) throw new Error('companion runtime requires a transport');
 
   const sessionManager = createSessionManager({ deviceId, now });
-  const counters = { sent: 0, received: 0, dropped: 0, invalidResults: 0 };
+  const counters = { sent: 0, received: 0, dropped: 0, ignored: 0, invalidResults: 0 };
   let heartbeat = null;
   let lastPingAt = null;
   let lastPingSentAt = 0;
@@ -114,7 +114,11 @@ export function createCompanionRuntime({ transport, deviceId = makeHudDeviceId()
     }
 
     counters.received += 1;
-    machine.dispatchInbound(message);
+    // Machine-level suppression (duplicate message, duplicate terminal,
+    // stale request/session, invalid transition) is counted separately
+    // from protocol-level drops — both matter for QA truthfulness.
+    const machineVerdict = machine.dispatchInbound(message);
+    if (machineVerdict && machineVerdict.accepted === false) counters.ignored += 1;
   }
 
   function heartbeatTick() {
@@ -125,21 +129,33 @@ export function createCompanionRuntime({ transport, deviceId = makeHudDeviceId()
 
     // Liveness: while paired and transport open, ping on interval; a pong
     // older than PING_TIMEOUT_MS means the peer is gone.
+    // Do not ping-timeout during an active scan — an explicit CONNECTION_LOST
+    // (or send failure) still tears the scan down; a missed pong must not
+    // drop a RESULT_SHOW that the phone already sent.
+    const inActiveScan = state === RUNTIME_STATE.CAPTURE_REQUESTED
+      || state === RUNTIME_STATE.CAPTURING_ON_PHONE
+      || state === RUNTIME_STATE.PRIVACY_PROCESSING
+      || state === RUNTIME_STATE.ANALYZING;
     if (sessionManager.isSessionValid() && transportState === TRANSPORT_STATE.OPEN) {
       const nowMs = now();
       const activeState = state !== RUNTIME_STATE.RECONNECTING;
-      if (activeState && outstandingPingNonce === null && nowMs - lastPingSentAt >= PING_INTERVAL_MS) {
+      if (activeState && !inActiveScan && outstandingPingNonce === null
+        && nowMs - lastPingSentAt >= PING_INTERVAL_MS) {
         pingSeq += 1;
         lastPingAt = nowMs;
         lastPingSentAt = nowMs;
         outstandingPingNonce = `probe-${pingSeq}`;
         machine.sendPing(outstandingPingNonce);
       }
-      if (activeState && outstandingPingNonce !== null && lastPingAt
+      if (activeState && !inActiveScan && outstandingPingNonce !== null && lastPingAt
         && nowMs - lastPingAt >= PING_TIMEOUT_MS) {
         lastPingAt = null;
         outstandingPingNonce = null;
         synthesizeConnectionLost('pong-timeout');
+      }
+      if (inActiveScan && outstandingPingNonce !== null) {
+        // Hold the outstanding probe; resume timeout accounting after scan.
+        lastPingAt = nowMs;
       }
     }
   }
@@ -185,6 +201,7 @@ export function createCompanionRuntime({ transport, deviceId = makeHudDeviceId()
         sent: counters.sent,
         received: counters.received,
         dropped: counters.dropped,
+        ignored: counters.ignored,
         invalidResults: counters.invalidResults,
         lastError: snap.lastError,
       };
