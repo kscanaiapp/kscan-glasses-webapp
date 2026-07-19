@@ -3,7 +3,7 @@
 **Date:** 2026-07-19  
 **Workspace:** `C:\Users\jsmit\kscan-glasses-webapp`  
 **Starting branch:** `feature/meta-hardware-validation-candidate` @ `61554f5`  
-**Audit branch:** `audit/meta-hardware-candidate-repair-20260719` @ `72dd748`  
+**Audit branch:** `audit/meta-hardware-candidate-repair-20260719` (last code: `680e142`; tip via `git rev-parse HEAD`)  
 **Public demo (frozen):** `https://kscan-glasses-demo.vercel.app` — not deployed from this candidate  
 
 **External snapshot:** `C:\Users\jsmit\KScan\_audit_snapshots\meta-glasses-20260719-140547`
