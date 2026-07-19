@@ -69,12 +69,12 @@ if (!existsSync(join(PROD, 'index.html'))) {
   const prodTextFiles = prodFiles.filter((f) => /\.(html|js|css|json|webmanifest|map)$/.test(f));
   const simulatorMarkers = [
     'LOCAL QA / NON-PRODUCTION',
-    'mock-session',
-    'Inject session',
+    'Post mock session',
     'inject-session',
     'live-url-token',
     'Bridge State Scaffold',
-    'MOCK_IMAGE_DATA_URL',
+    'bridge-full-flow',
+    'textscan-mode',
   ];
   let markerHit = null;
   for (const file of prodTextFiles) {

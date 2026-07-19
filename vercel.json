@@ -9,7 +9,8 @@
       "main": false,
       "master": false,
       "phase-11-virtual-alpha-infra": true,
-      "feature/meta-hardware-validation-candidate": false
+      "feature/meta-hardware-validation-candidate": false,
+      "audit/meta-hardware-candidate-repair-20260719": false
     }
   },
   "headers": [

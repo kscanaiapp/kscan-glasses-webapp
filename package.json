@@ -8,8 +8,10 @@
     "build": "vite build",
     "build:simulator": "vite build --config vite.simulator.config.js",
     "verify:artifacts": "node scripts/verify-artifacts.js",
+    "test:artifacts": "npm run verify:artifacts",
     "lint": "eslint .",
     "preview": "vite preview",
+    "static": "npm run test:static",
     "copy:wasm": "node scripts/copy-mediapipe-wasm.js",
     "verify:models": "node scripts/verify-models.js",
     "download:models": "node scripts/download-models.js",
@@ -19,10 +21,13 @@
     "test:static": "node scripts/static-tests.js",
     "test:security": "node scripts/security-tests.js",
     "test:bridge": "node scripts/bridge-lifecycle-tests.js",
+    "test:bridge-lifecycle": "npm run test:bridge",
     "test:privacy": "node scripts/privacy-tests.js",
     "test:browser": "node scripts/browser-smoke.js",
+    "browser:smoke": "npm run test:browser",
     "test:contract": "node scripts/contract-tests.js",
-    "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"
+    "test:contracts": "npm run test:contract",
+    "test": "npm run verify:models && npm run build && npm run build:simulator && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts"
   },
   "devDependencies": {
     "eslint": "9.39.4",
