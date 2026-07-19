@@ -246,6 +246,42 @@ check('retry:mints-new-request-id', () => {
   assert.equal(w.state(), S.CAPTURE_REQUESTED);
 });
 
+check('retry:after-scan-failed-delivers-fresh-result', () => {
+  const w = makeWorld();
+  w.pairUp();
+  w.machine.userIntent('scan');
+  const failedRid = w.machine.getSnapshot().requestId;
+  w.machine.dispatchInbound(w.phone(T.CAPTURE_STARTED, {}));
+  w.machine.dispatchInbound(w.phone(T.SCAN_PROCESSING, { stage: 'analyzing' }));
+  w.machine.dispatchInbound(w.phone(T.SCAN_FAILED, { code: 'ANALYZE_FAILED' }));
+  assert.equal(w.state(), S.ERROR);
+  // Late completion for the failed request must not render.
+  assert.equal(
+    w.machine.dispatchInbound(w.phone(
+      T.RESULT_SHOW,
+      { result: { resultId: 'r-late', title: 'Late' } },
+      { requestId: failedRid },
+    )).accepted,
+    false,
+  );
+  assert.equal(w.machine.userIntent('retry').accepted, true);
+  const retryRid = w.machine.getSnapshot().requestId;
+  assert.ok(retryRid && retryRid !== failedRid);
+  assert.equal(w.state(), S.CAPTURE_REQUESTED);
+  w.machine.dispatchInbound(w.phone(T.CAPTURE_STARTED, {}));
+  w.machine.dispatchInbound(w.phone(T.SCAN_PROCESSING, { stage: 'analyzing' }));
+  assert.equal(
+    w.machine.dispatchInbound(w.phone(
+      T.RESULT_SHOW,
+      { result: { resultId: 'r-retry', title: 'Retry Coat' } },
+    )).accepted,
+    true,
+  );
+  assert.equal(w.state(), S.RESULTS);
+  assert.equal(w.machine.getSnapshot().requestId, retryRid);
+  assert.equal(w.machine.getSnapshot().resultId, 'r-retry');
+});
+
 check('second-scan:no-inherited-terminal-state', () => {
   const w = makeWorld();
   w.pairUp();

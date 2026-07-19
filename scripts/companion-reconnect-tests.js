@@ -242,6 +242,23 @@ check('transport:send-failure-synthesizes-connection-loss', () => {
   assert.equal(w.state(), S.RECONNECTING);
 });
 
+check('accounting:machine-suppression-increments-ignored', () => {
+  const w = makeWorld();
+  w.runtime.start();
+  w.pairUp();
+  w.runtime.scan();
+  const rid = w.runtime.getSnapshot().requestId;
+  w.peer.inject(w.phone(T.CAPTURE_STARTED, {}));
+  w.peer.inject(w.phone(T.SCAN_FAILED, { code: 'X' }));
+  assert.equal(w.state(), S.ERROR);
+  const before = w.runtime.getDiagnostics().ignored;
+  // Duplicate terminal — protocol-valid, machine-suppressed.
+  w.peer.inject(w.phone(T.SCAN_FAILED, { code: 'Y' }, { requestId: rid }));
+  const after = w.runtime.getDiagnostics();
+  assert.equal(after.state, S.ERROR);
+  assert.ok(after.ignored > before, `ignored ${before} → ${after.ignored}`);
+});
+
 check('hygiene:no-unhandled-rejections-after-all-scenarios', () => {
   assert.equal(unhandledRejections.length, 0, unhandledRejections.map(String).join(' | ').slice(0, 200));
 });
