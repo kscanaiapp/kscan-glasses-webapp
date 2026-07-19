@@ -1,4 +1,4 @@
-// Mobile bridge dev-mode configuration (Phase 17).
+// Mobile bridge dev-mode configuration (Phase 17, hardened Phase A).
 //
 // Decides whether the glasses web app should request capture through the
 // K Scan mobile bridge alpha (Wi-Fi/WebSocket dev transport) instead of the
@@ -9,6 +9,10 @@
 //   dev query param (`?bridge=mobile&bridgeWs=ws://...`), an equivalent
 //   hash-appended query param, or the Vite env flag
 //   VITE_ENABLE_MOBILE_BRIDGE=true.
+// - NO DEFAULT ENDPOINT EXISTS. Enabling the bridge without an explicit URL
+//   fails closed (BRIDGE_UNAVAILABLE). There is deliberately no
+//   ws://localhost fallback string anywhere in this module, so the
+//   production bundle contains no dormant localhost transport.
 // - No bridge connection is opened unless explicitly enabled.
 // - This is a K Scan development bridge, NOT a verified Meta glasses
 //   transport. `ws://` is unencrypted and is acceptable for localhost / a
@@ -18,8 +22,6 @@
 //
 // Parsing is done once via parseMobileBridgeConfig(); callers receive a
 // stable, frozen config object — config is not re-parsed on every render.
-
-export const DEFAULT_MOBILE_BRIDGE_WS_URL = 'ws://localhost:8787';
 
 const ACCEPTED_WS_SCHEMES = ['ws:', 'wss:'];
 
@@ -108,10 +110,8 @@ export function parseMobileBridgeConfig(locationLike = {}, envLike = {}) {
 
   // Resolve the WS URL:
   //   1. explicit query param `bridgeWs` (highest priority), then
-  //   2. explicit env VITE_MOBILE_BRIDGE_WS_URL, then
-  //   3. the localhost default — but ONLY when enabled via the env flag
-  //      (per Task 2, the env URL is optional). Query-mode requires an
-  //      explicit URL so that a bare `?bridge=mobile` fails safely.
+  //   2. explicit env VITE_MOBILE_BRIDGE_WS_URL.
+  // There is NO default: an env flag without an explicit URL fails closed.
   let rawUrl = null;
   let urlSource = null;
   if (typeof queryWs === 'string' && queryWs.length > 0) {
@@ -120,9 +120,6 @@ export function parseMobileBridgeConfig(locationLike = {}, envLike = {}) {
   } else if (typeof envWs === 'string' && envWs.length > 0) {
     rawUrl = envWs;
     urlSource = 'env';
-  } else if (envEnabled && !requestedViaQuery) {
-    rawUrl = DEFAULT_MOBILE_BRIDGE_WS_URL;
-    urlSource = 'default';
   }
 
   const normalized = rawUrl === null ? null : normalizeWebSocketUrl(rawUrl);

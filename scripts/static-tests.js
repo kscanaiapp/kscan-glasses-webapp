@@ -540,10 +540,16 @@ try {
   const h2 = cfg.parseMobileBridgeConfig({ hash: '#?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
   expectEq('G.behav:hash-noslash-enabled', true, h2.enabled);
 
-  // Env activation (URL optional → default applies).
+  // Env activation WITHOUT an explicit URL fails closed — no localhost
+  // default exists anywhere (Phase A hardening).
   const e = cfg.parseMobileBridgeConfig({}, { VITE_ENABLE_MOBILE_BRIDGE: 'true' });
   expectEq('G.behav:env-enabled', true, e.enabled);
-  expectEq('G.behav:env-default-url', true, e.url === 'ws://localhost:8787/');
+  expectEq('G.behav:env-no-default-url', null, e.url);
+  expectEq('G.behav:env-no-default-error', 'BRIDGE_UNAVAILABLE', e.error);
+
+  // Env activation with an explicit URL still works.
+  const e2 = cfg.parseMobileBridgeConfig({}, { VITE_ENABLE_MOBILE_BRIDGE: 'true', VITE_MOBILE_BRIDGE_WS_URL: 'ws://localhost:8787' });
+  expectEq('G.behav:env-explicit-url', 'ws://localhost:8787/', e2.url);
 
   // Missing bridge URL (bare query) fails safely.
   const miss = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile' }, {});
