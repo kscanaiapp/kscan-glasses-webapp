@@ -195,20 +195,20 @@ const PAYLOAD_SCHEMAS = {
     fields: new Set(['pairingNonce', 'hudDeviceName', 'requestedCapabilities']),
   },
   [MESSAGE_TYPES.PAIR_CHALLENGE]: {
-    required: ['challenge'],
-    fields: new Set(['challenge']),
+    required: ['pairingNonce'],
+    fields: new Set(['pairingNonce', 'challenge']),
   },
   [MESSAGE_TYPES.PAIR_APPROVED]: {
-    required: ['sessionId', 'sessionExpiresAt', 'capabilities'],
-    fields: new Set(['sessionId', 'sessionExpiresAt', 'capabilities', 'phoneDeviceName']),
+    required: ['pairingNonce', 'sessionId', 'sessionExpiresAt', 'capabilities'],
+    fields: new Set(['pairingNonce', 'sessionId', 'sessionExpiresAt', 'capabilities', 'phoneDeviceName']),
   },
   [MESSAGE_TYPES.PAIR_DENIED]: {
     required: [],
-    fields: new Set(['reason']),
+    fields: new Set(['pairingNonce', 'reason']),
   },
   [MESSAGE_TYPES.PAIR_EXPIRED]: {
     required: [],
-    fields: new Set(['reason']),
+    fields: new Set(['pairingNonce', 'reason']),
   },
   [MESSAGE_TYPES.PAIR_REVOKED]: {
     required: [],

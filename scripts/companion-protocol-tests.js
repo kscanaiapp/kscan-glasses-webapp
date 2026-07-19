@@ -52,8 +52,8 @@ function validMessage(type, overrides = {}) {
 // Required payload content for types with required fields.
 const REQUIRED_PAYLOADS = {
   [MESSAGE_TYPES.PAIR_REQUEST]: { pairingNonce: 'nonce-1' },
-  [MESSAGE_TYPES.PAIR_CHALLENGE]: { challenge: 'challenge-1' },
-  [MESSAGE_TYPES.PAIR_APPROVED]: { sessionId: SESSION, sessionExpiresAt: NOW + 60000, capabilities: ['scan.trigger'] },
+  [MESSAGE_TYPES.PAIR_CHALLENGE]: { pairingNonce: 'nonce-1' },
+  [MESSAGE_TYPES.PAIR_APPROVED]: { pairingNonce: 'nonce-1', sessionId: SESSION, sessionExpiresAt: NOW + 60000, capabilities: ['scan.trigger'] },
   [MESSAGE_TYPES.SESSION_REFRESH_REQUIRED]: { reason: 'expiring' },
   [MESSAGE_TYPES.SESSION_ERROR]: { code: 'SESSION_UNKNOWN' },
   [MESSAGE_TYPES.CAPTURE_FAILED]: { code: 'CAMERA_UNAVAILABLE' },
@@ -249,7 +249,7 @@ check('reject:session-bearing-message-when-unpaired', () => {
 
 check('accept:pair-handshake-when-unpaired', () => {
   const msg = buildMessage(MESSAGE_TYPES.PAIR_CHALLENGE, {
-    deviceId: HUD, payload: { challenge: 'c' }, now: NOW,
+    deviceId: HUD, payload: { pairingNonce: 'nonce-1' }, now: NOW,
   });
   assert.equal(validateMessage(msg, { ...CTX, paired: false }).ok, true);
 });

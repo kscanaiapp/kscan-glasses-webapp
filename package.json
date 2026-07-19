@@ -28,7 +28,8 @@
     "test:contract": "node scripts/contract-tests.js",
     "test:contracts": "npm run test:contract",
     "test": "npm run verify:models && npm run build && npm run build:simulator && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts",
-    "test:companion-protocol": "node scripts/companion-protocol-tests.js"
+    "test:companion-protocol": "node scripts/companion-protocol-tests.js",
+    "test:companion-pairing": "node scripts/companion-pairing-tests.js"
   },
   "devDependencies": {
     "eslint": "9.39.4",
