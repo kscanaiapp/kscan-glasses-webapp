@@ -4,6 +4,11 @@ import {
   getMobileBridgeDebugConfig,
 } from './mobileBridgeConfig.js';
 import { MobileBridgeClient } from './mobileBridgeClient.js';
+import {
+  buildMessageOriginAllowlist,
+  evaluateMessageTrust as evaluateCanonicalMessageTrust,
+  normalizeOrigin,
+} from './messageTrust.js';
 
 export const CAPTURE_TIMEOUT_MS = 10000;
 const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
@@ -47,17 +52,15 @@ export const DAT_ERROR_CODES = {
   UNKNOWN: 'UNKNOWN',
 };
 
-// ─── Origin validation (Phase 11) ────────────────────────────────────
-// postMessage capture responses are accepted only from:
-//   1. An allowlisted origin: our own origin (same-origin simulator) or
-//      a comma-separated VITE_DAT_PARENT_ORIGIN env allowlist, OR
-//   2. The direct parent window (event.source === window.parent) when the
-//      Meta runtime's host origin is unknown. This fallback is documented
-//      in BRIDGE_CONTRACT.md / QA_REPORT.md as a known MRBD limitation —
-//      strict origin pinning is impossible until the real runtime origin
-//      is observed on physical glasses.
+// ─── Origin validation ───────────────────────────────────────────────
+// postMessage capture responses use the canonical evaluator in
+// messageTrust.js. Acceptance requires BOTH:
+//   1. A well-formed allowlisted (or self) origin — VITE_DAT_PARENT_ORIGIN
+//      plus the app origin; wildcards/null/malformed entries are dropped.
+//   2. An approved source window (parent and/or self).
+// There is NO origin-blind parent-source fallback. Cross-origin Meta
+// runtime parents must be pinned explicitly before they are trusted.
 // Messages with event.origin === 'null' are NEVER processed.
-// Wildcard entries in the allowlist are ignored.
 
 function readDatEnv() {
   try {
@@ -67,29 +70,35 @@ function readDatEnv() {
   }
 }
 
+/**
+ * Build the DAT inbound origin allowlist. Uses the canonical normalizer so
+ * wildcards, null, and non-https (except local http) entries are dropped.
+ */
 export function buildOriginAllowlist(envLike = {}, selfOrigin = '') {
-  const allowlist = new Set();
-  if (typeof selfOrigin === 'string' && selfOrigin && selfOrigin !== 'null') {
-    allowlist.add(selfOrigin);
-  }
   const raw = typeof envLike.VITE_DAT_PARENT_ORIGIN === 'string' ? envLike.VITE_DAT_PARENT_ORIGIN : '';
-  for (const entry of raw.split(',')) {
-    const trimmed = entry.trim().replace(/\/+$/, '');
-    if (trimmed && trimmed !== 'null' && trimmed !== '*') allowlist.add(trimmed);
-  }
-  return allowlist;
+  return buildMessageOriginAllowlist(raw, selfOrigin);
 }
 
-export function evaluateMessageTrust(eventLike, { allowlist, parentRef } = {}) {
-  const origin = eventLike?.origin;
-  if (origin === 'null') return { trusted: false, reason: 'NULL_ORIGIN' };
-  if (typeof origin === 'string' && allowlist instanceof Set && allowlist.has(origin)) {
-    return { trusted: true, reason: 'ORIGIN_ALLOWLISTED' };
-  }
-  if (parentRef && eventLike?.source === parentRef) {
-    return { trusted: true, reason: 'PARENT_SOURCE' };
-  }
-  return { trusted: false, reason: 'UNTRUSTED' };
+/**
+ * DAT inbound trust — same canonical rules as session/bridgeState:
+ * allowlisted (or self) origin AND approved source window. There is no
+ * origin-blind parent-source fallback.
+ */
+export function evaluateMessageTrust(eventLike, {
+  allowlist,
+  parentRef,
+  selfOrigin = '',
+  selfWindow = null,
+} = {}) {
+  const approvedSources = [];
+  if (parentRef) approvedSources.push(parentRef);
+  if (selfWindow && !approvedSources.includes(selfWindow)) approvedSources.push(selfWindow);
+  return evaluateCanonicalMessageTrust(eventLike, {
+    allowlist: allowlist instanceof Set ? allowlist : new Set(),
+    selfOrigin,
+    approvedSources,
+    requireSource: true,
+  });
 }
 
 let cachedAllowlist = null;
@@ -314,8 +323,11 @@ function normalizeCapturePayload(payload, requestId) {
     };
   }
 
-  // Legacy compatibility contract.
+  // Legacy compatibility contract — still requires a matching requestId so
+  // late/stale CAPTURE_RESPONSE events cannot settle a different capture.
   if (payload.type === 'CAPTURE_RESPONSE') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
+    if (!payload.requestId) return { matched: false };
     const image = payload?.data?.base64Image;
     try {
       return { matched: true, ok: true, base64: validateCapturePayload(image) };
@@ -331,6 +343,8 @@ function normalizeCapturePayload(payload, requestId) {
   }
 
   if (payload.type === 'CAPTURE_ERROR') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
+    if (!payload.requestId) return { matched: false };
     const message = String(payload?.message || '').toLowerCase();
     if (message.includes('permission')) {
       return {
@@ -363,13 +377,21 @@ function mapUserFriendlyError(error) {
 }
 
 function getRequestTargetOrigin() {
-  // If exactly one parent origin is configured via env, pin outbound requests
-  // to it. Otherwise '*' — acceptable because the request carries only
-  // {type, requestId}, never image data or secrets. The MRBD host origin is
-  // unknown until physical-device testing (documented limitation).
+  // Prefer a single configured parent origin. When the parent is same-origin
+  // (local simulator), pin to self. Otherwise leave '*' only until hardware
+  // validation pins VITE_DAT_PARENT_ORIGIN — request body is metadata-only.
   const raw = typeof readDatEnv().VITE_DAT_PARENT_ORIGIN === 'string' ? readDatEnv().VITE_DAT_PARENT_ORIGIN : '';
-  const entries = raw.split(',').map((s) => s.trim().replace(/\/+$/, '')).filter((s) => s && s !== '*' && s !== 'null');
-  return entries.length === 1 ? entries[0] : '*';
+  const entries = raw.split(',').map((s) => normalizeOrigin(s)).filter(Boolean);
+  if (entries.length === 1) return entries[0];
+  try {
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      void window.parent.location.origin;
+      return window.location.origin;
+    }
+  } catch {
+    // cross-origin parent — fall through
+  }
+  return entries.length === 0 ? '*' : '*';
 }
 
 function emitBridgeRequest(adapter, requestId) {
@@ -701,9 +723,12 @@ export async function capturePhoto(options = {}) {
     };
 
     const onMessage = (event) => {
+      const selfOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
       const trust = evaluateMessageTrust(event, {
         allowlist: getOriginAllowlist(),
         parentRef: window.parent !== window ? window.parent : null,
+        selfWindow: window,
+        selfOrigin,
       });
       if (!trust.trusted) {
         warnUntrustedOnce();

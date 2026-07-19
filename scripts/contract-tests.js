@@ -215,22 +215,50 @@ function countingFetch(impl) {
 console.log('\n=== B. DAT bridge origin trust ===');
 
 {
-  const allowlist = bridge.buildOriginAllowlist({ VITE_DAT_PARENT_ORIGIN: 'https://host.meta.test, *' }, 'http://localhost:5173');
-  expectTrue('B1.self-origin-allowed', allowlist.has('http://localhost:5173'));
+  const SELF = 'http://localhost:5173';
+  const allowlist = bridge.buildOriginAllowlist({ VITE_DAT_PARENT_ORIGIN: 'https://host.meta.test, *' }, SELF);
+  expectTrue('B1.self-origin-allowed', allowlist.has(SELF));
   expectTrue('B1.env-origin-allowed', allowlist.has('https://host.meta.test'));
   expectTrue('B1.wildcard-ignored', !allowlist.has('*'));
 
-  const t1 = bridge.evaluateMessageTrust({ origin: 'null', source: parentStub }, { allowlist, parentRef: parentStub });
+  const t1 = bridge.evaluateMessageTrust(
+    { origin: 'null', source: parentStub },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
   expectEq('B2.null-origin-rejected', false, t1.trusted);
 
-  const t2 = bridge.evaluateMessageTrust({ origin: 'http://localhost:5173', source: {} }, { allowlist, parentRef: parentStub });
-  expectEq('B3.allowlisted-trusted', true, t2.trusted);
+  const t2 = bridge.evaluateMessageTrust(
+    { origin: SELF, source: parentStub },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
+  expectEq('B3.self-origin-with-approved-source', true, t2.trusted);
 
-  const t3 = bridge.evaluateMessageTrust({ origin: 'https://unknown.example', source: parentStub }, { allowlist, parentRef: parentStub });
-  expectEq('B4.parent-source-fallback', true, t3.trusted);
+  const t3 = bridge.evaluateMessageTrust(
+    { origin: 'https://unknown.example', source: parentStub },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
+  expectEq('B4.origin-blind-parent-fallback-rejected', false, t3.trusted);
 
-  const t4 = bridge.evaluateMessageTrust({ origin: 'https://attacker.example', source: {} }, { allowlist, parentRef: parentStub });
+  const t4 = bridge.evaluateMessageTrust(
+    { origin: 'https://attacker.example', source: {} },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
   expectEq('B5.stranger-rejected', false, t4.trusted);
+
+  const t5 = bridge.evaluateMessageTrust(
+    { origin: SELF, source: {} },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
+  expectEq('B6.allowlisted-without-approved-source-rejected', false, t5.trusted);
+
+  const t6 = bridge.evaluateMessageTrust(
+    { origin: 'https://host.meta.test', source: parentStub },
+    { allowlist, parentRef: parentStub, selfOrigin: SELF },
+  );
+  expectEq('B7.allowlisted-origin-with-parent-source', true, t6.trusted);
+
+  const weak = bridge.buildOriginAllowlist({ VITE_DAT_PARENT_ORIGIN: 'ftp://bad.example, not-a-url' }, SELF);
+  expectTrue('B8.malformed-allowlist-entries-dropped', !weak.has('ftp://bad.example') && !weak.has('not-a-url'));
 }
 
 // ═══════════════════════════════════════════════════════════════════

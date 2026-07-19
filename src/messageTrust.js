@@ -1,10 +1,8 @@
 // Canonical postMessage trust policy — hardware-validation candidate.
 //
-// ONE shared evaluator for every inbound window.message channel in the app
-// (Supabase session bridge, capture bridge state machine). The DAT adapter
-// (datBridge.js) predates this module and keeps its own historically-tested
-// semantics; do not "simplify" it into this module without re-running the
-// full contract suite.
+// ONE shared evaluator for every inbound window.message channel in the app:
+// Supabase session bridge, capture bridge state machine (bridgeState.js),
+// and the DAT adapter (datBridge.js wraps this evaluator).
 //
 // Default trust rules (deliberately strict):
 //   - event.origin must be a well-formed https: origin (http: only for
@@ -14,7 +12,7 @@
 //   - Wildcard ('*') allowlist entries are ignored by design.
 //   - Malformed origins are rejected, both on the event and in allowlists.
 //   - When requireSource is true (default), event.source must be one of the
-//     explicitly approved source windows (normally window.parent).
+//     explicitly approved source windows (normally window.parent / window).
 //   - Message data must be an object with an allowlisted `type` when
 //     allowedTypes is provided.
 //

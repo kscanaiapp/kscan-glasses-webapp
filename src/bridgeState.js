@@ -27,7 +27,11 @@
 // src/messageTrust.js (same-origin default; explicit allowlist for hardware
 // testing; no wildcards; source pinned to the parent window).
 
-import { buildMessageOriginAllowlist, evaluateMessageTrust } from './messageTrust.js';
+import {
+  buildMessageOriginAllowlist,
+  evaluateMessageTrust,
+  normalizeOrigin,
+} from './messageTrust.js';
 
 export const BRIDGE_STATUS = {
   IDLE: 'idle',
@@ -93,11 +97,14 @@ function clampErrorText(value) {
   return text.length <= MAX_ERROR_LEN ? text : `${text.slice(0, MAX_ERROR_LEN - 1).trim()}…`;
 }
 
+const MAX_CAPTURE_PAYLOAD_CHARS = 6_000_000; // ~4.5MB base64 budget at scaffold boundary
+
 function validateImagePayload(image) {
   if (typeof image !== 'string') return false;
   const trimmed = image.trim();
   if (!trimmed) return false;
   if (!trimmed.startsWith('data:image/')) return false;
+  if (trimmed.length > MAX_CAPTURE_PAYLOAD_CHARS) return false;
   return true;
 }
 
@@ -177,13 +184,50 @@ function resolvePendingRequest(value) {
   return true;
 }
 
-// Whether an inbound event belongs to the active request. Events that carry
-// no requestId are accepted for compatibility with the simulator scaffold;
-// events carrying a mismatched requestId are stale.
+// Whether an inbound terminal event belongs to the active request.
+// Untagged success/error events are rejected: after cancel/timeout the
+// pending slot is null, and accepting untagged replies would let late
+// success flip HUD state. Mismatched ids are always stale.
 function matchesActiveRequest(data) {
   const incomingId = typeof data?.requestId === 'string' && data.requestId ? data.requestId : null;
-  if (!incomingId) return true; // legacy/untagged event — accepted
+  if (!incomingId) return false;
   return Boolean(pendingRequest) && pendingRequest.requestId === incomingId;
+}
+
+function getOutboundTargetOrigin() {
+  // Pin outbound capture requests when a target is known. Never prefer '*'
+  // when a same-origin parent or an explicit config value is available.
+  try {
+    const runtime = typeof window !== 'undefined' ? window.__KSCAN_CONFIG__ : null;
+    if (runtime && typeof runtime.BRIDGE_TARGET_ORIGIN === 'string') {
+      const pinned = normalizeOrigin(runtime.BRIDGE_TARGET_ORIGIN);
+      if (pinned) return pinned;
+    }
+  } catch {
+    // runtime unavailable
+  }
+  try {
+    if (typeof import.meta.env.VITE_BRIDGE_TARGET_ORIGIN === 'string') {
+      const pinned = normalizeOrigin(import.meta.env.VITE_BRIDGE_TARGET_ORIGIN);
+      if (pinned) return pinned;
+    }
+  } catch {
+    // env unavailable
+  }
+  const extras = buildMessageOriginAllowlist(readExtraAllowedOrigins(), '');
+  if (extras.size === 1) return [...extras][0];
+  try {
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      void window.parent.location.origin;
+      return window.location.origin;
+    }
+    if (typeof window !== 'undefined' && window.location) {
+      return window.location.origin;
+    }
+  } catch {
+    // cross-origin parent — fall through to reserved wildcard
+  }
+  return '*';
 }
 
 function armTimeout() {
@@ -250,11 +294,11 @@ export function requestCapture() {
     setStatus(BRIDGE_STATUS.REQUESTING);
 
     try {
-      // TODO: Restrict target origin to the actual phone/DAT bridge origin after hardware validation.
-      window.parent.postMessage({ type: 'capture.request', source: 'kscan-glasses-webapp', requestId }, '*');
+      const targetOrigin = getOutboundTargetOrigin();
       // TODO: Replace scaffold postMessage contract with real DAT/mobile bridge call after hardware validation.
+      window.parent.postMessage({ type: 'capture.request', source: 'kscan-glasses-webapp', requestId }, targetOrigin);
       // Optional outbound compatibility alias
-      window.parent.postMessage({ type: 'capture-photo', source: 'kscan-glasses-webapp', requestId }, '*');
+      window.parent.postMessage({ type: 'capture-photo', source: 'kscan-glasses-webapp', requestId }, targetOrigin);
     } catch {
       const settled = rejectPendingRequest('BRIDGE_ERROR', 'Failed to request capture.');
       setStatus(BRIDGE_STATUS.ERROR, { lastError: 'Failed to request capture.' });
