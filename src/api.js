@@ -260,8 +260,10 @@ export function getAnalyzeMode(envLike = readApiEnv(), runtimeLike = undefined) 
       ? window.__KSCAN_CONFIG__
       : {})
     : runtimeLike;
-  if (isPrivateLiveAnalyzeEnabled(envLike, runtime)) return 'private-live';
+  // Match analyzeImage() precedence: explicit mock paths win over the
+  // private-live label so diagnostics never claim live while mock runs.
   if (isMockAnalyzeEnabled(envLike)) return 'mock';
+  if (isPrivateLiveAnalyzeEnabled(envLike, runtime)) return 'private-live';
   return 'live-disabled';
 }
 

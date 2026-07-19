@@ -54,8 +54,14 @@ const bridge = await import('../src/bridgeState.js');
 const pipeline = await import('../src/scanPipeline.js');
 const api = await import('../src/api.js');
 
-const { initBridgeStateListener, getBridgeState, BRIDGE_STATUS } = bridge;
-const { runScanPipeline, PipelineInvariantError } = pipeline;
+const {
+  initBridgeStateListener,
+  getBridgeState,
+  BRIDGE_STATUS,
+  requestCapture,
+  __bridgeTestHooks,
+} = bridge;
+const { runScanPipeline, PipelineInvariantError, PipelineCancelledError } = pipeline;
 const {
   analyzeImage,
   AnalyzeError,
@@ -72,24 +78,37 @@ const VALID_JPEG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2Q==';
 console.log('\n=== A. Bridge state never holds payload data ===');
 
 // A1. success event: state stores metadata only, never the image string
-dispatchMessage({
-  type: 'capture.success',
-  image: RAW_CAPTURE,
-  metadata: { width: 640, height: 640, size: 12345, timestamp: '2026-07-18T00:00:00Z' },
-});
-check('A1.bridge-state-metadata-only', () => {
-  const snap = getBridgeState();
-  assert.equal(snap.status, BRIDGE_STATUS.SUCCESS);
-  assert.equal(JSON.stringify(snap).includes('data:image'), false, 'payload leaked into bridge state');
-  assert.equal(JSON.stringify(snap).includes('RAWCAPTUREDATA'), false);
-});
+{
+  const pending = requestCapture();
+  void pending.catch(() => {});
+  const requestId = __bridgeTestHooks.getPendingRequestId();
+  dispatchMessage({
+    type: 'capture.success',
+    requestId,
+    image: RAW_CAPTURE,
+    metadata: { width: 640, height: 640, size: 12345, timestamp: '2026-07-18T00:00:00Z' },
+  });
+  await pending;
+  check('A1.bridge-state-metadata-only', () => {
+    const snap = getBridgeState();
+    assert.equal(snap.status, BRIDGE_STATUS.SUCCESS);
+    assert.equal(JSON.stringify(snap).includes('data:image'), false, 'payload leaked into bridge state');
+    assert.equal(JSON.stringify(snap).includes('RAWCAPTUREDATA'), false);
+  });
+}
 
 // A2. error event: no payload in state
-dispatchMessage({ type: 'capture.error', error: 'Camera unavailable' });
-check('A2.bridge-error-no-payload', () => {
-  const snap = getBridgeState();
-  assert.equal(JSON.stringify(snap).includes('data:image'), false);
-});
+{
+  const pending = requestCapture();
+  void pending.catch(() => {});
+  const requestId = __bridgeTestHooks.getPendingRequestId();
+  dispatchMessage({ type: 'capture.error', requestId, error: 'Camera unavailable' });
+  await pending.catch(() => {});
+  check('A2.bridge-error-no-payload', () => {
+    const snap = getBridgeState();
+    assert.equal(JSON.stringify(snap).includes('data:image'), false);
+  });
+}
 
 console.log('\n=== B. Pipeline invariant: analyze only sees sanitizer output ===');
 
@@ -163,6 +182,34 @@ console.log('\n=== B. Pipeline invariant: analyze only sees sanitizer output ===
   });
 }
 
+// B4. cancel between sanitize and analyze must never invoke analyze
+{
+  let analyzeCalled = false;
+  let stage = 0;
+  let threw = null;
+  try {
+    await runScanPipeline({
+      capture: async () => RAW_CAPTURE,
+      sanitize: async () => VALID_JPEG,
+      analyze: async () => {
+        analyzeCalled = true;
+        return {};
+      },
+      isCancelled: () => {
+        stage += 1;
+        // Cancel after sanitize completes (second cancelled() check).
+        return stage >= 2;
+      },
+    });
+  } catch (error) {
+    threw = error;
+  }
+  check('B4.cancel-before-analyze-blocks-upload', () => {
+    assert.ok(threw instanceof PipelineCancelledError);
+    assert.equal(analyzeCalled, false, 'cancelled scans must never reach analyze');
+  });
+}
+
 console.log('\n=== C. Static privacy guards (source) ===');
 
 const sanitizerSrc = readFileSync('src/privacyImageSanitizer.js', 'utf8');
@@ -225,6 +272,11 @@ check('D2.analyze-mode-labels', () => {
   assert.equal(getAnalyzeMode({}, {}), 'live-disabled');
   assert.equal(getAnalyzeMode({ VITE_ENABLE_PRIVATE_LIVE_ANALYZE: 'true' }, {}), 'private-live');
   assert.equal(getAnalyzeMode({ DEV: true, VITE_MOCK_ANALYZE: 'true' }, {}), 'mock');
+  // Mock wins when both are configured — matches analyzeImage() precedence.
+  assert.equal(
+    getAnalyzeMode({ DEV: true, VITE_MOCK_ANALYZE: 'true', VITE_ENABLE_PRIVATE_LIVE_ANALYZE: 'true' }, {}),
+    'mock',
+  );
 });
 
 // D3. production-like env (no DEV, no flags): fail-closed LIVE_DISABLED

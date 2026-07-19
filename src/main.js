@@ -30,7 +30,15 @@ import {
   listenForSupabaseSessionMessages,
   signOutSupabaseSession,
 } from './services/supabaseClient.js';
-import { initBridgeStateListener, subscribeBridgeState, BRIDGE_STATUS, requestCapture, getBridgeState, cancelBridgeCapture } from './bridgeState.js';
+import {
+  initBridgeStateListener,
+  subscribeBridgeState,
+  BRIDGE_STATUS,
+  requestCapture,
+  getBridgeState,
+  cancelBridgeCapture,
+  resetBridgeState,
+} from './bridgeState.js';
 
 const STATE = FLOW_STATES;
 
@@ -528,10 +536,16 @@ function shouldUseBridgeCapture() {
   return false;
 }
 
-async function handleBridgeImage(imageData, metadata) {
+async function handleBridgeImage(imageData, metadata, token) {
   if (typeof imageData !== 'string' || !imageData.trim().startsWith('data:image/')) {
     const err = new Error('Invalid image payload');
     err.code = 'CAPTURE_INVALID';
+    throw err;
+  }
+
+  if (token !== scanToken) {
+    const err = new Error('Scan cancelled.');
+    err.code = 'SCAN_CANCELLED';
     throw err;
   }
 
@@ -539,6 +553,11 @@ async function handleBridgeImage(imageData, metadata) {
   renderPipeline('image', 1);
 
   const sanitized = await sanitizeImageBeforeUpload(imageData);
+  if (token !== scanToken) {
+    const err = new Error('Scan cancelled.');
+    err.code = 'SCAN_CANCELLED';
+    throw err;
+  }
 
   setState(STATE.ANALYZING);
   renderPipeline('image', 2);
@@ -557,9 +576,13 @@ async function runBridgeScanPipeline(token) {
   renderPipeline('image', 0);
 
   const { image, metadata } = await requestCapture();
-  if (token !== scanToken) return null;
+  if (token !== scanToken) {
+    const err = new Error('Scan cancelled.');
+    err.code = 'SCAN_CANCELLED';
+    throw err;
+  }
 
-  return await handleBridgeImage(image, metadata);
+  return await handleBridgeImage(image, metadata, token);
 }
 
 export async function startScan() {
@@ -574,9 +597,7 @@ export async function startScan() {
 
     let response;
     if (shouldUseBridgeCapture()) {
-      const result = await runBridgeScanPipeline(token);
-      if (token !== scanToken) return; // cancelled mid-flight
-      response = result;
+      response = await runBridgeScanPipeline(token);
     } else {
       const { response: pipelineResponse } = await runScanPipeline({
         capture: () => capturePhoto(),
@@ -586,6 +607,7 @@ export async function startScan() {
             if (els.processingSub) els.processingSub.textContent = 'Still working...';
           },
         }),
+        isCancelled: () => token !== scanToken,
         onStage: (stage) => {
           if (token !== scanToken) return; // cancelled — ignore stale stage updates
           if (stage === PIPELINE_STAGES.CAPTURING) setState(STATE.CAPTURING);
@@ -625,6 +647,7 @@ export async function startScan() {
     focusFirstInView('results');
   } catch (error) {
     if (token !== scanToken) return; // cancelled — suppress stale error
+    if (error?.code === 'SCAN_CANCELLED' || error?.code === 'BRIDGE_CANCELLED') return;
     showError(normalizeScanError(error));
   } finally {
     if (token === scanToken) scanInFlight = false;
@@ -1050,6 +1073,20 @@ function renderSettings() {
 function onAuthToggle() {
   const session = getSession();
   if (session) {
+    // Invalidate in-flight work and clear bridge/HUD user-specific state so
+    // a previous account cannot leave capture results or pending requests.
+    scanToken += 1;
+    textScanToken += 1;
+    scanInFlight = false;
+    textScanInFlight = false;
+    cancelBridgeCapture();
+    resetBridgeState();
+    clearPipeline();
+    if (els.resultsList) els.resultsList.innerHTML = '';
+    if (els.textscanResults) {
+      els.textscanResults.innerHTML = '';
+      els.textscanResults.classList.add('hidden');
+    }
     signOut();
     // Also clear any bridged Supabase session state: SDK session, bearer
     // overrides, and app-owned auth markers (session cleanup policy).
