@@ -2,7 +2,6 @@
 // Covers every valid message type plus the full rejection matrix.
 import assert from 'node:assert/strict';
 import {
-  PROTOCOL_VERSION,
   MESSAGE_TYPES,
   PROTOCOL_ERRORS,
   MAX_MESSAGE_BYTES,

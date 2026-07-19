@@ -493,7 +493,7 @@ export function validateMessage(raw, context = {}) {
     try {
       resultSize = JSON.stringify(payload.result)?.length ?? 0;
     } catch {
-      resultSize = 0;
+      // Unserializable result payload — resultSize stays 0 → rejected below.
     }
     if (!resultSize || resultSize > MAX_RESULT_PAYLOAD_BYTES) {
       return { ok: false, code: E.MALFORMED_PAYLOAD };

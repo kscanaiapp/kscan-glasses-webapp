@@ -192,7 +192,6 @@ check('liveness:stale-pong-does-not-refresh', () => {
   w.runtime.start();
   w.pairUp();
   w.tick(1000);
-  const ping = w.peer.outbox.find((m) => m.messageType === T.CONNECTION_PING);
   // Pong with a WRONG nonce — must not satisfy liveness.
   w.peer.inject(w.phone(T.CONNECTION_PONG, { nonce: 'stale-nonce' }, { sessionId: null, requestId: null }));
   w.tick(9000);

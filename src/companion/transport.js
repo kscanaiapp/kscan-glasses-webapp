@@ -17,7 +17,7 @@
 // factory returns a 'none' transport that never connects.
 
 import { evaluateMessageTrust, buildMessageOriginAllowlist, normalizeOrigin } from '../messageTrust.js';
-import { serializeMessage, validateMessage } from './protocol.js';
+import { serializeMessage } from './protocol.js';
 
 export const TRANSPORT_STATE = Object.freeze({
   IDLE: 'idle',
