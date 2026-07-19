@@ -113,6 +113,17 @@ export default [
     },
   },
   {
+    // Browser-driving script: page.evaluate callbacks execute inside the
+    // page, so browser globals are legitimate alongside Node globals.
+    files: ['scripts/browser-smoke.js'],
+    languageOptions: {
+      globals: {
+        ...browserGlobals,
+        getComputedStyle: 'readonly',
+      },
+    },
+  },
+  {
     files: ['vite.config.js', 'vite.simulator.config.js', 'eslint.config.js'],
     languageOptions: {
       ecmaVersion: 2022,

@@ -20,11 +20,13 @@
     "test:security": "node scripts/security-tests.js",
     "test:bridge": "node scripts/bridge-lifecycle-tests.js",
     "test:privacy": "node scripts/privacy-tests.js",
+    "test:browser": "node scripts/browser-smoke.js",
     "test:contract": "node scripts/contract-tests.js",
     "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:textscan"
   },
   "devDependencies": {
     "eslint": "9.39.4",
+    "playwright-core": "1.57.0",
     "vite": "^7.1.0"
   },
   "dependencies": {

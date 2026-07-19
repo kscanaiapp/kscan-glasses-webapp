@@ -68,6 +68,19 @@ function renderPipeline(mode, activeIndex) {
   });
 }
 
+// Terminal state after a completed pipeline: every step done, none active —
+// the stepper must never remain stuck once results are shown.
+function renderPipelineDone(mode) {
+  renderPipeline(mode, (PIPELINE_LABELS[mode] || []).length);
+}
+
+// Pipeline abandoned (error/cancel/back) — remove all steps so no stale
+// active step survives while the processing screen is hidden.
+function clearPipeline() {
+  const list = document.getElementById('pipeline-steps');
+  if (list) list.innerHTML = '';
+}
+
 const els = {
   home: document.getElementById('home'),
   processing: document.getElementById('processing'),
@@ -203,7 +216,12 @@ function syncViewA11y(activeViewId) {
 function showScreen(viewId, pushHistory = true) {
   resetFocusIndex();
 
-  if (pushHistory && currentView !== viewId) screenHistory.push(currentView);
+  // 'processing' and 'error' are transient scan-flow screens — never a valid
+  // Back destination, so never record them in navigation history. Otherwise
+  // results→Back (or retry chains) would land on a dead processing screen.
+  if (pushHistory && currentView !== viewId && currentView !== 'processing' && currentView !== 'error') {
+    screenHistory.push(currentView);
+  }
 
   screens.forEach((screen) => {
     if (!screen) return;
@@ -427,6 +445,7 @@ function renderProducts(styleMatch) {
 
 function showError(message) {
   setState(STATE.ERROR);
+  clearPipeline(); // pipeline halted — no stale active step
   els.errorMessage.textContent = safeText(message, 'Something went wrong.');
   showScreen('error');
 }
@@ -600,6 +619,7 @@ export async function startScan() {
     if (els.resultsList) els.resultsList.classList.remove('hidden');
 
     renderProducts(styleMatch);
+    renderPipelineDone(pipelineMode); // terminal state — stepper never stuck
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');
@@ -773,6 +793,7 @@ export async function startTextScan(query) {
     if (els.resultsEmpty) els.resultsEmpty.classList.add('hidden');
     if (els.textscanResults) els.textscanResults.classList.remove('hidden');
 
+    renderPipelineDone('text'); // terminal state — stepper never stuck
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');
@@ -797,6 +818,7 @@ export async function startTextScan(query) {
     if (els.resultsEmpty) els.resultsEmpty.classList.add('hidden');
     if (els.textscanResults) els.textscanResults.classList.remove('hidden');
 
+    renderPipelineDone('text'); // error contract rendered as result — stepper done
     setState(STATE.SUCCESS);
     showScreen('results');
     focusFirstInView('results');
@@ -823,6 +845,7 @@ function onBack() {
     textScanInFlight = false;
     cancelBridgeCapture(); // settle any pending bridge request (BRIDGE_CANCELLED)
     setState(STATE.IDLE);
+    clearPipeline(); // abandoned pipeline — no stale active step
   }
   const previous = screenHistory.pop() || 'home';
   showScreen(previous, false);
@@ -1137,6 +1160,7 @@ function wireButtons() {
     textScanInFlight = false;
     cancelBridgeCapture(); // settle any pending bridge request (BRIDGE_CANCELLED)
     setState(STATE.IDLE);
+    clearPipeline(); // abandoned pipeline — no stale active step
     showScreen('home', false);
   });
 }
