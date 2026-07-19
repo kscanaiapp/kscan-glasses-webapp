@@ -86,7 +86,12 @@ Also: denial/expiry recovery, revoke/re-pair, reconnect without scan resume, neg
 
 ## Commit map
 
-Recorded in the final validation document after commits land on this branch.
+| SHA | Message |
+| --- | --- |
+| `826f7df` | fix(meta): harden companion HUD state, liveness, and mock fail paths |
+| `b07f6b6` | test(meta): complete companion browser reliability matrix |
+| `9f756b7` | chore(meta): wire companion suites into CI and npm scripts |
+| `b2d2181` | docs(meta): add Phase A audit, backend readiness, and final validation |
 
 ---
 

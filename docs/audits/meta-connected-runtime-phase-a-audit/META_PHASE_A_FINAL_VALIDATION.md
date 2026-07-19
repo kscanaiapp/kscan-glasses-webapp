@@ -3,8 +3,17 @@
 **Repository:** `C:\Users\jsmit\kscan-glasses-webapp`  
 **Authorized branch:** `feature/meta-connected-runtime-phase-a`  
 **Starting HEAD:** `e4dfaf8bd3344ff1db9afafb0156a29bd06903a0`  
-**Final HEAD:** _(filled after repair commits)_  
-**Worktree at completion:** clean (docs + repair commits only)  
+**Final HEAD:** `b2d21816f2f5738c29e0d486803d613ec7402445`  
+**Worktree at completion:** clean after docs HEAD pin below  
+
+## Repair commits
+
+| SHA | Message |
+| --- | --- |
+| `826f7df` | fix(meta): harden companion HUD state, liveness, and mock fail paths |
+| `b07f6b6` | test(meta): complete companion browser reliability matrix |
+| `9f756b7` | chore(meta): wire companion suites into CI and npm scripts |
+| `b2d2181` | docs(meta): add Phase A audit, backend readiness, and final validation |
 
 ---
 
@@ -99,5 +108,5 @@ Overall Meta-side: **no rewiring blocker**. Phase B implements real phone transp
 ## Handoff for validation-and-push agent
 
 - **Branch:** `feature/meta-connected-runtime-phase-a`  
-- **Final HEAD:** _(see git rev-parse HEAD after commits)_  
+- **Final HEAD:** `b2d21816f2f5738c29e0d486803d613ec7402445` (plus docs pin commit if present)  
 - **Do not push from this audit agent** (push not authorized here)
