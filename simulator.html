@@ -529,6 +529,7 @@
   bindBridgeButton('bridge-success', function () {
     post({
       type: 'capture.success',
+      requestId: pendingRequestId || undefined,
       image: getMockBridgeImage(),
       metadata: { timestamp: new Date().toISOString(), size: 123456, width: 640, height: 640 }
     });
@@ -537,6 +538,7 @@
   bindBridgeButton('bridge-success-empty', function () {
     post({
       type: 'capture.success',
+      requestId: pendingRequestId || undefined,
       metadata: { timestamp: new Date().toISOString(), size: 123456, width: 1440, height: 1920 }
     });
     log('simulator -> app', 'capture.success', 'missing payload');
@@ -544,13 +546,14 @@
   bindBridgeButton('bridge-invalid', function () {
     post({
       type: 'capture.success',
+      requestId: pendingRequestId || undefined,
       image: 'not-a-data-url',
       metadata: { timestamp: new Date().toISOString(), size: 123456, width: 1440, height: 1920 }
     });
     log('simulator -> app', 'capture.success', 'invalid payload');
   });
   bindBridgeButton('bridge-error', function () {
-    post({ type: 'capture.error', error: 'Camera unavailable' });
+    post({ type: 'capture.error', requestId: pendingRequestId || undefined, error: 'Camera unavailable' });
     log('simulator -> app', 'capture.error', 'safe message');
   });
   bindBridgeButton('bridge-timeout', function () {
@@ -558,17 +561,18 @@
     log('simulator -> app', 'capture.request', 'timeout scenario — no follow-up; app scaffold times out');
   });
   bindBridgeButton('bridge-full-flow', function () {
-    var rid = pendingRequestId || undefined;
+    // Capture the CURRENT pending id at each step — do not snapshot before
+    // the app posts capture.request (that race echoed a stale/undefined id).
     post({ type: 'capture.request' });
     log('simulator -> app', 'capture.request', 'full flow');
     setTimeout(function () {
-      post({ type: 'capture.capturing' });
+      post({ type: 'capture.capturing', requestId: pendingRequestId || undefined });
       log('simulator -> app', 'capture.capturing', 'full flow');
     }, 400);
     setTimeout(function () {
       post({
         type: 'capture.success',
-        requestId: rid,
+        requestId: pendingRequestId || undefined,
         image: getMockBridgeImage(),
         metadata: { timestamp: new Date().toISOString(), size: 123456, width: 640, height: 640 }
       });

@@ -189,6 +189,14 @@ reset();
     assert.equal(getBridgeState().status, BRIDGE_STATUS.IDLE, 'late success must not flip state');
     assert.equal(getBridgeState().imageMetadata, null, 'late success must not store metadata');
   });
+
+  // 3b. untagged late success after cancel must also be dropped (no legacy bypass)
+  dispatchMessage({ type: 'capture.success', image: VALID_IMAGE, metadata: { width: 640 } });
+  await flush();
+  check('3b.untagged-late-success-after-cancel-dropped', () => {
+    assert.equal(getBridgeState().status, BRIDGE_STATUS.IDLE);
+    assert.equal(getBridgeState().imageMetadata, null);
+  });
 }
 
 // 4. timeout — promise settles with BRIDGE_TIMEOUT, state TIMEOUT
