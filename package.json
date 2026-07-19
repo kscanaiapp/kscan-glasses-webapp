@@ -30,7 +30,8 @@
     "test": "npm run verify:models && npm run build && npm run build:simulator && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts",
     "test:companion-protocol": "node scripts/companion-protocol-tests.js",
     "test:companion-pairing": "node scripts/companion-pairing-tests.js",
-    "test:companion-statemachine": "node scripts/companion-statemachine-tests.js"
+    "test:companion-statemachine": "node scripts/companion-statemachine-tests.js",
+    "test:companion-result": "node scripts/companion-result-tests.js"
   },
   "devDependencies": {
     "eslint": "9.39.4",
