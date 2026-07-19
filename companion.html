@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>K Scan — Mock Phone Companion (LOCAL QA)</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0b0e12; color: #d7dee6; font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex; flex-direction: column; min-height: 100vh;
+    }
+    .qa-banner {
+      background: #5a1f1f; color: #ffd9d9; text-align: center; padding: 8px 12px;
+      font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .layout { display: flex; gap: 16px; padding: 16px; flex: 1; align-items: flex-start; }
+    .hud-wrap { flex: 0 0 auto; }
+    .hud-wrap iframe {
+      width: 600px; height: 600px; border: 2px solid #2b3b4d; border-radius: 12px; background: #000;
+    }
+    .hud-caption { text-align: center; font-size: 12px; color: #7c8a99; margin-top: 6px; }
+    .panel { flex: 1 1 auto; max-width: 460px; display: flex; flex-direction: column; gap: 12px; }
+    .card { background: #11161d; border: 1px solid #26313f; border-radius: 10px; padding: 12px 14px; }
+    .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #8fa7bc; margin-bottom: 10px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    .row:last-child { margin-bottom: 0; }
+    button {
+      background: #1d2836; color: #d7dee6; border: 1px solid #33465c; border-radius: 8px;
+      padding: 8px 12px; font-size: 13px; cursor: pointer;
+    }
+    button:hover { background: #27374a; }
+    button.primary { background: #1f3a5f; border-color: #3d6396; }
+    button.danger { background: #4a2020; border-color: #7a3535; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    select {
+      background: #1d2836; color: #d7dee6; border: 1px solid #33465c; border-radius: 8px; padding: 8px; font-size: 13px;
+    }
+    .status-line { font-size: 13px; color: #a9b8c6; }
+    .status-line strong { color: #e8eef4; }
+    #log {
+      font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11px; line-height: 1.5;
+      background: #080b0f; border: 1px solid #1d2836; border-radius: 8px; padding: 10px;
+      height: 220px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .pill.in { background: #12324a; color: #9fd3ff; }
+    .pill.out { background: #3a2a10; color: #ffd28f; }
+    .pill.drop { background: #402020; color: #ff9f9f; }
+  </style>
+</head>
+<body>
+  <div class="qa-banner">LOCAL QA / NON-PRODUCTION — Mock Phone Companion — never deploy publicly</div>
+  <div class="layout">
+    <div class="hud-wrap">
+      <iframe id="hud-frame" src="index.html?mode=hardware&companion=1" title="Meta HUD (600×600)"></iframe>
+      <div class="hud-caption">HUD under test — Meta Ray-Ban Display 600×600 — HW VALIDATION PENDING</div>
+    </div>
+    <div class="panel">
+      <div class="card">
+        <h2>Pairing &amp; Session</h2>
+        <div class="row">
+          <button id="btn-approve" class="primary">Approve pairing</button>
+          <button id="btn-deny" class="danger">Deny</button>
+          <button id="btn-expire-pair">Expire pairing</button>
+          <button id="btn-revoke" class="danger">Revoke session</button>
+        </div>
+        <div class="row">
+          <button id="btn-drop" class="danger">Drop connection</button>
+          <button id="btn-restore">Restore connection</button>
+          <button id="btn-refresh-required">Send refresh_required</button>
+        </div>
+        <div class="status-line" id="session-status">Session: none</div>
+      </div>
+
+      <div class="card">
+        <h2>Scan drive (phone authority)</h2>
+        <div class="row">
+          <button id="btn-drive-auto" class="primary">Auto-drive scan → result</button>
+          <button id="btn-capture-started">capture.started</button>
+          <button id="btn-privacy">privacy</button>
+          <button id="btn-analyzing">analyzing</button>
+          <button id="btn-scan-failed" class="danger">scan.failed</button>
+        </div>
+        <div class="row">
+          <select id="fixture-select" aria-label="Result fixture"></select>
+          <button id="btn-send-result">Send result.show</button>
+        </div>
+        <div class="status-line" id="scan-status">Awaiting capture.request from HUD.</div>
+      </div>
+
+      <div class="card">
+        <h2>Action acknowledgements</h2>
+        <div class="row">
+          <button id="btn-ack-accept">action.accepted</button>
+          <button id="btn-ack-complete" class="primary">action.completed</button>
+          <button id="btn-ack-fail" class="danger">action.failed</button>
+        </div>
+        <div class="row">
+          <label class="status-line"><input type="checkbox" id="chk-auto-ack" checked /> auto-ack actions</label>
+        </div>
+        <div class="status-line" id="action-status">No action received.</div>
+      </div>
+
+      <div class="card">
+        <h2>Negative tests</h2>
+        <div class="row">
+          <button id="btn-neg-malformed" class="danger">Malformed</button>
+          <button id="btn-neg-stale" class="danger">Stale requestId</button>
+          <button id="btn-neg-dupe" class="danger">Duplicate terminal</button>
+          <button id="btn-neg-oversize" class="danger">Oversized</button>
+          <button id="btn-neg-device" class="danger">Wrong device</button>
+          <button id="btn-neg-session" class="danger">Wrong session</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Message log (metadata only)</h2>
+        <div id="log" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="src/companion/mockCompanion.js"></script>
+</body>
+</html>
