@@ -695,6 +695,11 @@ export function createRuntimeMachine({ sessionManager, now = () => Date.now(), o
     }
   }
 
+  /** Send a liveness ping to the peer (HUD-initiated heartbeat). */
+  function sendPing(nonce) {
+    send(T.CONNECTION_PING, { nonce }, { requestId: null });
+  }
+
   /** Diagnostics-safe snapshot: metadata only, never payloads/tokens. */
   function getSnapshot() {
     return {
@@ -710,5 +715,5 @@ export function createRuntimeMachine({ sessionManager, now = () => Date.now(), o
     };
   }
 
-  return { dispatchInbound, userIntent, tick, getSnapshot };
+  return { dispatchInbound, userIntent, tick, getSnapshot, sendPing };
 }

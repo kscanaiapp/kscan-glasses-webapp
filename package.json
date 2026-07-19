@@ -31,7 +31,8 @@
     "test:companion-protocol": "node scripts/companion-protocol-tests.js",
     "test:companion-pairing": "node scripts/companion-pairing-tests.js",
     "test:companion-statemachine": "node scripts/companion-statemachine-tests.js",
-    "test:companion-result": "node scripts/companion-result-tests.js"
+    "test:companion-result": "node scripts/companion-result-tests.js",
+    "test:companion-reconnect": "node scripts/companion-reconnect-tests.js"
   },
   "devDependencies": {
     "eslint": "9.39.4",
