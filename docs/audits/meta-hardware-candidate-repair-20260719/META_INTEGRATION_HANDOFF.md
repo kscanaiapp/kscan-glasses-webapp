@@ -3,7 +3,7 @@
 **Date:** 2026-07-19  
 **Prepared for:** Controlled integration manager  
 **Candidate branch:** `audit/meta-hardware-candidate-repair-20260719`  
-**Final HEAD:** `680e142`  
+**Final HEAD:** `1871fa4`  
 **Do not merge into public-demo / `phase-11-virtual-alpha-infra` without explicit release decision.**  
 **Do not deploy this candidate to `https://kscan-glasses-demo.vercel.app`.**
 
@@ -16,8 +16,8 @@
 | Starting branch | `feature/meta-hardware-validation-candidate` |
 | Starting HEAD | `61554f5` |
 | Audit branch | `audit/meta-hardware-candidate-repair-20260719` |
-| Final HEAD | `680e142` |
-| Working tree | Clean except intentional docs commit pending (audit reports) |
+| Final HEAD | `1871fa4` |
+| Working tree | Clean |
 | Secrets / traces / browser binaries | None committed |
 | Public demo | Remains frozen on `phase-11-virtual-alpha-infra` |
 | Candidate Vercel deploy | Disabled for feature + audit branch names in `vercel.json` |
@@ -46,7 +46,7 @@
 | `5057eaf` | Require requestId on terminal bridge events | 3 |
 | `18a5f4d` | Cancel blocks analyze; sign-out clears HUD | 4 |
 | `680e142` | CI/aliases/artifacts/deploy deny-list | 5 |
-| *(docs commit)* | Audit reports + governing Phase-3 docs | 6 (docs-only) |
+| `1871fa4` | Audit reports + governing Phase-3 docs | 6 (docs-only) |
 
 **Cherry-pick / merge recommendation:** merge `audit/meta-hardware-candidate-repair-20260719` into `feature/meta-hardware-validation-candidate` (or rebase onto it). Do **not** fast-forward into the frozen public demo branch.
 
