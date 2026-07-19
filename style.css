@@ -1343,3 +1343,97 @@ body.prod #dat-hud {
   cursor: default;
   font-style: italic;
 }
+
+/* ─── Phone companion screens (connected-glasses Phase A, LOCAL QA) ─── */
+.companion-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  padding: 24px 32px;
+  gap: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.comp-mode-label {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  font-weight: 600;
+  color: var(--gold-sim);
+  border: 1px solid var(--gold-sim);
+  border-radius: 999px;
+  padding: 3px 12px;
+}
+
+.comp-title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+.companion-center .processing-sub {
+  margin: 0;
+  max-width: 460px;
+}
+
+.comp-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+  min-width: 260px;
+}
+
+/* Result action bar on the results screen (companion mode). */
+.companion-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0 0 8px;
+  flex: 0 0 auto;
+}
+
+.companion-actions .btn {
+  flex: 1 1 0;
+  min-width: 118px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* Alternative-result rows (companion mode): selectable, no nested action. */
+.companion-item {
+  text-align: left;
+  width: 100%;
+}
+
+.companion-item .product-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.companion-item .product-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companion-item .product-price {
+  font-size: 12px;
+  color: #9AA7BC;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.companion-item.selected {
+  outline: 2px solid var(--gold-sim);
+  outline-offset: -2px;
+}

@@ -42,6 +42,7 @@
         <div class="status-pill" id="pill-textscan"><div class="dot mock" aria-hidden="true"></div><span>TextScan: checking</span></div>
         <div class="status-pill" id="pill-session"><div class="dot mock" aria-hidden="true"></div><span>Session: checking</span></div>
         <div class="status-pill" id="pill-bridge"><div class="dot mock" aria-hidden="true"></div><span>Bridge: pending</span></div>
+        <div class="status-pill" id="pill-companion"><div class="dot mock" aria-hidden="true"></div><span>Phone: off</span></div>
       </div>
       <nav class="home-nav">
         <button id="library-btn" class="home-nav-btn focusable">Closet</button>
@@ -69,11 +70,33 @@
       </header>
       <div id="results-match" class="scroll-panel" style="max-height: 220px; flex: 0 0 auto; margin-bottom: 0;" aria-label="Style Match"></div>
       <div id="textscan-results" class="scroll-panel hidden" aria-label="Text Scan Results"></div>
+      <div id="companion-actions" class="companion-actions hidden" aria-label="Result actions">
+        <button id="comp-action-save" class="btn btn-primary focusable">Save</button>
+        <button id="comp-action-open" class="btn btn-ghost focusable">Open on Phone</button>
+        <button id="comp-action-retry" class="btn btn-ghost focusable">Retry</button>
+        <button id="comp-action-dismiss" class="btn btn-ghost focusable">Dismiss</button>
+      </div>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
         <p class="empty-title">No matches found.</p>
         <p class="empty-note">Try another angle.</p>
         <button id="retry-empty-btn" class="btn btn-primary focusable">Retry</button>
+      </div>
+    </section>
+
+    <section id="companion" class="screen hidden" aria-label="Phone Companion" aria-hidden="true">
+      <div class="companion-center">
+        <p id="comp-mode-label" class="comp-mode-label hidden">MOCK PHONE — LOCAL QA</p>
+        <div id="comp-spinner" class="spinner hidden" aria-hidden="true"></div>
+        <h1 id="comp-title" class="comp-title">Not connected</h1>
+        <p id="comp-support" class="processing-sub"></p>
+        <ol id="comp-steps" class="pipeline-steps" aria-label="Companion scan stages"></ol>
+        <div class="comp-actions">
+          <button id="comp-primary-btn" class="btn btn-primary focusable hidden">Pair Phone</button>
+          <button id="comp-secondary-1" class="btn btn-ghost focusable hidden">Cancel</button>
+          <button id="comp-secondary-2" class="btn btn-ghost focusable hidden">Back</button>
+          <button id="comp-secondary-3" class="btn btn-ghost focusable hidden">Dismiss</button>
+        </div>
       </div>
     </section>
 

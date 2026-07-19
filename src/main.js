@@ -39,6 +39,9 @@ import {
   cancelBridgeCapture,
   resetBridgeState,
 } from './bridgeState.js';
+import { createCompanionRuntime } from './companion/companionRuntime.js';
+import { resolveCompanionTransport, TRANSPORT_STATE } from './companion/transport.js';
+import { RUNTIME_STATE } from './companion/runtimeState.js';
 
 const STATE = FLOW_STATES;
 
@@ -49,7 +52,16 @@ let lastSafeErrorCode = 'none'; // diagnostics: short error CODE only — never 
 let lastBridgeSnapshot = null; // diagnostics: latest bridge state (metadata-only by design)
 let scanInFlight = false;
 let scanToken = 0;
-let pipelineMode = 'image'; // 'image' | 'text' — drives the processing stepper
+let pipelineMode = 'image'; // 'image' | 'text' | 'companion' — drives the processing stepper
+
+// Phone-companion mode (?companion=1): the HUD is driven by the companion
+// runtime (pairing → trusted wearable session → structured result handoff).
+// Without a configured peer the transport fails closed (UNAVAILABLE).
+const COMPANION_MODE = new URLSearchParams(window.location.search).get('companion') === '1';
+let companionRuntime = null;
+let companionScanOnProcessing = false; // processing screen is showing a companion scan
+let resultsOwner = 'local'; // 'local' | 'companion' — who rendered the visible results
+let errorOwner = 'local'; // 'local' | 'companion' — who raised the visible error
 
 // Production-representative pipeline steppers (Phase 28A).
 // Image Scan mirrors the real capture → privacy → /api/analyze path.
@@ -57,6 +69,7 @@ let pipelineMode = 'image'; // 'image' | 'text' — drives the processing steppe
 const PIPELINE_LABELS = {
   image: ['Capture', 'Privacy', 'Analyze', 'StyleMatch', 'Results'],
   text: ['Preset', 'Session', 'scan-identify', 'StyleMatch', 'Results'],
+  companion: ['Request', 'Phone Capture', 'Privacy', 'Analyze', 'Results'],
 };
 
 function renderPipeline(mode, activeIndex) {
@@ -97,6 +110,7 @@ const els = {
   settings: document.getElementById('settings'),
   diagnostics: document.getElementById('diagnostics'),
   error: document.getElementById('error'),
+  companion: document.getElementById('companion'),
   processingText: document.getElementById('processing-text'),
   processingSub: document.getElementById('processing-sub'),
   resultsList: document.getElementById('results-list'),
@@ -107,7 +121,7 @@ const els = {
   hud: null,
 };
 
-const screens = [els.home, els.processing, els.results, els.library, els.settings, els.diagnostics, els.error];
+const screens = [els.home, els.processing, els.results, els.library, els.settings, els.diagnostics, els.error, els.companion];
 
 function updateHud() {
   if (!els.hud || !import.meta.env.DEV) return;
@@ -378,6 +392,9 @@ function renderStyleMatch(styleMatch) {
   if (sm.meta?.scanModeLabel) {
     badgeRow.appendChild(createText('span', 'scan-mode-pill', `Scan Mode: ${sm.meta.scanModeLabel}`));
   }
+  if (sm.meta?.sourceLabel) {
+    badgeRow.appendChild(createText('span', 'scan-mode-pill', sm.meta.sourceLabel));
+  }
   header.appendChild(badgeRow);
   card.appendChild(header);
 
@@ -400,6 +417,8 @@ function renderStyleMatch(styleMatch) {
 }
 
 function renderProducts(styleMatch) {
+  resultsOwner = 'local';
+  document.getElementById('companion-actions')?.classList.add('hidden');
   const sm = styleMatch && typeof styleMatch === 'object' ? styleMatch : makeEmptyStyleMatch();
   const itemGroups = [
     { key: 'retail', label: 'Retail — demo source' },
@@ -588,6 +607,7 @@ async function runBridgeScanPipeline(token) {
 export async function startScan() {
   if (scanInFlight) return; // prevent duplicate scan triggers while processing
   scanInFlight = true;
+  errorOwner = 'local';
   const token = ++scanToken;
   pipelineMode = 'image';
   try {
@@ -779,6 +799,7 @@ function renderTextScanResult(styleMatch) {
 export async function startTextScan(query) {
   if (textScanInFlight) return;
   textScanInFlight = true;
+  errorOwner = 'local';
   const token = ++textScanToken;
   const source = 'preset';
   pipelineMode = 'text';
@@ -862,6 +883,10 @@ export async function startTextScan(query) {
 function onBack() {
   if (currentView === 'home') return;
   if (currentView === 'processing') {
+    if (companionScanOnProcessing && companionRuntime) {
+      companionRuntime.cancel(); // machine settles and re-renders a stable screen
+      return;
+    }
     scanToken += 1; // invalidate in-flight scan
     scanInFlight = false;
     textScanToken += 1; // invalidate any in-flight text scan
@@ -870,9 +895,311 @@ function onBack() {
     setState(STATE.IDLE);
     clearPipeline(); // abandoned pipeline — no stale active step
   }
+  // Companion-owned screens delegate Back to the runtime state machine
+  // first (dismiss result, cancel pairing, leave reconnect, etc.). The
+  // machine declines with 'navigation-home' when Home is the real target.
+  if (companionRuntime && currentView === 'companion') {
+    const res = companionRuntime.back();
+    if (res && res.accepted) return;
+  }
+  if (companionRuntime && currentView === 'results' && resultsOwner === 'companion'
+    && companionRuntime.getSnapshot().state === RUNTIME_STATE.RESULTS) {
+    companionRuntime.back(); // RESULTS back = dismiss → machine moves to Ready
+    return;
+  }
   const previous = screenHistory.pop() || 'home';
   showScreen(previous, false);
 }
+
+// ─── Phone companion runtime (connected-glasses Phase A) ─────────────
+// Active only with ?companion=1. The HUD renders whatever the canonical
+// runtime state machine dictates — this layer never keeps its own scan
+// state. Mock phone is the only peer available in this build, and every
+// surface stays labelled LOCAL QA / HW VALIDATION PENDING.
+
+// Machine states rendered on the dedicated companion screen. Scan progress
+// reuses the processing screen; Results/Error use their own screens.
+const COMPANION_SCREEN_STATES = new Set([
+  RUNTIME_STATE.DISCONNECTED, RUNTIME_STATE.PAIRING, RUNTIME_STATE.PAIRING_DENIED,
+  RUNTIME_STATE.PAIRING_EXPIRED, RUNTIME_STATE.CONNECTED, RUNTIME_STATE.READY,
+  RUNTIME_STATE.RECONNECTING, RUNTIME_STATE.SESSION_REVOKED,
+  RUNTIME_STATE.ACTION_PENDING, RUNTIME_STATE.ACTION_CONFIRMED,
+]);
+
+// Scan-progress states → processing-screen step index (companion pipeline).
+const COMPANION_STEP_INDEX = {
+  [RUNTIME_STATE.CAPTURE_REQUESTED]: 0,
+  [RUNTIME_STATE.CAPTURING_ON_PHONE]: 1,
+  [RUNTIME_STATE.PRIVACY_PROCESSING]: 2,
+  [RUNTIME_STATE.ANALYZING]: 3,
+};
+
+const COMPANION_PILL = {
+  [RUNTIME_STATE.DISCONNECTED]: ['off', 'Phone: Off'],
+  [RUNTIME_STATE.PAIRING]: ['mock', 'Phone: Pairing'],
+  [RUNTIME_STATE.PAIRING_DENIED]: ['mock', 'Phone: Denied'],
+  [RUNTIME_STATE.PAIRING_EXPIRED]: ['mock', 'Phone: Expired'],
+  [RUNTIME_STATE.CONNECTED]: ['ok', 'Phone: Connected'],
+  [RUNTIME_STATE.READY]: ['ok', 'Phone: Ready'],
+  [RUNTIME_STATE.CAPTURE_REQUESTED]: ['ok', 'Phone: Scanning'],
+  [RUNTIME_STATE.CAPTURING_ON_PHONE]: ['ok', 'Phone: Scanning'],
+  [RUNTIME_STATE.PRIVACY_PROCESSING]: ['ok', 'Phone: Scanning'],
+  [RUNTIME_STATE.ANALYZING]: ['ok', 'Phone: Scanning'],
+  [RUNTIME_STATE.RESULTS]: ['ok', 'Phone: Ready'],
+  [RUNTIME_STATE.ACTION_PENDING]: ['ok', 'Phone: Working'],
+  [RUNTIME_STATE.ACTION_CONFIRMED]: ['ok', 'Phone: Ready'],
+  [RUNTIME_STATE.ERROR]: ['mock', 'Phone: Error'],
+  [RUNTIME_STATE.RECONNECTING]: ['mock', 'Phone: Reconnecting'],
+  [RUNTIME_STATE.SESSION_REVOKED]: ['off', 'Phone: Ended'],
+};
+
+// Safe user-facing text for machine error codes — never raw payloads.
+const COMPANION_ERROR_TEXT = {
+  CAPTURE_TIMEOUT: 'The phone did not respond in time. Try again.',
+  SCAN_TIMEOUT: 'The scan took too long. Try again.',
+  ACTION_TIMEOUT: 'The phone did not confirm that action.',
+  CAPTURE_FAILED: 'The phone could not capture. Try again.',
+  SCAN_FAILED: 'The phone could not finish the scan. Try again.',
+  ACTION_FAILED: 'The phone could not complete that action.',
+  SESSION_EXPIRED: 'Session ended. Pair again to continue.',
+};
+
+function updateCompanionPill(state) {
+  const [dot, text] = COMPANION_PILL[state] || ['off', 'Phone: Off'];
+  setPill('pill-companion', dot, text);
+}
+
+function companionIntent(intent) {
+  if (!companionRuntime) return;
+  if (intent === 'back') {
+    const res = companionRuntime.back();
+    if (!res || !res.accepted) showScreen('home', false);
+    return;
+  }
+  const fn = {
+    pair: 'pair', scan: 'scan', cancel: 'cancel', retry: 'retry',
+    dismiss: 'dismiss', save: 'save', open_on_phone: 'openOnPhone', unpair: 'unpair',
+  }[intent];
+  if (fn) companionRuntime[fn]();
+}
+
+function setCompanionButton(btn, action) {
+  if (!btn) return;
+  if (!action) {
+    btn.classList.add('hidden');
+    btn.onclick = null;
+    return;
+  }
+  btn.textContent = action.label;
+  btn.onclick = () => companionIntent(action.intent);
+  btn.classList.remove('hidden');
+}
+
+function renderCompanionPairingSteps(state) {
+  const steps = document.getElementById('comp-steps');
+  if (!steps) return;
+  steps.innerHTML = '';
+  const activeIndex = state === RUNTIME_STATE.PAIRING ? 1
+    : state === RUNTIME_STATE.CONNECTED ? 2 : -1;
+  if (activeIndex < 0) return;
+  ['Request', 'Approve on phone', 'Ready'].forEach((label, i) => {
+    const li = document.createElement('li');
+    li.className = i < activeIndex ? 'pipeline-step done' : i === activeIndex ? 'pipeline-step active' : 'pipeline-step';
+    li.textContent = label;
+    steps.appendChild(li);
+  });
+}
+
+function renderCompanionScreen(snapshot, meta) {
+  if (!meta) return;
+  const state = snapshot.state;
+  const transportDown = companionRuntime
+    && companionRuntime.getDiagnostics().transport === TRANSPORT_STATE.UNAVAILABLE;
+
+  document.getElementById('comp-title').textContent = meta.title;
+  const support = document.getElementById('comp-support');
+  if (support) {
+    support.textContent = transportDown
+      ? 'Phone companion is unavailable in this build.'
+      : (meta.support || '');
+  }
+  document.getElementById('comp-spinner')?.classList.toggle('hidden', meta.progress !== 'indeterminate');
+  document.getElementById('comp-mode-label')?.classList.toggle('hidden', !COMPANION_MODE);
+  renderCompanionPairingSteps(state);
+
+  const primary = document.getElementById('comp-primary-btn');
+  const secondary = [1, 2, 3].map((i) => document.getElementById(`comp-secondary-${i}`));
+  setCompanionButton(primary, meta.primary);
+  const secondaryActions = Array.isArray(meta.secondary) ? meta.secondary.slice(0, 3) : [];
+  secondary.forEach((btn, i) => setCompanionButton(btn, secondaryActions[i] || null));
+
+  const visible = [primary, ...secondary].filter((b) => b && !b.classList.contains('hidden'));
+  registerFocusMatrix('companion', visible.map((b) => [b]));
+
+  if (currentView !== 'companion') {
+    // Never make a dismissed result re-reachable via Back from this screen.
+    showScreen('companion', currentView !== 'results');
+  }
+  if (!visible.includes(document.activeElement)) {
+    const target = meta.focusTarget === 'primary' && visible.includes(primary)
+      ? primary
+      : visible[0];
+    target?.focus();
+  }
+}
+
+function onCompanionStateChange(snapshot, { meta }) {
+  const state = snapshot.state;
+  updateCompanionPill(state);
+  if (currentView === 'diagnostics') renderDiagnostics();
+
+  if (COMPANION_STEP_INDEX[state] !== undefined) {
+    if (currentView !== 'processing') {
+      // A new scan invalidates prior results as a Back destination.
+      for (let i = screenHistory.length - 1; i >= 0; i -= 1) {
+        if (screenHistory[i] === 'results') screenHistory.splice(i, 1);
+      }
+    }
+    companionScanOnProcessing = true;
+    pipelineMode = 'companion';
+    els.processingText.textContent = meta.title;
+    if (els.processingSub) els.processingSub.textContent = meta.support || '';
+    renderPipeline('companion', COMPANION_STEP_INDEX[state]);
+    if (currentView !== 'processing') showScreen('processing');
+    return;
+  }
+  companionScanOnProcessing = false;
+
+  if (state === RUNTIME_STATE.ERROR) {
+    errorOwner = 'companion';
+    showError(COMPANION_ERROR_TEXT[snapshot.lastError] || 'Something went wrong. Try again.');
+    return;
+  }
+  if (state === RUNTIME_STATE.RESULTS) {
+    return; // onCompanionResult renders via the result-handoff channel
+  }
+  if (COMPANION_SCREEN_STATES.has(state)) {
+    renderCompanionScreen(snapshot, meta);
+  }
+}
+
+// Structured result handoff: the machine only emits this after protocol,
+// session, and result-contract validation, correlated to the active request.
+function onCompanionResult(styleMatch) {
+  resultsOwner = 'companion';
+  renderPipelineDone('companion');
+  renderStyleMatch(styleMatch);
+  renderCompanionResultItems(styleMatch);
+  showScreen('results');
+}
+
+function renderCompanionResultItems(styleMatch) {
+  resultsOwner = 'companion';
+  els.resultsEmpty.classList.add('hidden');
+  if (els.resultsMatch) els.resultsMatch.classList.remove('hidden');
+  els.resultsList.innerHTML = '';
+
+  const groups = [
+    ['retail', 'Retail — mock phone source'],
+    ['resale', 'Resale — mock phone source'],
+    ['suggested', 'Suggested Sources'],
+  ];
+  groups.forEach(([key, label]) => {
+    const items = Array.isArray(styleMatch.items?.[key]) ? styleMatch.items[key] : [];
+    if (!items.length) return;
+    const groupHeader = document.createElement('div');
+    groupHeader.className = 'source-group';
+    const sourceHeader = document.createElement('div');
+    sourceHeader.className = 'source-header';
+    const dot = document.createElement('span');
+    dot.className = `source-dot ${key}`;
+    sourceHeader.appendChild(dot);
+    sourceHeader.appendChild(document.createTextNode(label));
+    groupHeader.appendChild(sourceHeader);
+    els.resultsList.appendChild(groupHeader);
+
+    items.forEach((item) => {
+      els.resultsList.appendChild(createCompanionItemRow(item));
+    });
+  });
+
+  // Action bar visibility follows the session capability intersection
+  // computed by the result contract (never show an action we cannot send).
+  const bar = document.getElementById('companion-actions');
+  bar?.classList.remove('hidden');
+  document.getElementById('comp-action-save')?.classList.toggle('hidden', !styleMatch.actions?.canSave);
+  document.getElementById('comp-action-open')?.classList.toggle('hidden', !styleMatch.actions?.canOpenOnPhone);
+
+  const matrix = [[document.getElementById('results-back-btn')]];
+  ['comp-action-save', 'comp-action-open', 'comp-action-retry', 'comp-action-dismiss']
+    .map((id) => document.getElementById(id))
+    .filter((b) => b && !b.classList.contains('hidden'))
+    .forEach((b) => matrix.push([b]));
+  Array.from(els.resultsList.querySelectorAll('.companion-item')).forEach((el) => matrix.push([el]));
+  registerFocusMatrix('results', matrix);
+}
+
+// Alternative-result navigation: rows are real controls — selecting one
+// swaps the summary card to that item. No dead focus targets.
+function createCompanionItemRow(item) {
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'row product-card focusable companion-item';
+  row.setAttribute('aria-pressed', 'false');
+
+  const body = document.createElement('span');
+  body.className = 'product-meta';
+  body.appendChild(createText('span', 'product-name', safeText(item.title, 'Unnamed Product')));
+  const detail = [item.subtitle, item.priceLabel].filter(Boolean).join(' · ');
+  body.appendChild(createText('span', 'product-price', detail || 'Price unavailable'));
+  row.appendChild(body);
+
+  row.addEventListener('click', () => {
+    Array.from(els.resultsList.querySelectorAll('.companion-item')).forEach((el) => {
+      el.classList.remove('selected');
+      el.setAttribute('aria-pressed', 'false');
+    });
+    row.classList.add('selected');
+    row.setAttribute('aria-pressed', 'true');
+    const summary = els.resultsMatch?.querySelector('.detected-style');
+    if (summary) summary.textContent = safeText(item.title, 'Style Match');
+  });
+  return row;
+}
+
+function initCompanionRuntime() {
+  const transport = resolveCompanionTransport({
+    peerWindow: window.parent !== window ? window.parent : null,
+    selfOrigin: window.location.origin,
+    targetOrigin: window.location.origin,
+  });
+  companionRuntime = createCompanionRuntime({
+    transport,
+    onStateChange: onCompanionStateChange,
+    onResult: onCompanionResult,
+  });
+  companionRuntime.start();
+  updateCompanionPill(companionRuntime.getSnapshot().state);
+  // Safe metadata surface (matches __kscanBridgeDebug pattern): dev server
+  // and the LOCAL QA simulator build only — never in the production bundle.
+  const isSimulatorBuild = typeof __KSCAN_SIMULATOR_BUILD__ !== 'undefined'
+    && __KSCAN_SIMULATOR_BUILD__ === true;
+  if (import.meta.env.DEV || isSimulatorBuild) {
+    window.__kscanCompanionDebug = () => companionRuntime.getDiagnostics();
+  }
+}
+
+// Home Scan button in companion mode: scan only from Ready; otherwise the
+// companion screen is the truthful next step (pair / reconnect / recover).
+function onCompanionScanIntent() {
+  if (!companionRuntime) return;
+  if (companionRuntime.getSnapshot().state === RUNTIME_STATE.READY) {
+    companionRuntime.scan();
+    return;
+  }
+  renderCompanionScreen(companionRuntime.getSnapshot(), companionRuntime.getStateMeta());
+}
+
 
 // ─── Library screen ──────────────────────────────────────────────────
 
@@ -1157,6 +1484,19 @@ function renderDiagnostics() {
   status.appendChild(makeRow('Last error code', badge(lastSafeErrorCode === 'none' ? 'off' : 'warn', lastSafeErrorCode)));
   status.appendChild(makeRow('Bridge error', badge(bridgeSnap.lastError ? 'warn' : 'off', bridgeSnap.lastError || 'none')));
 
+  if (companionRuntime) {
+    const d = companionRuntime.getDiagnostics(); // metadata only by design
+    status.appendChild(makeRow('Companion', badge(
+      d.state === RUNTIME_STATE.READY || d.state === RUNTIME_STATE.RESULTS ? 'on'
+        : d.state === RUNTIME_STATE.DISCONNECTED ? 'off' : 'warn',
+      d.state,
+    )));
+    status.appendChild(makeRow('Companion transport', badge(d.transport === TRANSPORT_STATE.OPEN ? 'on' : 'off', d.transport)));
+    status.appendChild(makeRow('Companion session', badge(d.sessionValid ? 'on' : 'off', d.sessionValid ? 'Valid' : 'None')));
+    status.appendChild(makeRow('Companion traffic', badge(d.dropped > 0 || d.invalidResults > 0 ? 'warn' : 'off',
+      `tx ${d.sent} · rx ${d.received} · dropped ${d.dropped}`)));
+  }
+
   registerFocusMatrix('diagnostics', [
     [document.getElementById('diagnostics-back-btn')],
     [document.getElementById('diagnostics-refresh-btn')],
@@ -1164,9 +1504,23 @@ function renderDiagnostics() {
 }
 
 function wireButtons() {
-  document.getElementById('scan-btn').addEventListener('click', startScan);
+  document.getElementById('scan-btn').addEventListener('click', () => {
+    if (COMPANION_MODE && companionRuntime) {
+      onCompanionScanIntent();
+      return;
+    }
+    startScan();
+  });
   document.getElementById('retry-empty-btn').addEventListener('click', startScan);
-  document.getElementById('error-retry-btn').addEventListener('click', startScan);
+  document.getElementById('error-retry-btn').addEventListener('click', () => {
+    if (errorOwner === 'companion' && companionRuntime) {
+      errorOwner = 'local';
+      const res = companionRuntime.retry();
+      if (!res || res.accepted === false) companionRuntime.back(); // e.g. session gone
+      return;
+    }
+    startScan();
+  });
 
   document.getElementById('library-btn').addEventListener('click', () => showScreen('library'));
   document.getElementById('settings-btn').addEventListener('click', () => showScreen('settings'));
@@ -1187,10 +1541,18 @@ function wireButtons() {
   document.getElementById('diagnostics-refresh-btn')?.addEventListener('click', renderDiagnostics);
   document.getElementById('settings-auth-btn').addEventListener('click', onAuthToggle);
   document.getElementById('error-home-btn').addEventListener('click', () => {
+    if (errorOwner === 'companion' && companionRuntime) {
+      errorOwner = 'local';
+      companionRuntime.back(); // settle machine to Ready/Disconnected
+    }
     setState(STATE.IDLE);
     showScreen('home', false);
   });
   document.getElementById('cancel-btn').addEventListener('click', () => {
+    if (companionScanOnProcessing && companionRuntime) {
+      companionRuntime.cancel(); // sends action.cancel, settles pending work
+      return;
+    }
     scanToken += 1; // invalidate any in-flight scan
     scanInFlight = false;
     textScanToken += 1; // invalidate any in-flight text scan
@@ -1200,6 +1562,12 @@ function wireButtons() {
     clearPipeline(); // abandoned pipeline — no stale active step
     showScreen('home', false);
   });
+  // Companion result action bar — intents go through the runtime so the
+  // machine enforces state, capability, and ack correlation.
+  document.getElementById('comp-action-save')?.addEventListener('click', () => companionRuntime?.save());
+  document.getElementById('comp-action-open')?.addEventListener('click', () => companionRuntime?.openOnPhone());
+  document.getElementById('comp-action-retry')?.addEventListener('click', () => companionRuntime?.retry());
+  document.getElementById('comp-action-dismiss')?.addEventListener('click', () => companionRuntime?.dismiss());
 }
 
 function registerMatrices() {
@@ -1282,6 +1650,15 @@ function init() {
     const banner = document.getElementById('alpha-banner');
     if (banner) banner.textContent = 'ALPHA · HW TEST MODE';
     setPill('pill-bridge', 'mock', 'Bridge: HW Test');
+  }
+  // Phone companion: active only with ?companion=1; otherwise the pill is
+  // hidden because no companion relationship exists in this build mode.
+  if (COMPANION_MODE) {
+    initCompanionRuntime();
+    const banner = document.getElementById('alpha-banner');
+    if (banner) banner.textContent = 'ALPHA · MOCK PHONE — LOCAL QA · HW VALIDATION PENDING';
+  } else {
+    document.getElementById('pill-companion')?.classList.add('hidden');
   }
   showScreen('home', false);
   setState(STATE.IDLE);

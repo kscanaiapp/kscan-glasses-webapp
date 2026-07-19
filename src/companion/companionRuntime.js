@@ -160,16 +160,18 @@ export function createCompanionRuntime({ transport, deviceId = makeHudDeviceId()
       heartbeat = null;
       transport.disconnect();
     },
-    // User intents (D-pad) — forwarded to the state machine.
-    pair() { machine.userIntent('pair'); },
-    scan() { machine.userIntent('scan'); },
-    cancel() { machine.userIntent('cancel'); },
+    // User intents (D-pad) — forwarded to the state machine. Each returns
+    // the machine's { accepted, reason? } verdict so the UI can fall back
+    // to navigation when an intent is not valid in the current state.
+    pair() { return machine.userIntent('pair'); },
+    scan() { return machine.userIntent('scan'); },
+    cancel() { return machine.userIntent('cancel'); },
     back() { return machine.userIntent('back'); },
-    retry() { machine.userIntent('retry'); },
-    dismiss() { machine.userIntent('dismiss'); },
-    save() { machine.userIntent('save'); },
-    openOnPhone() { machine.userIntent('open_on_phone'); },
-    unpair() { machine.userIntent('unpair'); },
+    retry() { return machine.userIntent('retry'); },
+    dismiss() { return machine.userIntent('dismiss'); },
+    save() { return machine.userIntent('save'); },
+    openOnPhone() { return machine.userIntent('open_on_phone'); },
+    unpair() { return machine.userIntent('unpair'); },
     getSnapshot: () => machine.getSnapshot(),
     getStateMeta: () => STATE_META[machine.getSnapshot().state],
     getDiagnostics() {
