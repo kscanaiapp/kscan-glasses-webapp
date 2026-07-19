@@ -1,5 +1,6 @@
 # Meta HUD CI — safe, non-live validation for the hardware-validation
-# candidate. Runs on pushes and PRs touching this repository's code.
+# candidate and Meta Connected Runtime Phase A. Runs on pushes and PRs
+# touching this repository's code.
 #
 # HARD RULES:
 #   - No live backend calls (no test:smoke, no live scan-identify,
@@ -23,7 +24,7 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -67,3 +68,30 @@ jobs:
 
       - name: Production artifact assertion
         run: npm run verify:artifacts
+
+      - name: Companion protocol tests
+        run: npm run test:companion-protocol
+
+      - name: Companion pairing tests
+        run: npm run test:companion-pairing
+
+      - name: Companion state-machine tests
+        run: npm run test:companion-statemachine
+
+      - name: Companion result-contract tests
+        run: npm run test:companion-result
+
+      - name: Companion runtime/transport tests
+        run: npm run test:companion-reconnect
+
+      - name: Install Chromium for browser suites
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Existing browser smoke
+        run: npm run browser:smoke
+
+      - name: Companion browser scenarios
+        run: npm run browser:companion -- scenarios
+
+      - name: Companion browser loops
+        run: npm run browser:companion -- loops
