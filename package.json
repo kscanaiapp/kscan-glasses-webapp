@@ -13,7 +13,8 @@
     "postinstall": "node scripts/copy-mediapipe-wasm.js",
     "test:static": "node scripts/static-tests.js",
     "test:contract": "node scripts/contract-tests.js",
-    "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract"
+    "test:render-retirement": "node scripts/render-retirement-tests.js",
+    "test": "npm run verify:models && npm run build && npm run test:static && npm run test:contract && npm run test:render-retirement"
   },
   "devDependencies": {
     "vite": "^7.1.0"

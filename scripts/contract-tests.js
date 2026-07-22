@@ -208,6 +208,36 @@ function countingFetch(impl) {
   expectEq('A11.unknown-rejected', null, unknown);
 }
 
+// A12: public/demo production is mock-only or fail-closed; a backend URL alone
+// never enables a network request.
+{
+  expectEq(
+    'A12.public-demo-mock',
+    'mock',
+    api.getAnalyzeMode({ DEV: false, VITE_MOCK_ANALYZE: 'true', VITE_KSCAN_BACKEND_URL: 'https://retired.invalid' }),
+  );
+  expectEq(
+    'A12.production-fail-closed',
+    'live-disabled',
+    api.getAnalyzeMode({ DEV: false, VITE_MOCK_ANALYZE: 'false', VITE_KSCAN_BACKEND_URL: 'https://retired.invalid' }),
+  );
+  expectEq(
+    'A12.explicit-private-live',
+    'private-live',
+    api.getAnalyzeMode({ DEV: false, VITE_ENABLE_PRIVATE_LIVE_ANALYZE: 'true' }),
+  );
+
+  let fetchCalls = 0;
+  globalThis.fetch = async () => {
+    fetchCalls += 1;
+    throw new Error('network must not be reached');
+  };
+  let caught = null;
+  try { await api.analyzeImage(VALID_JPEG); } catch (error) { caught = error; }
+  expectEq('A12.default-code', api.ANALYZE_ERROR_CODES.LIVE_DISABLED, caught?.code);
+  expectEq('A12.default-zero-fetches', 0, fetchCalls);
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // B. DAT bridge — origin trust (pure)
 // ═══════════════════════════════════════════════════════════════════
