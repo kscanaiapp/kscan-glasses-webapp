@@ -12,7 +12,7 @@ import {
 } from './datBridge.js';
 import { isMobileBridgeEnabled } from './mobileBridgeConfig.js';
 import { sanitizeImageBeforeUpload, SanitizerError, mapSanitizerErrorToUserMessage } from './privacyImageSanitizer.js';
-import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES } from './api.js';
+import { analyzeImage, AnalyzeError, ANALYZE_ERROR_CODES, getAnalyzeMode } from './api.js';
 import { FLOW_STATES, getFlowState, setFlowState } from './flowState.js';
 import { runScanPipeline, PIPELINE_STAGES, PipelineInvariantError } from './scanPipeline.js';
 import { mountSimulatorBadge, getSimulatorState } from './simulatorMode.js';
@@ -51,7 +51,7 @@ function updateHud() {
   const datDiagnostics = getDatDiagnostics();
   const betaStatus = getBetaBridgeStatus();
   const datState = betaStatus.enabled ? 'BETA' : (datDiagnostics.mock ? 'MOCK' : (datDiagnostics.bridgeReady ? 'READY' : 'MISSING'));
-  const analyzeState = (import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true') ? 'MOCK' : 'REAL';
+  const analyzeState = getAnalyzeMode().toUpperCase();
   const backendState = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim() ? 'OK' : 'MISSING';
   const flow = getFlowState();
 
@@ -335,6 +335,7 @@ function normalizeScanError(error) {
   }
 
   if (error instanceof AnalyzeError) {
+    if (error.code === ANALYZE_ERROR_CODES.LIVE_DISABLED) return 'Live analysis is unavailable in this demo.';
     if (error.code === ANALYZE_ERROR_CODES.BACKEND_NOT_CONFIGURED) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.TIMEOUT) return 'Unable to connect. Try again.';
     if (error.code === ANALYZE_ERROR_CODES.NETWORK) return 'Unable to connect. Try again.';
@@ -503,13 +504,15 @@ function renderSettingsStatus(panel) {
   const session = getSession();
   const params = new URLSearchParams(window.location.search);
   const scenario = sim.allowed ? params.get('mockAnalyze') : null;
-  const mockAnalyze = import.meta.env.DEV && import.meta.env.VITE_MOCK_ANALYZE === 'true';
+  const analyzeMode = getAnalyzeMode();
 
   let backendBadge;
   if (scenario) {
     backendBadge = '<span class="status-badge warn">Mock</span>';
-  } else if (mockAnalyze) {
+  } else if (analyzeMode === 'mock') {
     backendBadge = '<span class="status-badge warn">Mock</span>';
+  } else if (analyzeMode === 'live-disabled') {
+    backendBadge = '<span class="status-badge off">Live disabled</span>';
   } else {
     const raw = String(import.meta.env.VITE_KSCAN_BACKEND_URL || '').trim();
     if (!raw) {
