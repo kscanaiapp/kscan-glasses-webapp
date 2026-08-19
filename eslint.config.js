@@ -115,7 +115,7 @@ export default [
   {
     // Browser-driving scripts: page.evaluate callbacks execute inside the
     // page, so browser globals are legitimate alongside Node globals.
-    files: ['scripts/browser-smoke.js', 'scripts/browser-smoke-companion.js'],
+    files: ['scripts/browser-smoke.js', 'scripts/browser-smoke-companion.js', 'scripts/simulator-v2-tests.js'],
     languageOptions: {
       globals: {
         ...browserGlobals,

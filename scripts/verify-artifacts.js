@@ -100,6 +100,16 @@ if (!existsSync(join(PROD, 'index.html'))) {
   } else {
     ok('prod:no-companion-html');
   }
+  if (prodFiles.some((f) => /simulator-v2\.html$/.test(f))) {
+    bad('prod:no-simulator-v2-html', 'simulator-v2.html found in production dist');
+  } else {
+    ok('prod:no-simulator-v2-html');
+  }
+  if (prodFiles.some((f) => /assets\/simulatorV2-[^/]*\.js$/.test(f))) {
+    bad('prod:no-simulator-v2-chunk', 'simulator-v2 controller chunk found in production dist');
+  } else {
+    ok('prod:no-simulator-v2-chunk');
+  }
   if (prodFiles.some((f) => /assets\/companion-[^/]*\.js$/.test(f))) {
     bad('prod:no-companion-chunk', 'mock companion chunk found in production dist');
   } else {
@@ -249,6 +259,18 @@ if (!existsSync(join(SIM, 'simulator.html'))) {
   });
   if (hasMockMarkers) ok('sim:companion-markers');
   else bad('sim:companion-markers', 'mock companion markers missing from simulator bundle');
+
+  // Simulator V2 is a simulator-only entry with LOCAL QA labeling too.
+  if (!existsSync(join(SIM, 'simulator-v2.html'))) {
+    bad('sim:simulator-v2-html', `${SIM}/simulator-v2.html missing`);
+  } else {
+    const v2Html = readTextSafe(join(SIM, 'simulator-v2.html')) || '';
+    if (v2Html.includes('LOCAL QA / NON-PRODUCTION')) {
+      ok('sim:simulator-v2-html');
+    } else {
+      bad('sim:simulator-v2-html', 'simulator-v2.html missing LOCAL QA / NON-PRODUCTION label');
+    }
+  }
 }
 
 console.log('');
