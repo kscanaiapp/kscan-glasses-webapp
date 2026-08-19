@@ -17,7 +17,7 @@ The 600×600 HUD is the real production companion-mode build (`index.html?compan
 
 - Worktree: `C:\Users\jsmit\kscan-glasses-simulator-v2-20260819` (git worktree, not a subdirectory of the primary checkout).
 - Branch: `feature/meta-simulator-v2`, branched from `c45bcbec0ce14df340a2e2407be24a1c5f39397d`.
-- Final HEAD: `a08c4b20f6568549b59e414bfacafeeab7d01c58` (plus this doc commit).
+- Final HEAD: `bab86be` — see Commits below for the full, current list (includes the review fix below; this doc predates that commit).
 - Not pushed. Not merged. Not deployed anywhere.
 
 ## Existing Simulator Assessment
@@ -86,7 +86,7 @@ Same proxy pattern via the real `action.open_on_phone` flow; the phone panel sho
 
 QA-mode Drop/Restore controls exercise the real `connection.lost`/`connection.restored` messages and the HUD's Reconnecting state. The "Connection Loss" demo scenario automates this: mid-scan, the phone silently drops, the HUD shows Reconnecting, and the engine restores after ~3.2s (comfortably inside the HUD's real 10s reconnect window) — Ready resumes automatically.
 
-**Known limitation:** if a QA tester manually drops the connection and waits past the HUD's real 10-second reconnect window before clicking Restore, the HUD (correctly) falls back to Disconnected while the phone-panel mirror optimistically assumes reconnection succeeded, since no protocol ack exists for a late restore. This only affects manual QA testing slower than 10s between Drop and Restore — never the guided or Auto-Demo journeys.
+**Resolved in a follow-up commit (`bab86be`):** a manual Drop→wait-past-10s→Restore previously left the phone-panel mirror optimistically claiming "Connected/Ready" after the HUD had already (correctly) fallen back to Disconnected — there is no protocol ack for a late restore, so the mirror was guessing. `drop()` now records when the connection went down, and `restore()` mirrors the HUD's own `RUNTIME_TIMEOUTS.RECONNECT` window (with a small safety margin) instead of assuming success — verified live for both the within-window and past-window cases.
 
 ## Demo Mode
 
@@ -155,7 +155,9 @@ On `feature/meta-simulator-v2`, branched from `c45bcbec0ce14df340a2e2407be24a1c5
 1. `feat(simulator): add Simulator V2 immersive glasses+phone experience`
 2. `chore(simulator): wire Simulator V2 into build, lint, and artifact checks`
 3. `test(simulator): add Simulator V2 browser suite`
-4. `docs(simulator): add simulator v2 review handoff` (this commit)
+4. `docs(simulator): add simulator v2 review handoff`
+5. `fix(simulator): match the phone mirror to the HUD's real reconnect window`
+6. `docs(simulator): update handoff for the reconnect-window fix` (this commit)
 
 ## Preview / Deployment Status
 
@@ -163,8 +165,8 @@ Not deployed. `npm run build:simulator` was run locally and verified (`dist-simu
 
 ## Remaining Issues
 
-- **Pixel-level visual QA not performed** (see Visual QA) — the sandbox's browser pane did not composite screenshots this session. DOM/geometry-level QA was thorough; a human visual pass is still warranted before external presentation.
-- The reconnect-mirror mismatch under a slow manual Drop→Restore (>10s) described under Connection / Recovery States is a known, low-severity, presentation-only limitation.
+- **Pixel-level visual QA still not performed** (see Visual QA) — a second attempt in a fresh dev-server session also found the sandbox's browser pane not compositing frames for screenshots. This remains the one open item before external/investor presentation; needs a session (or a human) where the pane actually renders.
+- ~~The reconnect-mirror mismatch under a slow manual Drop→Restore (>10s)~~ — **fixed** (`bab86be`); see Connection / Recovery States.
 - Simulator V2 intentionally does not include the image/text-scan bridge scenario console from `simulator.html` (oversized/invalid/permission/timeout capture-photo scenarios, TextScan preset injection) — those remain exclusively in the legacy `simulator.html`, linked from the "About this simulation" modal. This was a deliberate scope decision (the brief's five priority changes are all companion/wearable-journey focused) rather than an oversight, but is worth confirming with product before sign-off.
 - No preview deployment exists yet; someone with Vercel access should cut one from this branch for stakeholder review once approved.
 
