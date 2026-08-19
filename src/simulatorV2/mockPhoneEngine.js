@@ -13,6 +13,7 @@
 import { evaluateMessageTrust, buildMessageOriginAllowlist } from '../messageTrust.js';
 import { MESSAGE_TYPES, buildMessage, validateMessage } from '../companion/protocol.js';
 import { FIXTURE_BUILDERS } from '../companion/resultFixtures.js';
+import { RUNTIME_TIMEOUTS } from '../companion/runtimeState.js';
 
 const T = MESSAGE_TYPES;
 const PHONE_NAME = 'K Scan AI — Mock Phone (LOCAL QA)';
@@ -79,6 +80,8 @@ export function createMockPhoneEngine({ getFrameWindow, selfOrigin, callbacks = 
     fixtureKey: 'full',
     demoBuilder: null,
     uiState: PHONE_UI_STATE.IDLE,
+    dropAt: null, // Date.now() at drop() — used to judge whether a later
+    // restore() lands inside the HUD's real reconnect window (see restore()).
   };
 
   function resolveBuilder() {
@@ -329,6 +332,7 @@ export function createMockPhoneEngine({ getFrameWindow, selfOrigin, callbacks = 
         }
       }
       state.dropped = true;
+      state.dropAt = Date.now();
       onLog('drop', 'connection', 'connection dropped — phone silent');
       setUiState(PHONE_UI_STATE.DROPPED);
     },
@@ -336,6 +340,22 @@ export function createMockPhoneEngine({ getFrameWindow, selfOrigin, callbacks = 
       state.dropped = false;
       send(T.CONNECTION_RESTORED, {}, { requestId: null, sessionId: null });
       onLog('out', 'connection.restored', '');
+      // The HUD's own reconnect window (src/companion/runtimeState.js
+      // RUNTIME_TIMEOUTS.RECONNECT) has no ack message on a late restore —
+      // there is no protocol-legal way to know for certain whether the HUD
+      // accepted this CONNECTION_RESTORED or already fell back to
+      // Disconnected on its own timeout. Mirror the HUD's own timing rule
+      // instead of guessing: only claim reconnection succeeded when this
+      // restore() landed inside that same window (with a small safety
+      // margin for message-delivery latency); otherwise show the honest
+      // "link down" state the HUD itself would show.
+      const withinReconnectWindow = state.dropAt !== null
+        && (Date.now() - state.dropAt) < (RUNTIME_TIMEOUTS.RECONNECT - 500);
+      state.dropAt = null;
+      if (!withinReconnectWindow) {
+        setUiState(PHONE_UI_STATE.IDLE);
+        return;
+      }
       setUiState(state.sessionId ? PHONE_UI_STATE.CONNECTED_READY : PHONE_UI_STATE.IDLE);
     },
     // ── Scan drive ──
@@ -417,6 +437,7 @@ export function createMockPhoneEngine({ getFrameWindow, selfOrigin, callbacks = 
       state.cancelledRequests = new Set();
       state.lastTerminalMessage = null;
       state.failArmToken = 0;
+      state.dropAt = null;
       setUiState(PHONE_UI_STATE.IDLE);
     },
     // ── Introspection ──
