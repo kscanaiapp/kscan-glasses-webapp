@@ -1,0 +1,7 @@
+{
+  "_comment": "Routing config for the kscan-glasses-demo Vercel project (prj_FntDQW5pdxejfUctL57di089wrDq) — a separate, manually-deployed static project, NOT the git-integrated kscan-glasses-webapp production project. dist-simulator/ is gitignored (a build output), so this file is not picked up automatically by `npm run build:simulator` and must be copied to dist-simulator/vercel.json before each `vercel deploy` of that project. Makes /simulator.html serve simulator-v2.html's content while keeping /simulator-v2.html directly reachable and every other file (companion.html, index.html, assets/*) served normally. Uses the low-level `routes` primitive with an explicit `handle: filesystem` fallback rather than the `rewrites` shorthand, because Vercel's filesystem match for an existing /simulator.html file otherwise takes priority over a plain rewrite.",
+  "routes": [
+    { "src": "/simulator\\.html$", "dest": "/simulator-v2.html" },
+    { "handle": "filesystem" }
+  ]
+}
