@@ -1,26 +1,50 @@
 :root {
-  --bg: #000000;
+  /* Optical-overlay relight. The HUD represents a transparent projected
+     display over the wearer's real daytime field of view — not an opaque
+     black monitor, and explicitly NOT a flat white UI panel either.
+     --bg becomes a layered, abstract (non-photographic) gradient that
+     reads as "softly blurred boutique environment glimpsed through a
+     tinted lens": warm ambient color blooms over a dark base tint, never
+     pure black, never busy enough to compete with HUD text. Text/accent
+     tokens stay LIGHT (as on a real optical HUD, legible against a dark
+     backdrop) — only the flat black base itself gains depth and warmth.
+     --panel becomes a translucent glass tint instead of opaque black,
+     so localized status/result surfaces read as lens-tinted panels with
+     the environment glow showing faintly through, not solid cards. */
+  --bg:
+    radial-gradient(ellipse 460px 340px at 22% 18%, rgba(255, 224, 178, 0.13) 0%, transparent 62%),
+    radial-gradient(ellipse 420px 380px at 78% 68%, rgba(212, 168, 67, 0.10) 0%, transparent 58%),
+    radial-gradient(ellipse 500px 320px at 50% 96%, rgba(58, 16, 40, 0.16) 0%, transparent 62%),
+    radial-gradient(ellipse 700px 700px at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.32) 100%),
+    linear-gradient(180deg, #1B1720 0%, #120F16 55%, #0C0A0F 100%);
   --white: #F5F7FA;
-  --chrome: #E8ECF1;
-  --cyan-primary: #00E5FF;
-  --cyan-hot: #00FFFF;
-  --cyan-dim: rgba(0, 229, 255, 0.35);
-  --purple-deep: #B829F7;
-  --red-danger: #FF6B6B;
-  --gold-sim: #FFD54A;
-  --panel: #0A0A0A;
+  --chrome: #C9CFD8;
+  --cyan-primary: #2FE6D0;
+  --cyan-hot: #6BFFEA;
+  --cyan-dim: rgba(47, 230, 208, 0.35);
+  --purple-deep: #C77DF7;
+  --red-danger: #FF8A80;
+  --gold-sim: #E8C25A;
+  --panel: rgba(15, 13, 18, 0.58);
   --safe-zone: 20px;
   --focus-outline: 2px;
   --focus-glow: 8px;
 
   /* K Scan luxury accents — used sparingly on additive HUD */
   --plum: #3A1028;
-  --plum-glow: rgba(184, 41, 247, 0.15);
-  --champagne: #C58A3A;
-  --champagne-soft: #D6A75C;
+  --plum-glow: rgba(199, 125, 247, 0.15);
+  --champagne: #D6A75C;
+  --champagne-soft: #E8C489;
   --cream: #FBF7F0;
-  --warm-border: #E8D8C3;
-  --silver: #E8ECF1;
+  --warm-border: rgba(245, 247, 250, 0.16);
+  --silver: #C9CFD8;
+
+  /* Panel/glass tokens for localized contrast surfaces (status pills,
+     result cards, action bars) — a step brighter/more opaque than --panel
+     for text-heavy areas that need firmer legibility over the environment. */
+  --glass-strong: rgba(10, 9, 12, 0.72);
+  --line: rgba(245, 247, 250, 0.10);
+  --success: #4ADE80;
 }
 
 * {
@@ -127,7 +151,7 @@ body {
 .scan-active .reticle-corners .rc-bl,
 .scan-active .reticle-corners .rc-br {
   border-color: var(--cyan-primary);
-  box-shadow: 0 0 6px rgba(0, 229, 255, 0.3);
+  box-shadow: 0 0 6px rgba(47, 230, 208, 0.3);
 }
 
 .scan-target {
@@ -172,7 +196,7 @@ body {
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: var(--cyan-primary);
-  box-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 8px rgba(47, 230, 208, 0.5);
 }
 
 .scan-active .scan-target {
@@ -192,8 +216,8 @@ body {
 
 #home {
   background:
-    radial-gradient(ellipse at 50% 30%, rgba(0, 229, 255, 0.04) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 80%, rgba(184, 41, 247, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 30%, rgba(47, 230, 208, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(199, 125, 247, 0.03) 0%, transparent 50%),
     var(--bg);
 }
 
@@ -274,9 +298,9 @@ body {
 }
 
 .home-nav-btn:hover {
-  background: #111111;
+  background: rgba(15, 13, 18, 0.55);
   color: var(--white);
-  border-color: rgba(0, 229, 255, 0.2);
+  border-color: rgba(47, 230, 208, 0.2);
 }
 
 /* ── Shared components ──────────────────────────────────────── */
@@ -312,7 +336,7 @@ body {
 .btn:hover,
 .row:hover {
   transform: translateY(-1px);
-  background: #111111;
+  background: rgba(15, 13, 18, 0.55);
 }
 
 .btn-primary {
@@ -321,14 +345,14 @@ body {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 1.5px;
-  box-shadow: 0 0 28px rgba(0, 229, 255, 0.12), 0 4px 12px rgba(0, 229, 255, 0.06);
+  box-shadow: 0 0 28px rgba(47, 230, 208, 0.12), 0 4px 12px rgba(47, 230, 208, 0.06);
   transition: transform 0.08s ease, box-shadow 0.2s ease, background 0.2s ease;
   text-transform: uppercase;
 }
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 0 36px rgba(0, 229, 255, 0.2), 0 6px 16px rgba(0, 229, 255, 0.1);
+  box-shadow: 0 0 36px rgba(47, 230, 208, 0.2), 0 6px 16px rgba(47, 230, 208, 0.1);
   background: var(--cyan-hot);
 }
 
@@ -340,9 +364,9 @@ body {
 }
 
 .btn-ghost:hover {
-  border-color: rgba(0, 229, 255, 0.35);
+  border-color: rgba(47, 230, 208, 0.35);
   color: var(--white);
-  background: rgba(0, 229, 255, 0.04);
+  background: rgba(47, 230, 208, 0.04);
 }
 
 .top-left {
@@ -408,20 +432,20 @@ body {
   min-height: 110px;
   padding: 14px;
   border-radius: 14px;
-  background: #111111;
+  background: rgba(15, 13, 18, 0.55);
   border: 1px solid rgba(232, 236, 241, 0.06);
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
 .product-card:hover {
-  background: #151515;
-  border-color: rgba(0, 229, 255, 0.15);
+  background: rgba(21, 18, 26, 0.65);
+  border-color: rgba(47, 230, 208, 0.15);
   transform: translateY(-1px);
 }
 
 .product-card.saved {
-  border: 1px solid rgba(0, 229, 255, 0.35);
-  background: rgba(0, 229, 255, 0.04);
+  border: 1px solid rgba(47, 230, 208, 0.35);
+  background: rgba(47, 230, 208, 0.04);
 }
 
 .product-card.saved .product-action {
@@ -433,7 +457,7 @@ body {
   height: 80px;
   border-radius: 10px;
   background: transparent;
-  border: 1px solid rgba(0, 229, 255, 0.25);
+  border: 1px solid rgba(47, 230, 208, 0.25);
   object-fit: cover;
 }
 
@@ -441,8 +465,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed rgba(90, 101, 120, 0.5);
-  background: #0A0A0A;
+  border: 1px dashed rgba(199, 207, 216, 0.35);
+  background: rgba(10, 9, 12, 0.6);
   color: #5A6578;
   font-size: 24px;
   font-weight: 300;
@@ -540,11 +564,11 @@ body {
 .spinner {
   width: 56px;
   height: 56px;
-  border: 3px solid rgba(0, 229, 255, 0.15);
+  border: 3px solid rgba(47, 230, 208, 0.15);
   border-top-color: var(--cyan-hot);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
-  box-shadow: 0 0 20px rgba(0, 229, 255, 0.08);
+  box-shadow: 0 0 20px rgba(47, 230, 208, 0.08);
 }
 
 .processing-text,
@@ -589,9 +613,9 @@ body {
 .focusable.focused {
   position: relative;
   z-index: 5;
-  outline: 2px solid #00E5FF;
+  outline: 2px solid #2FE6D0;
   outline-offset: 2px;
-  box-shadow: 0 0 0 2px #00E5FF, 0 0 8px rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 0 2px #2FE6D0, 0 0 8px rgba(47, 230, 208, 0.5);
   transform: scale(1.02);
   animation: focus-pulse 1.8s ease-in-out infinite;
 }
@@ -611,10 +635,10 @@ body {
 
 @keyframes focus-pulse {
   0%, 100% {
-    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.3), 0 0 8px rgba(0, 229, 255, 0.55);
+    box-shadow: 0 0 0 2px rgba(47, 230, 208, 0.3), 0 0 8px rgba(47, 230, 208, 0.55);
   }
   50% {
-    box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.4), 0 0 12px rgba(0, 229, 255, 0.75);
+    box-shadow: 0 0 0 2px rgba(47, 230, 208, 0.4), 0 0 12px rgba(47, 230, 208, 0.75);
   }
 }
 
@@ -669,13 +693,13 @@ body {
 }
 
 .bridge-badge.mock {
-  border: 1px solid rgba(255, 213, 74, 0.5);
+  border: 1px solid rgba(232, 194, 90, 0.5);
   background: rgba(0, 0, 0, 0.72);
   color: var(--gold-sim);
 }
 
 .bridge-badge.beta {
-  border: 1px solid rgba(0, 229, 255, 0.5);
+  border: 1px solid rgba(47, 230, 208, 0.5);
   background: rgba(0, 0, 0, 0.72);
   color: var(--cyan-primary);
 }
@@ -694,7 +718,7 @@ body {
   display: block;
   padding: 6px 8px;
   background: rgba(0, 0, 0, 0.72);
-  border: 1px solid rgba(0, 229, 255, 0.4);
+  border: 1px solid rgba(47, 230, 208, 0.4);
   border-radius: 8px;
   color: var(--chrome);
   font-size: 14px;
@@ -753,9 +777,9 @@ body.prod #dat-hud {
 }
 
 .status-badge.on {
-  background: rgba(0, 229, 255, 0.08);
+  background: rgba(47, 230, 208, 0.08);
   color: var(--cyan-primary);
-  border: 1px solid rgba(0, 229, 255, 0.3);
+  border: 1px solid rgba(47, 230, 208, 0.3);
 }
 
 .status-badge.off {
@@ -771,9 +795,9 @@ body.prod #dat-hud {
 }
 
 .status-badge.live {
-  background: rgba(184, 41, 247, 0.08);
+  background: rgba(199, 125, 247, 0.08);
   color: var(--purple-deep);
-  border: 1px solid rgba(184, 41, 247, 0.3);
+  border: 1px solid rgba(199, 125, 247, 0.3);
 }
 
 /* Section divider for scroll panels */
@@ -822,8 +846,8 @@ body.prod #dat-hud {
 /* ── Home screen warm lighting ── */
 #home {
   background:
-    radial-gradient(ellipse at 50% 30%, rgba(0, 229, 255, 0.04) 0%, transparent 55%),
-    radial-gradient(ellipse at 80% 80%, rgba(184, 41, 247, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 30%, rgba(47, 230, 208, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse at 80% 80%, rgba(199, 125, 247, 0.03) 0%, transparent 50%),
     radial-gradient(ellipse at 20% 80%, rgba(212, 168, 67, 0.03) 0%, transparent 50%),
     var(--bg);
 }
@@ -861,7 +885,7 @@ body.prod #dat-hud {
   box-shadow: 0 0 5px rgba(212, 168, 67, 0.4);
 }
 .status-pill .dot.ok { background: #2ECC71; box-shadow: 0 0 5px rgba(46, 204, 113, 0.4); }
-.status-pill .dot.mock { background: var(--gold-sim); box-shadow: 0 0 5px rgba(255, 213, 74, 0.4); }
+.status-pill .dot.mock { background: var(--gold-sim); box-shadow: 0 0 5px rgba(232, 194, 90, 0.4); }
 
 /* ── Glassmorphism cards ── */
 .glass-card {
@@ -929,9 +953,9 @@ body.prod #dat-hud {
   font-weight: 700;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  background: rgba(0, 229, 255, 0.08);
+  background: rgba(47, 230, 208, 0.08);
   color: var(--cyan-primary);
-  border: 1px solid rgba(0, 229, 255, 0.25);
+  border: 1px solid rgba(47, 230, 208, 0.25);
 }
 .detected-style {
   font-size: 20px;
@@ -980,8 +1004,8 @@ body.prod #dat-hud {
   background: var(--champagne);
   box-shadow: 0 0 6px rgba(212, 168, 67, 0.4);
 }
-.source-header .source-dot.resale { background: var(--purple-deep); box-shadow: 0 0 6px rgba(184, 41, 247, 0.4); }
-.source-header .source-dot.suggested { background: var(--cyan-primary); box-shadow: 0 0 6px rgba(0, 229, 255, 0.4); }
+.source-header .source-dot.resale { background: var(--purple-deep); box-shadow: 0 0 6px rgba(199, 125, 247, 0.4); }
+.source-header .source-dot.suggested { background: var(--cyan-primary); box-shadow: 0 0 6px rgba(47, 230, 208, 0.4); }
 .source-disclaimer {
   font-size: 11px;
   color: #6B788C;
@@ -1006,14 +1030,14 @@ body.prod #dat-hud {
   border: 1px solid rgba(212, 168, 67, 0.2);
 }
 .product-card .source-pill.resale {
-  background: rgba(184, 41, 247, 0.08);
+  background: rgba(199, 125, 247, 0.08);
   color: var(--purple-deep);
-  border-color: rgba(184, 41, 247, 0.2);
+  border-color: rgba(199, 125, 247, 0.2);
 }
 .product-card .source-pill.suggested {
-  background: rgba(0, 229, 255, 0.08);
+  background: rgba(47, 230, 208, 0.08);
   color: var(--cyan-primary);
-  border-color: rgba(0, 229, 255, 0.2);
+  border-color: rgba(47, 230, 208, 0.2);
 }
 .product-card .product-actions {
   display: flex;
@@ -1116,7 +1140,7 @@ body.prod #dat-hud {
 .textscan-preset:hover,
 .textscan-preset.focused {
   border-color: var(--cyan-primary);
-  background: rgba(0, 229, 255, 0.08);
+  background: rgba(47, 230, 208, 0.08);
   color: var(--white);
 }
 
@@ -1174,8 +1198,8 @@ body.prod #dat-hud {
   gap: 4px;
   padding: 4px 10px;
   border-radius: 20px;
-  background: rgba(0, 229, 255, 0.08);
-  border: 1px solid rgba(0, 229, 255, 0.15);
+  background: rgba(47, 230, 208, 0.08);
+  border: 1px solid rgba(47, 230, 208, 0.15);
   color: var(--cyan-primary);
   font-size: 12px;
   font-weight: 600;
@@ -1293,7 +1317,7 @@ body.prod #dat-hud {
 
 .pipeline-step.active {
   color: var(--cyan-primary);
-  text-shadow: 0 0 8px rgba(0, 229, 255, 0.5);
+  text-shadow: 0 0 8px rgba(47, 230, 208, 0.5);
 }
 
 /* Dim/off state for status pill dots (config required / session required). */
