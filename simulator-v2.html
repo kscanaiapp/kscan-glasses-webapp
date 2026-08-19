@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K Scan AI · Meta Glasses Experience — LOCAL QA / NON-PRODUCTION simulator</title>
+<!--
+  LOCAL QA / NON-PRODUCTION — Simulator V2.
+
+  An immersive, product-first presentation of the K Scan AI Meta glasses
+  experience. It embeds the SAME production HUD (index.html) in companion
+  mode (?companion=1) inside the 600×600 iframe — no HUD/state-machine/
+  protocol logic is duplicated here. This page supplies:
+    - a premium glasses-stage + phone-companion visualization shell
+    - a guided "Start Experience" journey and an unattended "Auto Demo"
+    - a Demo/QA mode toggle that reveals engineering controls (pairing,
+      scan-drive, action-ack, negative-message, message-log) without
+      changing which engine drives them
+
+  It talks to the HUD over the SAME canonical companion protocol the real
+  phone will use (src/companion/protocol.js + resultFixtures/resultContract),
+  acting as the phone peer via src/simulatorV2/mockPhoneEngine.js — a
+  DOM-decoupled refactor of src/companion/mockCompanion.js. Synthetic/demo
+  data only. No physical Meta hardware, no real phone, no real backend.
+
+  Vite serves this at /simulator-v2.html in dev; `npm run build:simulator`
+  (vite.simulator.config.js) bundles it into dist-simulator/ ONLY. The
+  production build (`npm run build`) never emits this page —
+  scripts/verify-artifacts.js asserts that separation.
+-->
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #0A0908;
+    --ink-raised: #121110;
+    --ink-card: #16140F;
+    --line: rgba(232, 216, 195, 0.10);
+    --line-strong: rgba(232, 216, 195, 0.18);
+    --cream: #F3ECE0;
+    --cream-dim: #B9AF9E;
+    --cream-faint: #7C7468;
+    --gold: #D4A843;
+    --gold-soft: #E8C87A;
+    --gold-dim: rgba(212, 168, 67, 0.16);
+    --ok: #55C58A;
+    --warn: #E0A23A;
+    --danger: #E06A5C;
+    --cyan: #4FD6E8;
+    --radius-lg: 22px;
+    --radius-md: 14px;
+    --radius-sm: 9px;
+    --shadow-deep: 0 30px 80px rgba(0,0,0,0.55), 0 6px 20px rgba(0,0,0,0.35);
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; overflow-x: hidden; }
+  body {
+    background:
+      radial-gradient(ellipse 900px 500px at 18% -10%, rgba(212,168,67,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 900px 600px at 85% 10%, rgba(79,214,232,0.05) 0%, transparent 55%),
+      var(--ink);
+    color: var(--cream);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    /* Decorative glows (e.g. .lens-glow) intentionally bleed past their
+       element's box at narrow widths — clip at the page edge rather than
+       let them force a horizontal scrollbar. */
+    overflow-x: hidden;
+  }
+
+  button { font-family: inherit; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+  }
+
+  /* ── Truthfulness banner ─────────────────────────────────────────── */
+  .qa-strip {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    flex-wrap: wrap; text-align: center;
+    padding: 7px 16px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+    color: #FFD9CF; background: #401A14; border-bottom: 1px solid rgba(224,106,92,0.35);
+  }
+  .qa-strip button {
+    background: none; border: 1px solid rgba(255,217,207,0.4); color: inherit;
+    border-radius: 999px; padding: 2px 10px; font-size: 11px; cursor: pointer;
+  }
+  .qa-strip button:hover { background: rgba(255,217,207,0.1); }
+
+  /* ── Header ───────────────────────────────────────────────────────── */
+  .v2-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 20px clamp(16px, 4vw, 40px) 6px; max-width: 1280px; margin: 0 auto;
+  }
+  .brand { display: flex; flex-direction: column; gap: 2px; }
+  .brand-name {
+    font-size: 20px; font-weight: 800; letter-spacing: 0.16em; color: var(--cream);
+  }
+  .brand-sub {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.2em; color: var(--gold-soft);
+    text-transform: uppercase;
+  }
+  .mode-toggle {
+    display: inline-flex; background: var(--ink-raised); border: 1px solid var(--line-strong);
+    border-radius: 999px; padding: 3px; gap: 2px;
+  }
+  .mode-toggle button {
+    border: none; background: none; color: var(--cream-dim); font-size: 12.5px; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; padding: 7px 18px; border-radius: 999px;
+    cursor: pointer; transition: background 0.15s var(--ease), color 0.15s var(--ease);
+  }
+  .mode-toggle button[aria-selected="true"] { background: var(--gold); color: #241804; }
+  .mode-toggle button:not([aria-selected="true"]):hover { color: var(--cream); background: rgba(255,255,255,0.05); }
+
+  /* ── Stage ────────────────────────────────────────────────────────── */
+  main.stage { max-width: 1280px; margin: 0 auto; padding: 18px clamp(16px, 4vw, 40px) 40px; }
+
+  .stage-inner {
+    display: flex; align-items: center; justify-content: center; gap: clamp(18px, 4vw, 56px);
+    flex-wrap: wrap; padding: 28px 0 12px;
+  }
+
+  /* ── Glasses stage (hero) ────────────────────────────────────────── */
+  .glasses-column { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .lens-frame {
+    position: relative; width: 600px; max-width: 90vw; aspect-ratio: 1 / 1;
+    border-radius: 28px; padding: 10px;
+    background: linear-gradient(160deg, #1c1a15, #0c0b08 60%);
+    box-shadow: var(--shadow-deep), inset 0 0 0 1px rgba(212,168,67,0.14);
+  }
+  .lens-frame::before {
+    content: ""; position: absolute; inset: -1px; border-radius: 29px; padding: 1px;
+    background: linear-gradient(160deg, rgba(212,168,67,0.5), rgba(212,168,67,0) 40%, rgba(79,214,232,0.18) 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+  }
+  .lens-glow {
+    position: absolute; inset: -40px; border-radius: 50%; pointer-events: none; z-index: 0;
+    background: radial-gradient(circle, rgba(212,168,67,0.10) 0%, transparent 70%);
+    opacity: 0.8;
+  }
+  .lens-frame iframe {
+    position: relative; z-index: 1; width: 100%; height: 100%; border: 0; border-radius: 18px;
+    display: block; background: #000;
+  }
+  .hud-caption {
+    display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600;
+    color: var(--cream-faint); letter-spacing: 0.04em;
+  }
+  .rec-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 6px rgba(212,168,67,0.7); animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+  /* ── Relationship rail (handoff cue between glasses & phone) ────── */
+  .relationship-rail {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; min-width: 64px; align-self: center;
+  }
+  .rail-line { width: 2px; height: 64px; background: linear-gradient(var(--line-strong), var(--line-strong)); border-radius: 2px; }
+  .handoff-chip {
+    display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+    background: var(--ink-card); border: 1px solid var(--gold); color: var(--gold-soft);
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; white-space: nowrap;
+    opacity: 0; transform: translateY(0); box-shadow: 0 6px 18px rgba(0,0,0,0.4);
+  }
+  .handoff-chip.fly-down { animation: fly-down 1.4s var(--ease); }
+  .handoff-chip.fly-up { animation: fly-up 1.4s var(--ease); }
+  @keyframes fly-down {
+    0% { opacity: 0; transform: translateY(-30px); }
+    15% { opacity: 1; transform: translateY(-14px); }
+    75% { opacity: 1; transform: translateY(14px); }
+    100% { opacity: 0; transform: translateY(30px); }
+  }
+  @keyframes fly-up {
+    0% { opacity: 0; transform: translateY(30px); }
+    15% { opacity: 1; transform: translateY(14px); }
+    75% { opacity: 1; transform: translateY(-14px); }
+    100% { opacity: 0; transform: translateY(-30px); }
+  }
+
+  /* ── Phone stage ──────────────────────────────────────────────────── */
+  .phone-column { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .phone-shell {
+    width: 220px; height: 452px; border-radius: 34px; padding: 10px;
+    background: linear-gradient(160deg, #1c1a15, #0c0b08 60%);
+    box-shadow: var(--shadow-deep), inset 0 0 0 1px rgba(232,216,195,0.10);
+    position: relative;
+  }
+  .phone-notch {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    width: 70px; height: 16px; border-radius: 10px; background: #0c0b08; z-index: 2;
+  }
+  .phone-screen {
+    position: relative; width: 100%; height: 100%; border-radius: 26px; overflow: hidden;
+    background:
+      radial-gradient(ellipse 240px 200px at 50% 0%, rgba(212,168,67,0.06) 0%, transparent 60%),
+      #0F0D09;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 30px 18px; gap: 10px;
+  }
+  .phone-brand { font-size: 10px; font-weight: 800; letter-spacing: 0.18em; color: var(--gold-soft); text-transform: uppercase; }
+  .phone-icon { width: 46px; height: 46px; margin: 6px 0; color: var(--gold-soft); }
+  .phone-title { font-size: 17px; font-weight: 700; color: var(--cream); line-height: 1.28; }
+  .phone-support { font-size: 12.5px; color: var(--cream-faint); line-height: 1.45; max-width: 165px; }
+  .phone-spinner {
+    width: 26px; height: 26px; border: 2.5px solid rgba(212,168,67,0.18); border-top-color: var(--gold);
+    border-radius: 50%; animation: spin 0.9s linear infinite; margin: 4px 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .phone-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 8px; }
+  .phone-btn {
+    width: 100%; padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.02em; cursor: pointer; border: 1px solid transparent; transition: transform 0.1s var(--ease), background 0.15s var(--ease);
+  }
+  .phone-btn:active { transform: scale(0.98); }
+  .phone-btn.primary { background: var(--gold); color: #241804; }
+  .phone-btn.primary:hover { background: var(--gold-soft); }
+  .phone-btn.ghost { background: rgba(232,216,195,0.06); color: var(--cream); border-color: var(--line-strong); }
+  .phone-btn.ghost:hover { background: rgba(232,216,195,0.12); }
+  .phone-caption { font-size: 12px; font-weight: 600; color: var(--cream-faint); letter-spacing: 0.03em; }
+
+  /* ── Product highlight (result mirror) ───────────────────────────── */
+  .product-highlight {
+    max-width: 620px; margin: 4px auto 0; border-radius: var(--radius-lg);
+    background: var(--ink-card); border: 1px solid var(--line-strong);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+    padding: 22px 26px; display: none; gap: 18px; align-items: center;
+  }
+  .product-highlight.visible { display: flex; animation: card-in 0.4s var(--ease); }
+  @keyframes card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .ph-icon {
+    flex: 0 0 auto; width: 84px; height: 84px; border-radius: 18px;
+    background: var(--gold-dim); display: flex; align-items: center; justify-content: center;
+    color: var(--gold-soft);
+  }
+  .ph-icon svg { width: 44px; height: 44px; }
+  .ph-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .ph-eyebrow { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-soft); }
+  .ph-confidence { padding: 2px 9px; border-radius: 999px; background: var(--gold-dim); color: var(--gold-soft); font-size: 11px; font-weight: 800; }
+  .ph-title { font-size: 20px; font-weight: 800; color: var(--cream); line-height: 1.25; }
+  .ph-meta { font-size: 13.5px; color: var(--cream-dim); }
+  .ph-source { font-size: 11.5px; font-weight: 600; color: var(--cream-faint); text-transform: uppercase; letter-spacing: 0.04em; }
+  .ph-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .ph-actions button {
+    padding: 8px 16px; border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+    border: 1px solid var(--line-strong); background: rgba(232,216,195,0.05); color: var(--cream);
+  }
+  .ph-actions button.primary { background: var(--gold); color: #241804; border-color: var(--gold); }
+  .ph-actions button:hover { background: rgba(232,216,195,0.12); }
+  .ph-actions button.primary:hover { background: var(--gold-soft); }
+  .ph-nav { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .ph-nav button {
+    width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line-strong);
+    background: rgba(232,216,195,0.05); color: var(--cream); cursor: pointer; font-size: 14px;
+  }
+  .ph-dots { display: flex; gap: 5px; }
+  .ph-dots span { width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong); }
+  .ph-dots span.active { background: var(--gold); }
+
+  /* ── Control bar ──────────────────────────────────────────────────── */
+  .control-bar {
+    display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+    margin-top: 30px;
+  }
+  .btn-hero {
+    padding: 13px 30px; border-radius: 999px; font-size: 14px; font-weight: 800;
+    letter-spacing: 0.04em; text-transform: uppercase; cursor: pointer; border: none;
+    background: linear-gradient(135deg, var(--gold-soft), var(--gold)); color: #241804;
+    box-shadow: 0 10px 26px rgba(212,168,67,0.28);
+    transition: transform 0.12s var(--ease), box-shadow 0.15s var(--ease);
+  }
+  .btn-hero:hover { transform: translateY(-1px); box-shadow: 0 14px 32px rgba(212,168,67,0.36); }
+  .btn-ghost-hero {
+    padding: 12px 24px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.03em; cursor: pointer; background: transparent; color: var(--cream);
+    border: 1px solid var(--line-strong);
+  }
+  .btn-ghost-hero:hover { border-color: var(--gold); color: var(--gold-soft); }
+  .btn-ghost-hero[aria-pressed="true"] { background: var(--gold-dim); border-color: var(--gold); color: var(--gold-soft); }
+  .scenario-field { display: flex; align-items: center; gap: 8px; }
+  .scenario-field label { font-size: 11.5px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--cream-faint); }
+  .scenario-field select {
+    background: var(--ink-raised); color: var(--cream); border: 1px solid var(--line-strong);
+    border-radius: 10px; padding: 9px 12px; font-size: 13px;
+  }
+
+  /* ── Flow breadcrumb ──────────────────────────────────────────────── */
+  .flow-caption { text-align: center; margin-top: 18px; }
+  .flow-steps {
+    display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap;
+    list-style: none; margin: 0 0 8px; padding: 0;
+  }
+  .flow-steps li {
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--cream-faint); padding: 4px 10px; border-radius: 999px; border: 1px solid transparent;
+  }
+  .flow-steps li.active { color: #241804; background: var(--gold); }
+  .flow-steps li.done { color: var(--ok); }
+  .flow-status-text { font-size: 13px; color: var(--cream-dim); min-height: 18px; }
+
+  /* ── Developer drawer (QA mode) ──────────────────────────────────── */
+  .dev-drawer { max-width: 1000px; margin: 34px auto 0; }
+  .dev-drawer[hidden] { display: none; }
+  .dev-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+  .dev-card { background: var(--ink-card); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 16px; }
+  .dev-card h3 { margin: 0 0 10px; font-size: 11.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-soft); }
+  .dev-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .dev-row:last-child { margin-bottom: 0; }
+  .dev-btn {
+    background: rgba(232,216,195,0.05); color: var(--cream); border: 1px solid var(--line-strong);
+    border-radius: 8px; padding: 6px 10px; font-size: 12px; cursor: pointer;
+  }
+  .dev-btn:hover { background: rgba(232,216,195,0.12); }
+  .dev-btn.danger { border-color: rgba(224,106,92,0.4); color: #FFB4A8; }
+  .dev-select { background: var(--ink-raised); color: var(--cream); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+  .dev-status { font-size: 12px; color: var(--cream-faint); margin-top: 6px; }
+  #dev-log {
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px; line-height: 1.55; color: var(--cream-dim);
+    background: #0A0908; border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+    height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+  }
+  .perf-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--cream-dim); padding: 3px 0; border-bottom: 1px dashed var(--line); }
+  .perf-row:last-child { border-bottom: none; }
+  .toggle-line { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cream-dim); }
+
+  /* ── About modal ──────────────────────────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center;
+    justify-content: center; z-index: 50; padding: 20px;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal-card {
+    max-width: 560px; width: 100%; background: var(--ink-card); border: 1px solid var(--line-strong);
+    border-radius: var(--radius-lg); padding: 26px 28px; box-shadow: var(--shadow-deep);
+  }
+  .modal-card h2 { margin: 0 0 12px; font-size: 16px; color: var(--gold-soft); }
+  .modal-card p { font-size: 13.5px; line-height: 1.6; color: var(--cream-dim); margin: 0 0 12px; }
+  .modal-card a { color: var(--gold-soft); }
+  .modal-close { margin-top: 8px; padding: 9px 18px; border-radius: 999px; border: 1px solid var(--line-strong); background: none; color: var(--cream); cursor: pointer; }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  @media (max-width: 720px) {
+    .lens-frame { width: 92vw; }
+    .relationship-rail { flex-direction: row; min-width: unset; width: 100%; }
+    .rail-line { width: 64px; height: 2px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="qa-strip">
+  Interactive product simulation · Mock capture and commerce data · No physical Meta hardware connected
+  <button id="about-btn" type="button">About this simulation</button>
+</div>
+
+<header class="v2-header">
+  <div class="brand">
+    <span class="brand-name">K SCAN AI</span>
+    <span class="brand-sub">Meta Glasses Experience</span>
+  </div>
+  <div class="mode-toggle" role="tablist" aria-label="Simulator mode">
+    <button id="mode-demo-btn" type="button" role="tab" aria-selected="true">Demo</button>
+    <button id="mode-qa-btn" type="button" role="tab" aria-selected="false">QA</button>
+  </div>
+</header>
+
+<main class="stage">
+  <div class="stage-inner">
+    <div class="glasses-column">
+      <div class="lens-frame">
+        <div class="lens-glow" aria-hidden="true"></div>
+        <iframe id="hud-frame" title="K Scan AI glasses HUD — 600×600 projected display"></iframe>
+      </div>
+      <div class="hud-caption"><span class="rec-dot" aria-hidden="true"></span>Meta Glasses HUD · 600×600 projected display</div>
+    </div>
+
+    <div class="relationship-rail" id="relationship-rail" aria-hidden="true">
+      <div class="rail-line"></div>
+      <div class="handoff-chip" id="handoff-chip"></div>
+      <div class="rail-line"></div>
+    </div>
+
+    <div class="phone-column">
+      <div class="phone-shell">
+        <div class="phone-notch" aria-hidden="true"></div>
+        <div class="phone-screen" id="phone-screen" aria-live="polite">
+          <span class="phone-brand">K Scan AI</span>
+          <p class="phone-title">Waiting for glasses</p>
+        </div>
+      </div>
+      <div class="phone-caption">Phone Companion</div>
+    </div>
+  </div>
+
+  <div class="product-highlight" id="product-highlight">
+    <div class="ph-nav">
+      <button type="button" id="ph-prev" aria-label="Previous match">‹</button>
+      <div class="ph-dots" id="ph-dots"></div>
+      <button type="button" id="ph-next" aria-label="Next match">›</button>
+    </div>
+    <div class="ph-icon" id="ph-icon"></div>
+    <div class="ph-body">
+      <div class="ph-eyebrow"><span>Match Found</span><span class="ph-confidence" id="ph-confidence"></span></div>
+      <div class="ph-title" id="ph-title"></div>
+      <div class="ph-meta" id="ph-meta"></div>
+      <div class="ph-source" id="ph-source"></div>
+      <div class="ph-actions">
+        <button type="button" class="primary" id="ph-save">Save</button>
+        <button type="button" id="ph-open">Open on Phone</button>
+        <button type="button" id="ph-retry">Retry</button>
+        <button type="button" id="ph-dismiss">Dismiss</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="control-bar">
+    <button type="button" class="btn-hero" id="start-experience-btn">Start Experience</button>
+    <button type="button" class="btn-ghost-hero" id="auto-demo-btn" aria-pressed="false">Auto Demo</button>
+    <div class="scenario-field">
+      <label for="scenario-select">Demo Scenario</label>
+      <select id="scenario-select"></select>
+    </div>
+  </div>
+
+  <div class="flow-caption">
+    <ol class="flow-steps" id="flow-steps" aria-label="K Scan AI journey"></ol>
+    <p class="flow-status-text" id="flow-status-text">Ready to pair.</p>
+  </div>
+
+  <section class="dev-drawer" id="dev-drawer" hidden aria-label="Developer Controls">
+    <div class="dev-grid">
+      <div class="dev-card">
+        <h3>Pairing &amp; Session</h3>
+        <div class="dev-row">
+          <button class="dev-btn" id="dev-approve">Approve pairing</button>
+          <button class="dev-btn danger" id="dev-deny">Deny</button>
+          <button class="dev-btn" id="dev-expire-pair">Expire pairing</button>
+          <button class="dev-btn danger" id="dev-revoke">Revoke session</button>
+        </div>
+        <div class="dev-row">
+          <button class="dev-btn danger" id="dev-drop">Drop connection</button>
+          <button class="dev-btn" id="dev-restore">Restore connection</button>
+          <button class="dev-btn" id="dev-refresh-required">Send refresh_required</button>
+        </div>
+        <p class="dev-status" id="dev-session-status">Session: none</p>
+      </div>
+
+      <div class="dev-card">
+        <h3>Scan Drive (phone authority)</h3>
+        <div class="dev-row">
+          <button class="dev-btn" id="dev-drive-auto">Auto-drive scan → result</button>
+          <button class="dev-btn" id="dev-stop-drive">Stop drive timers</button>
+          <button class="dev-btn" id="dev-capture-started">capture.started</button>
+          <button class="dev-btn" id="dev-privacy">privacy</button>
+          <button class="dev-btn" id="dev-analyzing">analyzing</button>
+          <button class="dev-btn danger" id="dev-scan-failed">scan.failed</button>
+        </div>
+        <div class="dev-row">
+          <select class="dev-select" id="dev-fixture-select" aria-label="Result fixture"></select>
+          <button class="dev-btn" id="dev-send-result">Send result.show</button>
+        </div>
+        <p class="dev-status" id="dev-scan-status">Awaiting capture.request from HUD.</p>
+      </div>
+
+      <div class="dev-card">
+        <h3>Action Acknowledgements</h3>
+        <div class="dev-row">
+          <button class="dev-btn" id="dev-ack-accept">action.accepted</button>
+          <button class="dev-btn" id="dev-ack-complete">action.completed</button>
+          <button class="dev-btn danger" id="dev-ack-fail">action.failed</button>
+        </div>
+        <label class="toggle-line"><input type="checkbox" id="dev-auto-ack" checked /> auto-ack actions</label>
+        <p class="dev-status" id="dev-action-status">No action received.</p>
+      </div>
+
+      <div class="dev-card">
+        <h3>Negative Tests</h3>
+        <div class="dev-row">
+          <button class="dev-btn danger" id="dev-neg-malformed">Malformed</button>
+          <button class="dev-btn danger" id="dev-neg-stale">Stale requestId</button>
+          <button class="dev-btn danger" id="dev-neg-dupe">Duplicate terminal</button>
+          <button class="dev-btn danger" id="dev-neg-oversize">Oversized</button>
+          <button class="dev-btn danger" id="dev-neg-device">Wrong device</button>
+          <button class="dev-btn danger" id="dev-neg-session">Wrong session</button>
+        </div>
+      </div>
+
+      <div class="dev-card">
+        <h3>Performance (simulated, local)</h3>
+        <div id="perf-panel">
+          <div class="perf-row"><span>Pair → Ready</span><span id="perf-pair">—</span></div>
+          <div class="perf-row"><span>Scan → Processing</span><span id="perf-scan-proc">—</span></div>
+          <div class="perf-row"><span>Scan → Result</span><span id="perf-scan-result">—</span></div>
+          <div class="perf-row"><span>Save/Open → Confirmed</span><span id="perf-action">—</span></div>
+          <div class="perf-row"><span>Dismiss → Ready</span><span id="perf-dismiss">—</span></div>
+        </div>
+      </div>
+
+      <div class="dev-card">
+        <h3>Message Log (metadata only)</h3>
+        <div id="dev-log" aria-live="polite"></div>
+        <div class="dev-row" style="margin-top:8px;">
+          <button class="dev-btn" id="dev-clear-log">Clear</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal-backdrop" id="about-modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <h2 id="about-title">About this simulation</h2>
+    <p>This is an interactive browser simulation of the K Scan AI Meta glasses experience. The 600×600 panel renders the real production HUD build (companion mode) — its state machine, message protocol, and result contract are unmodified. This outer page plays the role of the paired phone using synthetic, local, in-memory data only.</p>
+    <p>No physical Meta hardware is connected. No camera or microphone access occurs anywhere on this page. No real account, backend, or commerce data is used — every result is a fictional fixture.</p>
+    <p>Engineering-oriented scenario injection, protocol negative-tests, and a raw message log remain available in <strong>QA mode</strong>, and at the legacy <a href="./simulator.html">image/text scan simulator</a> and <a href="./companion.html">protocol test console</a>.</p>
+    <button type="button" class="modal-close" id="about-close">Close</button>
+  </div>
+</div>
+
+<script type="module" src="./src/simulatorV2/simulatorV2.js"></script>
+</body>
+</html>

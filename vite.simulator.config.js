@@ -18,6 +18,7 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         simulator: resolve(__dirname, 'simulator.html'),
         companion: resolve(__dirname, 'companion.html'),
+        simulatorV2: resolve(__dirname, 'simulator-v2.html'),
       },
     },
   },
