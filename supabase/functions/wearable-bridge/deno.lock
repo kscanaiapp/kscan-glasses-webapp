@@ -3,6 +3,7 @@
   "specifiers": {
     "jsr:@supabase/functions-js@2": "2.112.3",
     "npm:@supabase/server@1": "1.4.1_@supabase+supabase-js@2.110.7",
+    "npm:@supabase/supabase-js@2": "2.110.7",
     "npm:openai@^4.52.5": "4.104.0"
   },
   "jsr": {

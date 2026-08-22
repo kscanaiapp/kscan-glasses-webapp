@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { normalizeWearableResult } from './normalize.ts';
 
 /**
  * wearable-scan Edge Function
@@ -130,50 +131,6 @@ async function callCanonicalScanner(imageDataUrl: string, requestId: string): Pr
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-function normalizeWearableResult(raw: any, requestId: string): any {
-  if (!raw || typeof raw !== 'object') {
-    throw new Error('INVALID_RESULT_SHAPE');
-  }
-
-  const products = Array.isArray(raw.products) ? raw.products : [];
-  const styleMeta = raw.style_metadata && typeof raw.style_metadata === 'object' ? raw.style_metadata : {};
-
-  // Build primary match from first product
-  const primary = products.length > 0 ? products[0] : null;
-  const alternatives = products.slice(1, 6).map((p: any) => ({
-    title: String(p.name || p.title || 'Unnamed Product').slice(0, 120),
-    brand: String(p.brand || p.brandName || '').slice(0, 80),
-    price: typeof p.price === 'object' && p.price !== null ? p.price : { label: String(p.price || p.priceText || 'Price unavailable').slice(0, 40) },
-    commerceGroup: 'retail',
-    retailer: String(p.brand || p.brandName || '').slice(0, 80),
-    thumbnailUrl: typeof p.imageUrl === 'string' && p.imageUrl.startsWith('https://') ? p.imageUrl : null,
-    href: typeof p.url === 'string' && p.url.startsWith('https://') ? p.url : null,
-  }));
-
-  return {
-    resultId: crypto.randomUUID(), // plain UUID — wearable-bridge requires UUID result IDs
-    requestId,
-    summary: String(styleMeta.summary || styleMeta.detected_style || 'Style match found').slice(0, 300),
-    confidence: typeof styleMeta.confidence === 'number' && styleMeta.confidence >= 0 && styleMeta.confidence <= 100
-      ? Math.round(styleMeta.confidence)
-      : null,
-    primaryMatch: primary ? {
-      title: String(primary.name || primary.title || 'Unnamed Product').slice(0, 120),
-      brand: String(primary.brand || primary.brandName || '').slice(0, 80),
-      price: typeof primary.price === 'object' && primary.price !== null ? primary.price : { label: String(primary.price || primary.priceText || 'Price unavailable').slice(0, 40) },
-      commerceGroup: 'retail',
-      retailer: String(primary.brand || primary.brandName || '').slice(0, 80),
-      thumbnailUrl: typeof primary.imageUrl === 'string' && primary.imageUrl.startsWith('https://') ? primary.imageUrl : null,
-      href: typeof primary.url === 'string' && primary.url.startsWith('https://') ? primary.url : null,
-    } : null,
-    alternatives,
-    actions: ['save', 'open_on_phone'],
-    generatedAt: Date.now(),
-    expiresAt: Date.now() + 5 * 60 * 1000, // 5 minute result TTL
-    demoMode: false,
-  };
 }
 
 Deno.serve(async (req: Request) => {

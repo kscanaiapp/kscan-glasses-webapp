@@ -41,6 +41,7 @@
     "test:companion-runtime": "npm run test:companion-reconnect",
     "test:companion": "npm run test:companion-protocol && npm run test:companion-pairing && npm run test:companion-statemachine && npm run test:companion-result && npm run test:companion-reconnect",
     "test:wearable": "node scripts/wearable-integration-tests.js",
+    "test:wearable-scan-backend": "deno test --no-check supabase/functions/wearable-scan/_test.ts",
     "test": "npm run verify:models && npm run build && npm run build:simulator && npm run build:hardware && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts && npm run test:companion && npm run test:wearable"
   },
   "devDependencies": {
