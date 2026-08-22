@@ -139,6 +139,19 @@ export function normalizeStyleMatch(raw) {
   };
 }
 
+// ── Adapter: real backend analyze response → StyleMatch ──
+//
+// Used by the wearable scan path when the phone receives a live backend
+// result. Returns a canonical StyleMatch with source='scan' and isDemo=false.
+export function buildBackendStyleMatch(response) {
+  const normalized = normalizeStyleMatch(response);
+  // Override demo markers for real backend results
+  normalized.source = 'scan';
+  normalized.meta.isDemo = false;
+  normalized.meta.sourceLabel = 'K SCAN LIVE';
+  return normalized;
+}
+
 // ── Adapter: current mock/demo analyze response → StyleMatch ──
 //
 // This is the entry point for the existing investor demo. It takes the

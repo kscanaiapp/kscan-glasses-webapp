@@ -82,10 +82,10 @@ for (const rel of optionalSrc) {
 // ═══════════════════════════════════════════════════════════════════
 console.log('\n=== B. Dist/Build Asset Integrity ===');
 
-const distHtmlPath  = path.join(root, 'dist', 'index.html');
-const distModelPath = path.join(root, 'dist', 'models', 'blaze_face_full_range.tflite');
-const distWasmDir   = path.join(root, 'dist', 'mediapipe', 'wasm');
-const distAssetsDir = path.join(root, 'dist', 'assets');
+const distHtmlPath  = path.join(root, 'dist-production', 'index.html');
+const distModelPath = path.join(root, 'dist-production', 'models', 'blaze_face_full_range.tflite');
+const distWasmDir   = path.join(root, 'dist-production', 'mediapipe', 'wasm');
+const distAssetsDir = path.join(root, 'dist-production', 'assets');
 
 fileExists(distHtmlPath)
   ? pass('B.dist/index.html', 'exists', 'exists')

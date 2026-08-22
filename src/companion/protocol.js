@@ -216,7 +216,10 @@ const PAYLOAD_SCHEMAS = {
   },
   [MESSAGE_TYPES.SESSION_READY]: {
     required: [],
-    fields: new Set(['phoneDeviceName']),
+    // sessionToken: the HUD relays its short-lived wearable session token to
+    // the phone over the trusted local channel so the phone can invoke
+    // wearable-scan on the HUD session's behalf. Never logged or persisted.
+    fields: new Set(['phoneDeviceName', 'sessionToken', 'sessionExpiresAt']),
   },
   [MESSAGE_TYPES.SESSION_REFRESH_REQUIRED]: {
     required: ['reason'],

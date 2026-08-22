@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:simulator": "vite build --config vite.simulator.config.js",
+    "build:hardware": "vite build --config vite.hardware.config.js",
     "verify:artifacts": "node scripts/verify-artifacts.js",
     "test:artifacts": "npm run verify:artifacts",
     "lint": "eslint .",
@@ -39,7 +40,8 @@
     "test:companion-reconnect": "node scripts/companion-reconnect-tests.js",
     "test:companion-runtime": "npm run test:companion-reconnect",
     "test:companion": "npm run test:companion-protocol && npm run test:companion-pairing && npm run test:companion-statemachine && npm run test:companion-result && npm run test:companion-reconnect",
-    "test": "npm run verify:models && npm run build && npm run build:simulator && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts && npm run test:companion"
+    "test:wearable": "node scripts/wearable-integration-tests.js",
+    "test": "npm run verify:models && npm run build && npm run build:simulator && npm run build:hardware && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts && npm run test:companion && npm run test:wearable"
   },
   "devDependencies": {
     "eslint": "9.39.4",

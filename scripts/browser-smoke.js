@@ -245,13 +245,13 @@ async function main() {
     console.error('Chromium not found. Set KSCAN_CHROME_PATH or run: npx playwright-core install chromium');
     process.exit(2);
   }
-  if (!existsSync('dist-simulator/index.html') || !existsSync('dist/index.html')) {
-    console.error('dist/ and dist-simulator/ must exist — run builds first.');
+  if (!existsSync('dist-simulator/index.html') || !existsSync('dist-production/index.html')) {
+    console.error('dist-production/ and dist-simulator/ must exist — run builds first.');
     process.exit(1);
   }
 
   const simServer = await serve('dist-simulator', SIM_PORT);
-  const prodServer = await serve('dist', PROD_PORT);
+  const prodServer = await serve('dist-production', PROD_PORT);
 
   const browser = await chromium.launch({ executablePath: HEADLESS_SHELL });
 
@@ -543,7 +543,7 @@ async function main() {
   }
 
   // ── Scenario 10: production candidate truthfulness ──────────────────────
-  console.log('\n=== S10. Production candidate (dist/) truthfulness ===');
+  console.log('\n=== S10. Production candidate (dist-production/) truthfulness ===');
   {
     const page = await newPage();
     await page.goto(PROD_URL, { waitUntil: 'load' });

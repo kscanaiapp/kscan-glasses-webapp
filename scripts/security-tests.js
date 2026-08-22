@@ -537,9 +537,9 @@ function findMainBundle(dir) {
   return file ? join(assets, file) : null;
 }
 
-const prodBundlePath = findMainBundle('dist');
+const prodBundlePath = findMainBundle('dist-production');
 check('F0.production-bundle-exists', () => {
-  assert.ok(prodBundlePath, 'dist/assets/main-*.js missing — run npm run build first');
+  assert.ok(prodBundlePath, 'dist-production/assets/main-*.js missing — run npm run build first');
 });
 
 if (prodBundlePath) {
@@ -565,6 +565,30 @@ if (prodBundlePath) {
     assert.ok(simBundle.includes('supabaseRefreshToken'), 'URL-token intake missing from LOCAL QA simulator bundle');
   });
 }
+
+// Hardware candidate bundle: flags fully replaced, banner present, no
+// URL-token intake path (same trust posture as production).
+const hwBundlePath = findMainBundle('dist-hardware');
+check('F4.hardware-candidate-bundle-truthfulness', () => {
+  assert.ok(hwBundlePath, 'dist-hardware/assets/main-*.js missing — run npm run build:hardware first');
+  const hwBundle = readFileSync(hwBundlePath, 'utf8');
+  assert.ok(!hwBundle.includes('__KSCAN_SIMULATOR_BUILD__'), 'unreplaced simulator gate identifier in candidate bundle');
+  assert.ok(!hwBundle.includes('__KSCAN_HARDWARE_CANDIDATE_BUILD__'), 'unreplaced candidate gate identifier in candidate bundle');
+  assert.ok(hwBundle.includes('PRIVATE HARDWARE CANDIDATE'), 'candidate banner dead-code-eliminated or flag not applied');
+  assert.ok(!hwBundle.includes('supabaseRefreshToken'), 'URL-token intake path reachable in candidate bundle');
+});
+
+// Production and simulator bundles must NOT contain the candidate banner
+// string at all (it must be dead-code-eliminated, not just unreachable).
+check('F5.candidate-banner-absent-from-non-candidate-bundles', () => {
+  const prodBundle = prodBundlePath ? readFileSync(prodBundlePath, 'utf8') : '';
+  assert.ok(prodBundle, 'production bundle missing — run npm run build first');
+  assert.ok(!prodBundle.includes('PRIVATE HARDWARE CANDIDATE'), 'candidate banner string leaked into production bundle');
+  const simBundlePath = findMainBundle('dist-simulator');
+  const simBundle = simBundlePath ? readFileSync(simBundlePath, 'utf8') : '';
+  assert.ok(simBundle, 'simulator bundle missing — run npm run build:simulator first');
+  assert.ok(!simBundle.includes('PRIVATE HARDWARE CANDIDATE'), 'candidate banner string leaked into simulator bundle');
+});
 
 // ═══════════════════════════════════════════════════════════════════
 console.log(`\n=== Security tests summary: ${passCount} PASS / ${failCount} FAIL ===`);

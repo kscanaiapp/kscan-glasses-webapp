@@ -49,8 +49,21 @@ function readTextSafe(file) {
   }
 }
 
-const PROD = 'dist';
+const PROD = 'dist-production';
 const SIM = 'dist-simulator';
+const HW = 'dist-hardware';
+
+// Shared scanner: returns the first file whose text contains `needle`.
+function findFileContaining(textFiles, needle) {
+  for (const file of textFiles) {
+    const text = readTextSafe(file);
+    if (!text) continue;
+    if (text.includes(needle)) return file;
+  }
+  return null;
+}
+
+const HARDWARE_BANNER = 'PRIVATE HARDWARE CANDIDATE';
 
 // ── Production artifact ────────────────────────────────────────────────────
 if (!existsSync(join(PROD, 'index.html'))) {
@@ -175,6 +188,12 @@ if (!existsSync(join(PROD, 'index.html'))) {
   if (secretHit) bad('prod:no-secrets', secretHit);
   else ok('prod:no-secrets');
 
+  // Production (public demo) must NOT carry the private-candidate banner —
+  // the string is dead-code-eliminated from this bundle by construction.
+  const prodBannerHit = findFileContaining(prodTextFiles, HARDWARE_BANNER);
+  if (prodBannerHit) bad('prod:no-hardware-candidate-flag', `candidate banner in ${prodBannerHit}`);
+  else ok('prod:no-hardware-candidate-flag');
+
   // No large inlined base64 blobs (raw image fixtures must not ship).
   let b64Hit = null;
   for (const file of prodTextFiles) {
@@ -231,6 +250,12 @@ if (!existsSync(join(SIM, 'simulator.html'))) {
   if (simB64) bad('sim:fixture-not-hardcoded', simB64);
   else ok('sim:fixture-not-hardcoded');
 
+  // Simulator build must NOT contain the hardware candidate banner.
+  const simTextFiles = simFiles.filter((f) => /\.(html|js)$/.test(f));
+  const simHardwareBannerHit = findFileContaining(simTextFiles, HARDWARE_BANNER);
+  if (simHardwareBannerHit) bad('sim:no-hardware-candidate-flag', `Simulator build contains hardware candidate banner: ${simHardwareBannerHit}`);
+  else ok('sim:no-hardware-candidate-flag');
+
   // Mock phone companion is a simulator-only entry with LOCAL QA labeling.
   if (!existsSync(join(SIM, 'companion.html'))) {
     bad('sim:companion-html', `${SIM}/companion.html missing`);
@@ -242,13 +267,81 @@ if (!existsSync(join(SIM, 'simulator.html'))) {
       bad('sim:companion-html', 'companion.html missing LOCAL QA / NON-PRODUCTION label');
     }
   }
-  const simTextFiles = simFiles.filter((f) => /\.(html|js)$/.test(f));
   const hasMockMarkers = simTextFiles.some((file) => {
     const text = readTextSafe(file);
     return text && text.includes('Mock Phone (LOCAL QA)');
   });
   if (hasMockMarkers) ok('sim:companion-markers');
   else bad('sim:companion-markers', 'mock companion markers missing from simulator bundle');
+}
+
+// ── Hardware candidate artifact ────────────────────────────────────────────
+if (!existsSync(join(HW, 'index.html'))) {
+  bad('hw:exists', `${HW}/index.html missing — run npm run build:hardware first`);
+} else {
+  ok('hw:exists');
+
+  const hwFiles = walk(HW).map((f) => f.replace(/\\/g, '/'));
+  const hwTextFiles = hwFiles.filter((f) => /\.(html|js|css|json|webmanifest|map)$/.test(f));
+
+  // Candidate banner MUST be present (compile-time flag actually took effect).
+  const hwBannerHit = findFileContaining(hwTextFiles, HARDWARE_BANNER);
+  if (hwBannerHit) ok('hw:hardware-candidate-flag', hwBannerHit);
+  else bad('hw:hardware-candidate-flag', 'Candidate banner missing — flag may be a string or DCE failed');
+
+  // No simulator page or simulator-only markers in the candidate artifact.
+  if (hwFiles.some((f) => /simulator\.html$/.test(f))) {
+    bad('hw:no-simulator-html', 'simulator.html found in hardware candidate dist');
+  } else {
+    ok('hw:no-simulator-html');
+  }
+  if (hwFiles.some((f) => /companion\.html$/.test(f))) {
+    bad('hw:no-companion-html', 'mock companion.html found in hardware candidate dist');
+  } else {
+    ok('hw:no-companion-html');
+  }
+  const hwSimulatorMarkers = [
+    'LOCAL QA / NON-PRODUCTION',
+    'Post mock session',
+    'inject-session',
+    'live-url-token',
+    'Mock Phone (LOCAL QA)',
+    'KSCAN_COMPANION_FIXTURE_V1',
+  ];
+  let hwMarkerHit = null;
+  for (const marker of hwSimulatorMarkers) {
+    const hit = findFileContaining(hwTextFiles, marker);
+    if (hit) { hwMarkerHit = `${marker} in ${hit}`; break; }
+  }
+  if (hwMarkerHit) bad('hw:no-simulator-markers', hwMarkerHit);
+  else ok('hw:no-simulator-markers');
+
+  // No localhost transport defaults in the candidate artifact.
+  let hwWsHit = null;
+  for (const marker of ['ws://localhost', 'localhost:8787']) {
+    const hit = findFileContaining(hwTextFiles, marker);
+    if (hit) { hwWsHit = hit; break; }
+  }
+  if (hwWsHit) bad('hw:no-localhost-transport', hwWsHit);
+  else ok('hw:no-localhost-transport');
+
+  // Secret scan on the candidate artifact.
+  const hwSecretPatterns = [
+    { name: 'jwt-like', re: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}/ },
+    { name: 'service-role', re: /service_role/i },
+    { name: 'supabase-secret', re: /sb_secret_[A-Za-z0-9]/ },
+  ];
+  let hwSecretHit = null;
+  for (const file of hwTextFiles) {
+    const text = readTextSafe(file);
+    if (!text) continue;
+    for (const { name, re } of hwSecretPatterns) {
+      if (re.test(text)) { hwSecretHit = `${name} in ${file}`; break; }
+    }
+    if (hwSecretHit) break;
+  }
+  if (hwSecretHit) bad('hw:no-secrets', hwSecretHit);
+  else ok('hw:no-secrets');
 }
 
 console.log('');

@@ -51,6 +51,8 @@ export default [
       'node_modules/**',
       'dist/**',
       'dist-simulator/**',
+      'dist-production/**',
+      'dist-hardware/**',
       'public/mediapipe/**',
       '.vercel/**',
     ],
@@ -63,6 +65,7 @@ export default [
       globals: {
         ...browserGlobals,
         __KSCAN_SIMULATOR_BUILD__: 'readonly',
+        __KSCAN_HARDWARE_CANDIDATE_BUILD__: 'readonly',
       },
     },
     rules: {

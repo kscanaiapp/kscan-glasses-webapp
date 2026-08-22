@@ -9,7 +9,9 @@ export default defineConfig({
   define: {
     // Compile-time true: the LOCAL QA build may use URL-token intake and
     // simulator conveniences. This artifact must never be deployed publicly.
-    __KSCAN_SIMULATOR_BUILD__: 'true',
+    __KSCAN_SIMULATOR_BUILD__: true,
+    // Simulator is never the hardware candidate.
+    __KSCAN_HARDWARE_CANDIDATE_BUILD__: false,
   },
   build: {
     outDir: 'dist-simulator',

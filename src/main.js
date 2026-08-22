@@ -54,6 +54,12 @@ let scanInFlight = false;
 let scanToken = 0;
 let pipelineMode = 'image'; // 'image' | 'text' | 'companion' — drives the processing stepper
 
+// Hardware candidate diagnostics tracking
+let successfulScanCount = 0;
+let reconnectCount = 0;
+let lastScanStartAt = 0;
+let lastScanDurationMs = 0;
+
 // Phone-companion mode (?companion=1): the HUD is driven by the companion
 // runtime (pairing → trusted wearable session → structured result handoff).
 // Without a configured peer the transport fails closed (UNAVAILABLE).
@@ -518,6 +524,12 @@ function normalizeScanError(error) {
   return toUserFriendlyCaptureError(error);
 }
 
+// ─── Hardware candidate build detection ──────────────────────────────
+function isHardwareCandidateBuild() {
+  return typeof __KSCAN_HARDWARE_CANDIDATE_BUILD__ !== 'undefined'
+    && __KSCAN_HARDWARE_CANDIDATE_BUILD__ === true;
+}
+
 // ─── Hardware test mode (Phase 30) ───────────────────────────────────
 // Canonical activation: ?mode=hardware on the app URL.
 // Advanced runtime activation: window.__KSCAN_CONFIG__.HARDWARE_TEST_MODE = true.
@@ -616,6 +628,7 @@ export async function startScan() {
     showScreen('processing');
 
     let response;
+    lastScanStartAt = performance.now();
     if (shouldUseBridgeCapture()) {
       response = await runBridgeScanPipeline(token);
     } else {
@@ -639,6 +652,9 @@ export async function startScan() {
     }
 
     if (token !== scanToken) return; // cancelled mid-flight — discard stale result
+
+    lastScanDurationMs = Math.round(performance.now() - lastScanStartAt);
+    successfulScanCount += 1;
 
     // Guest scan history: small metadata only — never images or payloads.
     const products = Array.isArray(response?.products) ? response.products : [];
@@ -1077,6 +1093,10 @@ function onCompanionStateChange(snapshot, { meta }) {
   if (companionScanOnProcessing) clearPipeline();
   companionScanOnProcessing = false;
 
+  if (state === RUNTIME_STATE.RECONNECTING) {
+    reconnectCount += 1;
+  }
+
   if (state === RUNTIME_STATE.ERROR) {
     errorOwner = 'companion';
     const code = snapshot.lastError && typeof snapshot.lastError === 'object'
@@ -1116,8 +1136,8 @@ function renderCompanionResultItems(styleMatch) {
   els.resultsList.innerHTML = '';
 
   const groups = [
-    ['retail', 'Retail — mock phone source'],
-    ['resale', 'Resale — mock phone source'],
+    ['retail', styleMatch.meta?.isDemo ? 'Retail — mock phone source' : 'Retail — K Scan Live'],
+    ['resale', styleMatch.meta?.isDemo ? 'Resale — mock phone source' : 'Resale — K Scan Live'],
     ['suggested', 'Suggested Sources'],
   ];
   groups.forEach(([key, label]) => {
@@ -1500,6 +1520,20 @@ function renderDiagnostics() {
   status.appendChild(makeRow('Last error code', badge(lastSafeErrorCode === 'none' ? 'off' : 'warn', lastSafeErrorCode)));
   status.appendChild(makeRow('Bridge error', badge(bridgeSnap.lastError ? 'warn' : 'off', bridgeSnap.lastError || 'none')));
 
+  // Hardware candidate diagnostics (Objective R)
+  status.appendChild(makeRow('Build mode', badge(
+    isHardwareCandidateBuild() ? 'warn' : (isHardwareTestMode() ? 'warn' : 'off'),
+    isHardwareCandidateBuild() ? 'Hardware Candidate Build' : (isHardwareTestMode() ? 'HW Test Mode' : 'Standard'),
+  )));
+  status.appendChild(makeRow('Scan count', badge(successfulScanCount > 0 ? 'on' : 'off', String(successfulScanCount))));
+  status.appendChild(makeRow('Last scan duration', badge(lastScanDurationMs > 0 ? 'on' : 'off', `${lastScanDurationMs}ms`)));
+  status.appendChild(makeRow('Reconnect count', badge(reconnectCount > 0 ? 'warn' : 'off', String(reconnectCount))));
+  status.appendChild(makeRow('Privacy sanitizer', badge('on', 'Ready (lazy-load)')));
+  status.appendChild(makeRow('Trusted origin', badge(
+    window.location.origin.includes('localhost') ? 'warn' : 'on',
+    window.location.origin || 'unknown',
+  )));
+
   if (companionRuntime) {
     const d = companionRuntime.getDiagnostics(); // metadata only by design
     status.appendChild(makeRow('Companion', badge(
@@ -1676,6 +1710,16 @@ function init() {
     const banner = document.getElementById('alpha-banner');
     if (banner) banner.textContent = 'ALPHA · HW TEST MODE';
     setPill('pill-bridge', 'mock', 'Bridge: HW Test');
+  }
+  // Hardware candidate: distinct banner from public demo and simulator.
+  // The condition is a compile-time constant expression (define + typeof
+  // fold) so the banner STRING ITSELF is dead-code-eliminated from the
+  // production and simulator bundles — scripts/verify-artifacts.js asserts
+  // the string is absent there and present in dist-hardware.
+  if (typeof __KSCAN_HARDWARE_CANDIDATE_BUILD__ !== 'undefined'
+    && __KSCAN_HARDWARE_CANDIDATE_BUILD__ === true) {
+    const banner = document.getElementById('alpha-banner');
+    if (banner) banner.textContent = 'PRIVATE HARDWARE CANDIDATE — NOT FOR PUBLIC RELEASE';
   }
   // Phone companion: active only with ?companion=1; otherwise the pill is
   // hidden because no companion relationship exists in this build mode.
