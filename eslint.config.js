@@ -33,6 +33,7 @@ const browserGlobals = {
   createImageBitmap: 'readonly',
   OffscreenCanvas: 'readonly',
   WebSocket: 'readonly',
+  crypto: 'readonly',
 };
 
 const nodeGlobals = {

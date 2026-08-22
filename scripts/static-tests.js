@@ -996,6 +996,38 @@ try {
 }
 
 // ---------------------------------------------------------------------------
+// J. Real phone companion QA page — must never ship in a built artifact
+// ---------------------------------------------------------------------------
+console.log('\n=== J. Real Companion QA Artifact Separation ===');
+
+const realCompanionHtmlPath = path.join(root, 'companion-real.html');
+const realCompanionEntryPath = path.join(srcDir, 'companion', 'realCompanionEntry.js');
+
+fileExists(realCompanionHtmlPath)
+  ? pass('J.real-companion:page-exists', 'companion-real.html exists', 'found')
+  : fail('J.real-companion:page-exists', 'companion-real.html exists', 'missing');
+
+fileExists(realCompanionEntryPath)
+  ? pass('J.real-companion:entry-exists', 'src/companion/realCompanionEntry.js exists', 'found')
+  : fail('J.real-companion:entry-exists', 'src/companion/realCompanionEntry.js exists', 'missing');
+
+[
+  ['vite.config.js', 'production'],
+  ['vite.simulator.config.js', 'simulator'],
+  ['vite.hardware.config.js', 'hardware'],
+].forEach(([file, label]) => {
+  const content = readFile(path.join(root, file));
+  !content.includes('companion-real')
+    ? pass(`J.real-companion:excluded-from-${label}`, `${file} does not reference companion-real`, 'clean')
+    : fail(`J.real-companion:excluded-from-${label}`, `${file} does not reference companion-real`, 'FOUND');
+});
+
+const realCompanionEntryContent = readFile(realCompanionEntryPath);
+realCompanionEntryContent.includes('signInWithPassword') && realCompanionEntryContent.includes('autoApprove: false')
+  ? pass('J.real-companion:requires-real-auth', 'real sign-in required, no auto-approve bypass', 'found')
+  : fail('J.real-companion:requires-real-auth', 'real sign-in required, no auto-approve bypass', 'missing');
+
+// ---------------------------------------------------------------------------
 // I. Phase 27 — Local QA + Pre-Deployment Readiness
 // ---------------------------------------------------------------------------
 console.log('\n=== I. Phase 27 Local QA ===');

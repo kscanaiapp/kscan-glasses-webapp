@@ -15,8 +15,10 @@ import { handleCompanionSave } from './companionSave.js';
 import { handleCompanionOpenOnPhone } from './companionOpenOnPhone.js';
 import {
   createPairingChallenge,
-  approvePairingChallenge,
-  revokePairing,
+  pollPairing,
+  approvePairingByCode,
+  denyPairingByCode,
+  revokeWearableSession,
   wearableScan,
 } from './wearableBackend.js';
 import { sanitizeImageBeforeUpload } from '../privacyImageSanitizer.js';
@@ -80,6 +82,8 @@ export function createPhoneCompanion({
   let pairedHudDeviceId = null;
   let currentPairingNonce = null;
   let currentChallenge = null;
+  let currentPairingHandle = null;
+  let currentPairingSecret = null;
   let activeSessionToken = null;
   let activeSessionId = null;
   let activeRequestId = null;
@@ -141,14 +145,19 @@ export function createPhoneCompanion({
     pairedHudDeviceId = msg.deviceId;
     currentPairingNonce = msg.payload.pairingNonce;
 
-    // Create backend challenge
-    const res = await createPairingChallenge(userId, msg.deviceId, msg.payload.hudDeviceName);
+    // Create backend challenge. wearable-bridge's pair.create is
+    // unauthenticated and validates a UUID-shaped deviceId/requestId — the
+    // local companion-protocol deviceId (e.g. "hud_...") does not qualify,
+    // so a fresh UUID stands in for the wearable's backend identity here.
+    const res = await createPairingChallenge(crypto.randomUUID(), msg.payload.hudDeviceName);
     if (!res.ok) {
       send(MESSAGE_TYPES.PAIR_DENIED, { pairingNonce: currentPairingNonce, reason: 'backend-error' }, { requestId: null, sessionId: null });
       transition(PHONE_STATE.IDLE);
       return;
     }
     currentChallenge = res.challenge;
+    currentPairingHandle = res.pairingHandle;
+    currentPairingSecret = res.pairingSecret;
 
     // Send challenge to HUD (nonce confirmation)
     send(MESSAGE_TYPES.PAIR_CHALLENGE, {
@@ -171,21 +180,31 @@ export function createPhoneCompanion({
   async function approvePairing() {
     if (state !== PHONE_STATE.PAIRING || !currentChallenge) return;
 
-    const res = await approvePairingChallenge(currentChallenge, userId, phoneDeviceId);
-    if (!res.ok) {
+    const approveRes = await approvePairingByCode(currentChallenge, phoneDeviceId);
+    if (!approveRes.ok) {
       send(MESSAGE_TYPES.PAIR_DENIED, { pairingNonce: currentPairingNonce, reason: 'approval-failed' }, { requestId: null, sessionId: null });
       transition(PHONE_STATE.IDLE);
       return;
     }
 
-    activeSessionToken = res.sessionToken;
-    activeSessionId = res.sessionId;
+    // pair.approve only confirms consent; the session itself is minted by
+    // pair.poll (unauthenticated, trust = pairingHandle+pairingSecret) —
+    // the same call the wearable would make in a real deployment.
+    const pollRes = await pollPairing(currentPairingHandle, currentPairingSecret);
+    if (!pollRes.ok) {
+      send(MESSAGE_TYPES.PAIR_DENIED, { pairingNonce: currentPairingNonce, reason: 'session-issue-failed' }, { requestId: null, sessionId: null });
+      transition(PHONE_STATE.IDLE);
+      return;
+    }
+
+    activeSessionToken = pollRes.wearableToken;
+    activeSessionId = pollRes.sessionId;
 
     send(MESSAGE_TYPES.PAIR_APPROVED, {
       pairingNonce: currentPairingNonce,
-      sessionId: res.sessionId,
-      sessionExpiresAt: new Date(res.expiresAt).getTime(),
-      capabilities: res.capabilities,
+      sessionId: pollRes.sessionId,
+      sessionExpiresAt: pollRes.sessionExpiresAt,
+      capabilities: pollRes.capabilities,
       phoneDeviceName: phoneDeviceId,
     }, { requestId: null, sessionId: null });
 
@@ -200,10 +219,13 @@ export function createPhoneCompanion({
 
   function denyPairing(reason) {
     if (state !== PHONE_STATE.PAIRING) return;
+    if (currentChallenge) denyPairingByCode(currentChallenge); // fire-and-forget backend cleanup
     send(MESSAGE_TYPES.PAIR_DENIED, { pairingNonce: currentPairingNonce, reason: reason || 'user-denied' }, { requestId: null, sessionId: null });
     transition(PHONE_STATE.IDLE);
     currentPairingNonce = null;
     currentChallenge = null;
+    currentPairingHandle = null;
+    currentPairingSecret = null;
   }
 
   // ── Scan pipeline ────────────────────────────────────────────────────────
@@ -418,7 +440,7 @@ export function createPhoneCompanion({
     denyPairing,
     unpair() {
       if (activeSessionId) {
-        revokePairing(null, userId, 'user-unpair'); // pairingId not tracked here; backend handles by user+device
+        revokeWearableSession(activeSessionId, 'user_revoked');
       }
       activeSessionToken = null;
       activeSessionId = null;

@@ -56,6 +56,80 @@ async function safeInvoke(functionName, body) {
 // ── Pairing lifecycle (via wearable-bridge, phone JWT) ─────────────────────
 
 /**
+ * Create a pairing challenge on behalf of a wearable's local pair.request.
+ * UNAUTHENTICATED by design (wearable-bridge's pair.create takes no user
+ * JWT) — the wearable has no identity yet. wearableDeviceId is a fresh
+ * per-attempt UUID minted by the caller (the phone, standing in for the
+ * wearable in this reference topology), never the local companion-protocol
+ * deviceId (which is not UUID-shaped and would fail wearable-bridge's frame
+ * validation).
+ * @param {string} wearableDeviceId - fresh UUID identifying this pairing attempt.
+ * @param {string} [hudDeviceName] - display name/model, bounded server-side.
+ */
+export async function createPairingChallenge(wearableDeviceId, hudDeviceName) {
+  const requestId = crypto.randomUUID();
+  const frame = JSON.stringify({
+    protocolVersion: 1,
+    messageType: 'pair.request',
+    messageId: `pair_${requestId}`,
+    requestId,
+    sessionId: '',
+    deviceId: wearableDeviceId,
+    timestamp: Date.now(),
+    expiresAt: Date.now() + 60_000,
+    payload: { model: String(hudDeviceName || 'K Scan Meta HUD').slice(0, 80), appVersion: '' },
+  });
+  const res = await safeInvoke('wearable-bridge', { operation: 'pair.create', frame });
+  if (!res.ok) return res;
+  const ticket = res.data.ticket;
+  if (!ticket || typeof ticket.challengeCode !== 'string') {
+    return { ok: false, code: 'INVALID_RESPONSE', message: 'Malformed pairing ticket' };
+  }
+  return {
+    ok: true,
+    challenge: ticket.challengeCode,
+    pairingHandle: ticket.pairingHandle,
+    pairingSecret: ticket.pairingSecret,
+    expiresAt: ticket.expiresAt,
+  };
+}
+
+/**
+ * Poll for pairing outcome and, once approved, the issued wearable session.
+ * UNAUTHENTICATED — trust is the pairingHandle+pairingSecret pair minted by
+ * createPairingChallenge, exactly as wearable-bridge's pair.poll expects.
+ */
+export async function pollPairing(pairingHandle, pairingSecret) {
+  const res = await safeInvoke('wearable-bridge', { operation: 'pair.poll', pairingHandle, pairingSecret });
+  if (!res.ok) return res;
+  const poll = res.data.poll;
+  if (!poll || !Array.isArray(poll.frames)) {
+    return { ok: false, code: 'INVALID_RESPONSE', message: 'Malformed poll response' };
+  }
+  const parsedFrames = poll.frames
+    .map((raw) => { try { return JSON.parse(raw); } catch { return null; } })
+    .filter(Boolean);
+  if (parsedFrames.some((f) => f.messageType === 'pair.denied')) {
+    return { ok: false, code: 'PAIR_DENIED', message: 'Pairing was denied' };
+  }
+  if (parsedFrames.some((f) => f.messageType === 'pair.expired')) {
+    return { ok: false, code: 'PAIR_EXPIRED', message: 'Pairing challenge expired' };
+  }
+  const approved = parsedFrames.find((f) => f.messageType === 'pair.approved');
+  const ready = parsedFrames.find((f) => f.messageType === 'session.ready');
+  if (!poll.wearableToken || !approved) {
+    return { ok: false, code: 'PAIR_PENDING', message: 'Pairing not yet approved' };
+  }
+  return {
+    ok: true,
+    wearableToken: poll.wearableToken,
+    sessionId: approved.sessionId,
+    sessionExpiresAt: approved.payload?.sessionExpiresAt ?? null,
+    capabilities: Array.isArray(ready?.payload?.features) ? ready.payload.features : [],
+  };
+}
+
+/**
  * Approve a pending pairing by the 6-digit challenge code shown on the HUD.
  * The approving user identity comes from the caller JWT — never from args.
  * @param {string} challengeCode - 6-digit code displayed on the glasses.
