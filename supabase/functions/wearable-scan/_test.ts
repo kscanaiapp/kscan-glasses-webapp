@@ -82,14 +82,19 @@ Deno.test('normalizeWearableResult falls back to recommendedProducts for an olde
   assertEquals(result.primaryMatch.brand, 'Legacy Brand');
 });
 
-Deno.test('normalizeWearableResult prefers similarityMatches over recommendedProducts when both are present', () => {
+Deno.test('normalizeWearableResult leads with similarityMatches but keeps recommendedProducts when both are present', () => {
   const raw = realisticScanIdentifyResponse({
     similarityMatches: [{ name: 'Catalog Match', brand: 'Catalog Brand' }],
-    recommendedProducts: [{ name: 'Should Not Win', brand: 'Wrong Brand' }],
+    recommendedProducts: [{ name: 'Live Listing', brand: 'Live Brand' }],
   });
   const result = normalizeWearableResult(raw, 'req-5b');
   assertEquals(result.primaryMatch.title, 'Catalog Match');
   assertEquals(result.primaryMatch.brand, 'Catalog Brand');
+  // The live commerce listing is NOT discarded — it follows as a retail
+  // alternative. Dropping it was the defect this test now guards against.
+  assertEquals(result.alternatives.length, 1);
+  assertEquals(result.alternatives[0].title, 'Live Listing');
+  assertEquals(result.alternatives[0].commerceGroup, 'retail');
 });
 
 Deno.test('normalizeWearableResult returns no primaryMatch when no products are present at all', () => {
@@ -165,15 +170,48 @@ Deno.test('recommendedProducts are grouped as retail when there is no similarity
   assertEquals(result.alternatives[0].commerceGroup, 'retail');
 });
 
-Deno.test('an empty similarity shelf does not fall through and mislabel live commerce', () => {
-  // similarityMatches is present but empty: the function reads it (and gets
-  // nothing) rather than silently switching to recommendedProducts. That
-  // behaviour is already pinned elsewhere; here we assert it does not produce
-  // a mislabelled item either.
+Deno.test('an empty similarity shelf surfaces live commerce as retail instead of showing nothing', () => {
+  // THE REGRESSION THIS FILE EXISTS FOR.
+  //
+  // scan-identify emits `similarityMatches` on every image response, empty or
+  // not, so "is the similarityMatches key present?" is always true against the
+  // real backend. Selecting the product list by that key therefore discarded
+  // every live commerce listing and made 'retail' unreachable: a scan with an
+  // empty catalog shelf and five real, buyable listings showed the wearer
+  // nothing at all. This is the exact shape that produced that outcome.
   const raw = realisticScanIdentifyResponse({ similarityMatches: [], recommendedProducts: SAMPLE_PRODUCTS });
   const result = normalizeWearableResult(raw, 'req-group-3');
-  assertEquals(result.primaryMatch, null);
-  assertEquals(result.alternatives.length, 0);
+  assertExists(result.primaryMatch);
+  assertEquals(result.primaryMatch.title, 'Double-Breasted Overcoat');
+  assertEquals(result.primaryMatch.commerceGroup, 'retail');
+  assertEquals(result.alternatives.length, 1);
+  assertEquals(result.alternatives[0].commerceGroup, 'retail');
+});
+
+Deno.test('retail is reachable against the REAL scan-identify envelope, which always carries both keys', () => {
+  // A guard against re-introducing selection-by-key-presence in any form: with
+  // both keys always present (the real envelope), at least one item must still
+  // be able to come back labelled 'retail'.
+  const raw = realisticScanIdentifyResponse({
+    similarityMatches: [],
+    recommendedProducts: [{ name: 'Live Listing', brand: 'Live Brand' }],
+  });
+  const groups = [normalizeWearableResult(raw, 'req-group-5').primaryMatch]
+    .filter(Boolean)
+    .map((item: any) => item.commerceGroup);
+  assertEquals(groups, ['retail']);
+});
+
+Deno.test('a mixed response preserves every product and its own provenance', () => {
+  const raw = realisticScanIdentifyResponse({
+    similarityMatches: [{ name: 'Catalog A' }, { name: 'Catalog B' }],
+    recommendedProducts: [{ name: 'Retail A' }, { name: 'Retail B' }],
+  });
+  const result = normalizeWearableResult(raw, 'req-group-6');
+  const all = [result.primaryMatch, ...result.alternatives];
+  assertEquals(all.length, 4);
+  assertEquals(all.map((item: any) => item.title), ['Catalog A', 'Catalog B', 'Retail A', 'Retail B']);
+  assertEquals(all.map((item: any) => item.commerceGroup), ['suggested', 'suggested', 'retail', 'retail']);
 });
 
 Deno.test('no wearable item is ever labelled resale, because no resale signal exists upstream', () => {

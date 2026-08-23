@@ -32,38 +32,52 @@ export function toWearableProduct(p: any, commerceGroup: 'retail' | 'suggested' 
 // would have silently returned a fixed placeholder summary, null
 // confidence, and an EMPTY product list for every real wearable scan.
 // The real fields are `identification.visual_observation` (summary),
-// `identification.confidence_score` (confidence), and `similarityMatches`
-// (catalog shelf) falling back to `recommendedProducts` (live commerce) —
-// exactly the `hasSimilarityField` split the mobile mapper performs.
+// `identification.confidence_score` (confidence), `similarityMatches`
+// (catalog shelf) and `recommendedProducts` (live commerce).
 export function normalizeWearableResult(raw: any, requestId: string): any {
   if (!raw || typeof raw !== 'object') {
     throw new Error('INVALID_RESULT_SHAPE');
   }
 
   const identification = raw.identification && typeof raw.identification === 'object' ? raw.identification : {};
-  const hasSimilarityField = Object.prototype.hasOwnProperty.call(raw, 'similarityMatches');
   const recommendedProducts = Array.isArray(raw.recommendedProducts) ? raw.recommendedProducts : [];
   const similarityMatches = Array.isArray(raw.similarityMatches) ? raw.similarityMatches : [];
-  const products = hasSimilarityField ? similarityMatches : recommendedProducts;
 
-  // Commerce grouping is derived from WHICH array the product came from, not
-  // hard-coded. The two source arrays mean genuinely different things and the
-  // canonical StyleMatch shape has distinct buckets for them:
+  // Commerce grouping is derived from WHICH array each product came from. The
+  // two source arrays mean genuinely different things and the canonical
+  // StyleMatch shape has distinct buckets for them:
   //
   //   recommendedProducts -> live commerce listings   -> 'retail'
   //   similarityMatches   -> catalog similarity shelf -> 'suggested'
   //
-  // Stamping every item 'retail' (as this function previously did) told the
-  // wearer that a visual-similarity suggestion was a buyable retail listing.
+  // BOTH arrays are kept. An earlier version picked ONE of them by testing
+  // whether the `similarityMatches` KEY was present — but scan-identify's
+  // `normalized()` / `withSafeImageArrays()` helpers emit `similarityMatches`
+  // on EVERY image response, empty or not (supabase/functions/scan-identify/
+  // index.ts). That key test was therefore always true, which meant:
+  //   * 'retail' was unreachable — every wearable item was labelled
+  //     'suggested' regardless of where it came from; and
+  //   * every live commerce listing was silently discarded, so a scan whose
+  //     catalog shelf was empty showed the wearer NO products at all even
+  //     when real, buyable listings had been returned.
+  // Selection by key presence is gone: provenance decides the label, and
+  // nothing is dropped.
+  //
+  // Ordering: the catalog similarity shelf leads, because it answers "what is
+  // this?" — the question the wearer actually asked — and live listings follow
+  // as buyable alternatives. When the shelf is empty, the listings lead.
   //
   // 'resale' is deliberately NOT produced here: the scan-identify response
   // carries no resale provenance for a product, and inventing one from, say,
   // a retailer name would be a guess presented as a fact. The bucket stays
   // empty until a real resale signal exists upstream.
-  const commerceGroup: 'retail' | 'suggested' = hasSimilarityField ? 'suggested' : 'retail';
+  const grouped: any[] = [
+    ...similarityMatches.map((p: any) => toWearableProduct(p, 'suggested')),
+    ...recommendedProducts.map((p: any) => toWearableProduct(p, 'retail')),
+  ];
 
-  const primary = products.length > 0 ? toWearableProduct(products[0], commerceGroup) : null;
-  const alternatives = products.slice(1, 6).map((p: any) => toWearableProduct(p, commerceGroup));
+  const primary = grouped.length > 0 ? grouped[0] : null;
+  const alternatives = grouped.slice(1, 6);
 
   const summary = String(
     (typeof identification.visual_observation === 'string' && identification.visual_observation.trim())
