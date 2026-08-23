@@ -134,3 +134,65 @@ Deno.test('normalizeWearableResult throws on a non-object input', () => {
   }
   assertEquals(threw, true);
 });
+
+// ---------------------------------------------------------------------------
+// Commerce grouping.
+//
+// scan-identify returns two DIFFERENT kinds of product list and they do not
+// mean the same thing to a wearer:
+//
+//   recommendedProducts -> live commerce listings   -> 'retail'
+//   similarityMatches   -> catalog similarity shelf -> 'suggested'
+//
+// This function used to stamp `commerceGroup: 'retail'` on every item
+// regardless of origin, which presented a visual-similarity suggestion as a
+// buyable retail listing, and left the canonical StyleMatch 'suggested'
+// bucket permanently empty. These tests pin the provenance-derived grouping.
+// ---------------------------------------------------------------------------
+
+Deno.test('similarityMatches are grouped as suggested, not presented as retail listings', () => {
+  const result = normalizeWearableResult(realisticScanIdentifyResponse(), 'req-group-1');
+  assertEquals(result.primaryMatch.commerceGroup, 'suggested');
+  assertEquals(result.alternatives.length, 1);
+  assertEquals(result.alternatives[0].commerceGroup, 'suggested');
+});
+
+Deno.test('recommendedProducts are grouped as retail when there is no similarity shelf', () => {
+  const raw = realisticScanIdentifyResponse({ recommendedProducts: SAMPLE_PRODUCTS });
+  delete (raw as Record<string, unknown>).similarityMatches;
+  const result = normalizeWearableResult(raw, 'req-group-2');
+  assertEquals(result.primaryMatch.commerceGroup, 'retail');
+  assertEquals(result.alternatives[0].commerceGroup, 'retail');
+});
+
+Deno.test('an empty similarity shelf does not fall through and mislabel live commerce', () => {
+  // similarityMatches is present but empty: the function reads it (and gets
+  // nothing) rather than silently switching to recommendedProducts. That
+  // behaviour is already pinned elsewhere; here we assert it does not produce
+  // a mislabelled item either.
+  const raw = realisticScanIdentifyResponse({ similarityMatches: [], recommendedProducts: SAMPLE_PRODUCTS });
+  const result = normalizeWearableResult(raw, 'req-group-3');
+  assertEquals(result.primaryMatch, null);
+  assertEquals(result.alternatives.length, 0);
+});
+
+Deno.test('no wearable item is ever labelled resale, because no resale signal exists upstream', () => {
+  // Guards against a future change inventing a resale provenance out of a
+  // retailer name. If a genuine resale signal is added to scan-identify this
+  // test should be updated deliberately, not deleted incidentally.
+  for (const raw of [
+    realisticScanIdentifyResponse(),
+    realisticScanIdentifyResponse({ recommendedProducts: SAMPLE_PRODUCTS, similarityMatches: [] }),
+  ]) {
+    const result = normalizeWearableResult(raw, 'req-group-4');
+    const groups = [result.primaryMatch, ...result.alternatives]
+      .filter(Boolean)
+      .map((item: any) => item.commerceGroup);
+    assertEquals(groups.includes('resale'), false);
+  }
+});
+
+Deno.test('toWearableProduct defaults to retail when no group is supplied', () => {
+  assertEquals(toWearableProduct({ name: 'X' }).commerceGroup, 'retail');
+  assertEquals(toWearableProduct({ name: 'X' }, 'suggested').commerceGroup, 'suggested');
+});

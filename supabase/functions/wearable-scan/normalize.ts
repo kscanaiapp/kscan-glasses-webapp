@@ -7,7 +7,7 @@
 // app, the canonical consumer of this same response) into a bounded
 // wearable commerce entry. Reads both camelCase and snake_case field name
 // variants, matching how the mobile ProductShelf already reads this data.
-export function toWearableProduct(p: any): any {
+export function toWearableProduct(p: any, commerceGroup: 'retail' | 'suggested' = 'retail'): any {
   const retailer = String(p?.retailer || p?.source || '').slice(0, 80);
   const imageUrl = typeof p?.imageUrl === 'string' ? p.imageUrl : typeof p?.image_url === 'string' ? p.image_url : null;
   const href = typeof p?.url === 'string' ? p.url : typeof p?.product_url === 'string' ? p.product_url : null;
@@ -15,7 +15,7 @@ export function toWearableProduct(p: any): any {
     title: String(p?.name || p?.title || p?.displayName || 'Unnamed Product').slice(0, 120),
     brand: String(p?.brand || p?.brandName || '').slice(0, 80),
     price: typeof p?.price === 'object' && p?.price !== null ? p.price : { label: String(p?.price || p?.priceText || 'Price unavailable').slice(0, 40) },
-    commerceGroup: 'retail',
+    commerceGroup,
     retailer,
     thumbnailUrl: typeof imageUrl === 'string' && imageUrl.startsWith('https://') ? imageUrl : null,
     href: typeof href === 'string' && href.startsWith('https://') ? href : null,
@@ -46,8 +46,24 @@ export function normalizeWearableResult(raw: any, requestId: string): any {
   const similarityMatches = Array.isArray(raw.similarityMatches) ? raw.similarityMatches : [];
   const products = hasSimilarityField ? similarityMatches : recommendedProducts;
 
-  const primary = products.length > 0 ? toWearableProduct(products[0]) : null;
-  const alternatives = products.slice(1, 6).map(toWearableProduct);
+  // Commerce grouping is derived from WHICH array the product came from, not
+  // hard-coded. The two source arrays mean genuinely different things and the
+  // canonical StyleMatch shape has distinct buckets for them:
+  //
+  //   recommendedProducts -> live commerce listings   -> 'retail'
+  //   similarityMatches   -> catalog similarity shelf -> 'suggested'
+  //
+  // Stamping every item 'retail' (as this function previously did) told the
+  // wearer that a visual-similarity suggestion was a buyable retail listing.
+  //
+  // 'resale' is deliberately NOT produced here: the scan-identify response
+  // carries no resale provenance for a product, and inventing one from, say,
+  // a retailer name would be a guess presented as a fact. The bucket stays
+  // empty until a real resale signal exists upstream.
+  const commerceGroup: 'retail' | 'suggested' = hasSimilarityField ? 'suggested' : 'retail';
+
+  const primary = products.length > 0 ? toWearableProduct(products[0], commerceGroup) : null;
+  const alternatives = products.slice(1, 6).map((p: any) => toWearableProduct(p, commerceGroup));
 
   const summary = String(
     (typeof identification.visual_observation === 'string' && identification.visual_observation.trim())

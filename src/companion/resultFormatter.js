@@ -142,6 +142,8 @@ export function buildWearableResult(backendResult, requestId) {
  * @param {string} requestId - active bridge request ID.
  * @returns {{ ok: boolean, result?: object, code?: string }}
  */
+const COMMERCE_GROUPS = new Set(['retail', 'resale', 'suggested']);
+
 export function buildWearableResultFromStyleMatch(styleMatch, requestId) {
   if (!styleMatch || typeof styleMatch !== 'object') {
     return { ok: false, code: FORMATTER_ERRORS.MALFORMED };
@@ -163,7 +165,10 @@ export function buildWearableResultFromStyleMatch(styleMatch, requestId) {
     title: safeText(allItems[0].title, 120, 'Unnamed Product'),
     brand: safeText(allItems[0].subtitle, 80),
     price: { label: safeText(allItems[0].priceLabel, 40, 'Price unavailable') },
-    commerceGroup: allItems[0].sourceType === 'resale' ? 'resale' : 'retail',
+    // Preserve the item's own group. Collapsing anything that is not
+    // 'resale' into 'retail' was the outbound half of the same defect: a
+    // suggested item made the round trip and came back labelled retail.
+    commerceGroup: COMMERCE_GROUPS.has(allItems[0].sourceType) ? allItems[0].sourceType : 'retail',
     retailer: safeText(allItems[0].subtitle, 80),
     thumbnailUrl: safeUrl(allItems[0].imageUrl),
     href: safeUrl(allItems[0].href),
