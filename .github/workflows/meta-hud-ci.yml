@@ -33,6 +33,10 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
       - name: Install (locked)
         run: npm ci
 
@@ -68,6 +72,15 @@ jobs:
 
       - name: Production artifact assertion
         run: npm run verify:artifacts
+
+      # Source half of the deployment-drift guard: the behavioural
+      # invariants that have regressed before (P2-01 grouping,
+      # P3-04 Save idempotency, P2-05 schema completeness). The live
+      # half needs staging secrets and runs in
+      # wearable-deploy-drift.yml instead, because this workflow's
+      # hard rule is no secrets and no live backend calls.
+      - name: Wearable contract locks (source-only drift guard)
+        run: npm run test:drift-guard
 
       - name: Companion protocol tests
         run: npm run test:companion-protocol

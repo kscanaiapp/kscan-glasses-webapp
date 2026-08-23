@@ -1,0 +1,56 @@
+# Wearable deployment-drift guard — LIVE.
+#
+# Separate from meta-hud-ci.yml on purpose: that workflow's hard rule is "no
+# secrets, no live backend calls". This one exists precisely to make live calls,
+# because the failure it guards against is invisible to source tests.
+#
+# What it caught, historically: the P2-01 commerce-grouping repair was committed
+# and green in CI (16/16), while staging `wearable-scan` was serving v8 — the
+# version with the defect. Nothing compared deployed against committed, so the
+# regression survived a full audit pass.
+#
+# Fails closed: --require-live turns a missing secret into a failure rather than
+# a quiet skip, so a misconfigured run cannot look like a passing one.
+
+name: wearable-deploy-drift
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Daily, shortly after typical deploy windows.
+    - cron: '17 6 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Install (locked)
+        run: npm ci
+
+      - name: Wearable deployment-drift guard (live)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_STAGING_PUBLISHABLE_KEY }}
+          SUPABASE_QA_EMAIL: ${{ secrets.SUPABASE_STAGING_QA_EMAIL }}
+          SUPABASE_QA_PASSWORD: ${{ secrets.SUPABASE_STAGING_QA_PASSWORD }}
+        run: npm run test:drift-guard:live
