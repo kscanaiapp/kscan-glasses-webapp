@@ -25,6 +25,7 @@
 
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "@supabase/server";
+import { findExistingWearableSave } from "./savedScanIdempotency.ts";
 
 const PROTOCOL_VERSION = 1;
 const MAX_FRAME_BYTES = 65_536;
@@ -337,12 +338,15 @@ export default {
             if (actionType === "save") {
               // Real persistence: Save writes the bounded wearable result into the
               // canonical K Scan library (saved_scans), deduped per result id.
+              // wearable-save uses (user_id, local_id); preserve the legacy
+              // metadata lookup too, so saves made through either route share one
+              // idempotency boundary without duplicating historical bridge rows.
               const payload = (result.payload ?? {}) as Json;
-              const { data: priorSave } = await admin.from("saved_scans").select("id")
-                .eq("user_id", userId).eq("metadata->>wearableResultId", resultId).maybeSingle();
+              const priorSave = await findExistingWearableSave(admin, userId, resultId);
               if (!priorSave) {
                 const { error: saveError } = await admin.from("saved_scans").insert({
                   user_id: userId,
+                  local_id: resultId,
                   title: String(payload.summary ?? "Wearable scan").slice(0, 120) || "Wearable scan",
                   scan_type: "camera",
                   analysis_result: payload,
@@ -350,7 +354,16 @@ export default {
                   source: "wearable",
                   metadata: { wearableResultId: resultId, wearableSessionId: sessionId, contractVersion: "wearable-result-v1" },
                 });
-                if (saveError) throw new Error("SAVE_FAILED");
+                if (saveError) {
+                  // A wearable-save request may win after our lookup and before
+                  // this insert. The shared partial unique index is the final
+                  // authority; re-read both idempotency keys before failing.
+                  if (saveError.code === "23505" && await findExistingWearableSave(admin, userId, resultId)) {
+                    // Idempotent success: the authoritative row already exists.
+                  } else {
+                    throw new Error("SAVE_FAILED");
+                  }
+                }
               }
               if (!result.saved_at) {
                 await admin.from("wearable_results").update({ saved_at: new Date().toISOString() }).eq("id", resultId).eq("user_id", userId);
