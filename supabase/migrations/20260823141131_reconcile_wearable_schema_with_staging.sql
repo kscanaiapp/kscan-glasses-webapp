@@ -70,3 +70,54 @@ ALTER TABLE public.wearable_actions
   ADD CONSTRAINT wearable_actions_status_check CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
   DROP CONSTRAINT IF EXISTS wearable_actions_safe_error_code_check,
   ADD CONSTRAINT wearable_actions_safe_error_code_check CHECK (safe_error_code IS NULL OR char_length(safe_error_code) <= 48);
+
+-- ── Residual staging divergences ───────────────────────────────────────────
+-- Found by diffing live staging (pg_constraint / pg_index / pg_default_acl /
+-- information_schema) against the committed migration. The constraint-level
+-- reconciliation above did not cover these, and each one changes behaviour in
+-- an environment built from source.
+
+-- 1. wearable_auth_attempts was never committed at all. wearable-bridge's
+--    throttlePairAttempt() throws SAFE_BACKEND_FAILURE when the query errors,
+--    so a source-built environment cannot complete pair.approve or pair.deny —
+--    pairing is dead, not merely unthrottled.
+CREATE TABLE IF NOT EXISTS public.wearable_auth_attempts (
+  id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  operation text NOT NULL,
+  attempted_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.wearable_auth_attempts
+  DROP CONSTRAINT IF EXISTS wearable_auth_attempts_operation_check,
+  ADD CONSTRAINT wearable_auth_attempts_operation_check
+    CHECK (operation IN ('pair.approve', 'pair.deny'));
+
+CREATE INDEX IF NOT EXISTS wearable_auth_attempts_window
+  ON public.wearable_auth_attempts(user_id, operation, attempted_at);
+
+ALTER TABLE public.wearable_auth_attempts ENABLE ROW LEVEL SECURITY;
+
+-- 2. The phone action-poll index staging runs was never committed.
+CREATE INDEX IF NOT EXISTS wearable_actions_phone_poll
+  ON public.wearable_actions(user_id, status, created_at) WHERE status = 'pending';
+
+-- 3. Staging deliberately has no default on wearable_results.status; the
+--    committed migration defaulted it to 'completed', which would let an
+--    incomplete write land as a finished result.
+ALTER TABLE public.wearable_results ALTER COLUMN status DROP DEFAULT;
+
+-- 4. Supabase's default privileges grant anon/authenticated INSERT/SELECT/
+--    UPDATE/DELETE on every new public table. Staging revoked that for the
+--    wearable tables; the committed migration did not, so a source-built
+--    environment stands one dropped RLS policy away from public exposure.
+DO $$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['wearable_pairings','wearable_sessions','wearable_messages',
+                           'wearable_results','wearable_actions','wearable_auth_attempts']
+  LOOP
+    EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', t);
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO service_role', t);
+  END LOOP;
+END $$;
