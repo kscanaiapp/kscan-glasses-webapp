@@ -1,0 +1,20 @@
+# Line endings are part of this repository's deploy contract.
+#
+# supabase/functions/** is uploaded verbatim by `supabase functions deploy`,
+# and the audit trail for these functions is a byte-for-byte comparison
+# between the deployed bundle and the committed blob. This machine's global
+# `core.autocrlf=true` rewrites LF to CRLF on checkout, so a fresh clone on
+# Windows would deploy CRLF files that no longer match the blob they came
+# from — silently breaking source/deploy reproducibility without changing a
+# single line of code.
+#
+# Pinning eol=lf keeps the working copy identical to the blob everywhere.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.zip binary
+*.woff binary
+*.woff2 binary
