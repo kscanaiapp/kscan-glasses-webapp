@@ -11,6 +11,20 @@
 #
 # Fails closed: --require-live turns a missing secret into a failure rather than
 # a quiet skip, so a misconfigured run cannot look like a passing one.
+#
+# BEFORE ENABLING THE SCHEDULE: this repository currently holds NO Actions
+# secrets at all (`gh secret list -R kscanaiapp/kscan-glasses-webapp` is empty),
+# so every scheduled run will fail on configuration until they are created HERE:
+#
+#   SUPABASE_ACCESS_TOKEN
+#   SUPABASE_STAGING_PROJECT_REF
+#   SUPABASE_STAGING_PUBLISHABLE_KEY
+#   SUPABASE_STAGING_QA_EMAIL      (or STAGING_SYNTHETIC_ACTIVE_EMAIL)
+#   SUPABASE_STAGING_QA_PASSWORD   (or STAGING_SYNTHETIC_ACTIVE_PASSWORD)
+#
+# Failing closed on missing config is deliberate and should NOT be relaxed — a
+# guard that skips quietly is worse than one that is visibly unconfigured. Until
+# the secrets exist, run it manually via workflow_dispatch.
 
 name: wearable-deploy-drift
 
@@ -53,11 +67,11 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_STAGING_PUBLISHABLE_KEY }}
           SUPABASE_QA_EMAIL: ${{ secrets.SUPABASE_STAGING_QA_EMAIL }}
           SUPABASE_QA_PASSWORD: ${{ secrets.SUPABASE_STAGING_QA_PASSWORD }}
-          # Fallback to the synthetic accounts this repo already provisions and
-          # already stores secrets for (docs/security/staging-synthetic-auth.md).
-          # Without this the --require-live run fails every night on a missing
-          # secret rather than on drift, and a guard that cries wolf about its
-          # own configuration stops being read.
+          # Also accepted, because STAGING_SYNTHETIC_ACTIVE_* is the naming
+          # convention the kscanaiapp/kscan-app repository uses for its
+          # persistent staging synthetic accounts. NOTE: GitHub secrets do not
+          # cross repositories — those secrets live in kscan-app, not here, so
+          # accepting the name does not by itself supply a credential.
           STAGING_SYNTHETIC_ACTIVE_EMAIL: ${{ secrets.STAGING_SYNTHETIC_ACTIVE_EMAIL }}
           STAGING_SYNTHETIC_ACTIVE_PASSWORD: ${{ secrets.STAGING_SYNTHETIC_ACTIVE_PASSWORD }}
         run: npm run test:drift-guard:live

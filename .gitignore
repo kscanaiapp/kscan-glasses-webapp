@@ -15,3 +15,6 @@ playwright/.cache/
 *.trace.zip
 **/trace.zip
 **/test-results/**
+
+# Supabase CLI scratch state (link target, access tokens) — never commit.
+supabase/.temp/
