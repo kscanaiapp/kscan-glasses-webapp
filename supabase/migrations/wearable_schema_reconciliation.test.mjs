@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const migration = readFileSync(new URL('./20260823141131_reconcile_wearable_schema_with_staging.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('./20260823170850_reconcile_wearable_schema_with_staging.sql', import.meta.url), 'utf8');
 
 for (const constraint of [
   'wearable_pairings_device_model_check',

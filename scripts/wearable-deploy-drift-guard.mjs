@@ -178,12 +178,21 @@ const frameOf = (messageType, sessionId, deviceId, payload) => JSON.stringify({
 
 async function layerB2() {
   console.log('\n── Layer B2: authenticated deployed behaviour ──');
-  const email = process.env.SUPABASE_QA_EMAIL || '';
-  const password = process.env.SUPABASE_QA_PASSWORD || '';
+  // Two accepted credential sources, in order. `SUPABASE_QA_*` is this guard's
+  // own name; `STAGING_SYNTHETIC_ACTIVE_*` is the name this repository already
+  // uses for its persistent staging synthetic accounts
+  // (docs/security/staging-synthetic-auth.md, consumed by
+  // security-staging-gate.yml and the live-probe workflows). Accepting the
+  // established name means the scheduled live run does not fail daily on a
+  // secret that was never created, which would train everyone to ignore it —
+  // the guard would then be loud about its own configuration and silent about
+  // real drift.
+  const email = process.env.SUPABASE_QA_EMAIL || process.env.STAGING_SYNTHETIC_ACTIVE_EMAIL || '';
+  const password = process.env.SUPABASE_QA_PASSWORD || process.env.STAGING_SYNTHETIC_ACTIVE_PASSWORD || '';
   if (!PROJECT_REF || !PUBLISHABLE) return skip('authenticated contract locks', 'staging project/key not set');
   if (!email || !password) {
     return skip('authenticated contract locks',
-      'SUPABASE_QA_EMAIL / SUPABASE_QA_PASSWORD not set — raw-content, stale-revision and Save-idempotency locks NOT exercised');
+      'no staging QA credential (set SUPABASE_QA_EMAIL/_PASSWORD or STAGING_SYNTHETIC_ACTIVE_EMAIL/_PASSWORD) — raw-content, stale-revision and Save-idempotency locks NOT exercised');
   }
 
   const login = await fetch(`https://${PROJECT_REF}.supabase.co/auth/v1/token?grant_type=password`, {

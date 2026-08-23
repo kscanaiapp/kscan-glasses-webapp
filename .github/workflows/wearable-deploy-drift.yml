@@ -53,4 +53,11 @@ jobs:
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_STAGING_PUBLISHABLE_KEY }}
           SUPABASE_QA_EMAIL: ${{ secrets.SUPABASE_STAGING_QA_EMAIL }}
           SUPABASE_QA_PASSWORD: ${{ secrets.SUPABASE_STAGING_QA_PASSWORD }}
+          # Fallback to the synthetic accounts this repo already provisions and
+          # already stores secrets for (docs/security/staging-synthetic-auth.md).
+          # Without this the --require-live run fails every night on a missing
+          # secret rather than on drift, and a guard that cries wolf about its
+          # own configuration stops being read.
+          STAGING_SYNTHETIC_ACTIVE_EMAIL: ${{ secrets.STAGING_SYNTHETIC_ACTIVE_EMAIL }}
+          STAGING_SYNTHETIC_ACTIVE_PASSWORD: ${{ secrets.STAGING_SYNTHETIC_ACTIVE_PASSWORD }}
         run: npm run test:drift-guard:live
