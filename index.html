@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=600, height=600, initial-scale=1.0, user-scalable=no">
-  <title>K Scan Glasses</title>
+  <title>K Scan Glasses HUD</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="96x96" href="/icons/icon-96.png">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
@@ -12,47 +12,102 @@
 </head>
 <body>
   <main id="app" aria-live="polite">
+    <div id="bridge-status" class="bridge-badge pending" role="status" aria-label="Bridge status pending">BRIDGE: PENDING</div>
+    <div id="alpha-banner" class="alpha-banner" role="note" aria-label="Alpha preview, hardware validation pending">ALPHA · HW VALIDATION PENDING</div>
+
     <section id="home" class="screen is-active" aria-label="Home" aria-hidden="false">
+      <div class="reticle-corners reticle-warm"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="scan-target"><div class="st-dot"></div></div>
+      <div class="home-header">
+        <div class="home-brand">K Scan</div>
+        <div class="home-tagline">Find what you're looking at.</div>
+      </div>
       <div class="home-center">
-        <button id="scan-btn" class="btn btn-primary focusable">K Scan</button>
+        <button id="scan-btn" class="btn btn-primary focusable">Scan</button>
         <p class="subtitle">Use D-pad arrows and Enter</p>
       </div>
+      <div class="home-textscan">
+        <p class="textscan-label">Text Scan</p>
+        <div class="textscan-presets">
+          <button class="textscan-preset focusable" data-query="black oversized blazer">Black Blazer</button>
+          <button class="textscan-preset focusable" data-query="quiet luxury office outfit">Quiet Luxury</button>
+          <button class="textscan-preset focusable" data-query="blue bag">Blue Bag</button>
+          <button class="textscan-preset focusable" data-query="minimal white sneakers">White Sneakers</button>
+          <button class="textscan-preset focusable" data-query="streetwear hoodie minimal">Street Hoodie</button>
+          <button class="textscan-preset focusable" data-query="asdf random">Non-Fashion</button>
+        </div>
+      </div>
+      <div class="home-status-strips" aria-label="System status">
+        <div class="status-pill" id="pill-privacy"><div class="dot ok" aria-hidden="true"></div><span>Privacy: on-device</span></div>
+        <div class="status-pill" id="pill-textscan"><div class="dot mock" aria-hidden="true"></div><span>TextScan: checking</span></div>
+        <div class="status-pill" id="pill-session"><div class="dot mock" aria-hidden="true"></div><span>Session: checking</span></div>
+        <div class="status-pill" id="pill-bridge"><div class="dot mock" aria-hidden="true"></div><span>Bridge: pending</span></div>
+        <div class="status-pill" id="pill-companion"><div class="dot mock" aria-hidden="true"></div><span>Phone: off</span></div>
+      </div>
       <nav class="home-nav">
-        <button id="library-btn" class="btn focusable">Library</button>
-        <button id="settings-btn" class="btn focusable">Settings</button>
+        <button id="library-btn" class="home-nav-btn focusable">Closet</button>
+        <button id="settings-btn" class="home-nav-btn focusable">Settings</button>
       </nav>
+      <p class="home-investor-note">Alpha preview · Simulator &amp; mock states labeled in-app · No camera or microphone access · Not validated on glasses hardware</p>
     </section>
 
     <section id="processing" class="screen hidden" aria-label="Processing" aria-hidden="true">
+      <div class="reticle-corners scan-active reticle-warm"><div class="rc-bl"></div><div class="rc-br"></div></div>
+      <div class="scan-target"><div class="st-dot"></div></div>
       <button id="cancel-btn" class="btn btn-ghost focusable top-left">Cancel</button>
       <div class="processing-center">
         <div class="spinner" aria-hidden="true"></div>
-        <p id="processing-text" class="processing-text">Capturing...</p>
+        <p id="processing-text" class="processing-text">Analyzing scan...</p>
+        <p id="processing-sub" class="processing-sub"></p>
+        <ol id="pipeline-steps" class="pipeline-steps" aria-label="Scan pipeline stages"></ol>
       </div>
     </section>
 
     <section id="results" class="screen hidden" aria-label="Results" aria-hidden="true">
       <header class="top-bar">
         <button id="results-back-btn" class="btn btn-ghost focusable">Back</button>
-        <h1>Results</h1>
+        <h1>Style Match</h1>
       </header>
+      <div id="results-match" class="scroll-panel" style="max-height: 220px; flex: 0 0 auto; margin-bottom: 0;" aria-label="Style Match"></div>
+      <div id="textscan-results" class="scroll-panel hidden" aria-label="Text Scan Results"></div>
+      <div id="companion-actions" class="companion-actions hidden" aria-label="Result actions">
+        <button id="comp-action-save" class="btn btn-primary focusable">Save</button>
+        <button id="comp-action-open" class="btn btn-ghost focusable">Open on Phone</button>
+        <button id="comp-action-retry" class="btn btn-ghost focusable">Retry</button>
+        <button id="comp-action-dismiss" class="btn btn-ghost focusable">Dismiss</button>
+      </div>
       <div id="results-list" class="scroll-panel" aria-label="Products"></div>
       <div id="results-empty" class="hidden empty-state">
-        <p>No matches found</p>
+        <p class="empty-title">No matches found.</p>
+        <p class="empty-note">Try another angle.</p>
         <button id="retry-empty-btn" class="btn btn-primary focusable">Retry</button>
+      </div>
+    </section>
+
+    <section id="companion" class="screen hidden" aria-label="Phone Companion" aria-hidden="true">
+      <div class="companion-center">
+        <p id="comp-mode-label" class="comp-mode-label hidden">MOCK PHONE — LOCAL QA</p>
+        <div id="comp-spinner" class="spinner hidden" aria-hidden="true"></div>
+        <h1 id="comp-title" class="comp-title">Not connected</h1>
+        <p id="comp-support" class="processing-sub"></p>
+        <ol id="comp-steps" class="pipeline-steps" aria-label="Companion scan stages"></ol>
+        <div class="comp-actions">
+          <button id="comp-primary-btn" class="btn btn-primary focusable hidden">Pair Phone</button>
+          <button id="comp-secondary-1" class="btn btn-ghost focusable hidden">Cancel</button>
+          <button id="comp-secondary-2" class="btn btn-ghost focusable hidden">Back</button>
+          <button id="comp-secondary-3" class="btn btn-ghost focusable hidden">Dismiss</button>
+        </div>
       </div>
     </section>
 
     <section id="library" class="screen hidden" aria-label="Library" aria-hidden="true">
       <header class="top-bar">
         <button id="library-back-btn" class="btn btn-ghost focusable">Back</button>
-        <h1>Library</h1>
+        <h1>Closet</h1>
       </header>
-      <div class="scroll-panel">
-        <h2>Saved Items</h2>
-        <button class="row focusable">Saved items placeholder</button>
+      <div id="library-panel" class="scroll-panel">
+        <h2>Saved Looks</h2>
         <h2>Scan History</h2>
-        <button class="row focusable">History placeholder</button>
       </div>
     </section>
 
@@ -61,20 +116,32 @@
         <button id="settings-back-btn" class="btn btn-ghost focusable">Back</button>
         <h1>Settings</h1>
       </header>
-      <div class="scroll-panel settings-list">
-        <button class="row focusable">Account</button>
-        <button class="row focusable">Privacy &amp; Data</button>
-        <button class="row focusable">Voice</button>
-        <button class="row focusable row-danger">Sign Out</button>
+      <div id="settings-panel" class="scroll-panel settings-list">
+        <button id="settings-account-row" class="row focusable">Account: Guest</button>
+        <div class="row row-disabled" aria-disabled="true">Privacy &amp; Data — on-device only</div>
+        <button id="settings-auth-btn" class="row focusable">Sign In</button>
+        <button id="settings-diagnostics-btn" class="row focusable">Runtime Diagnostics</button>
+        <div id="settings-voice-row" class="row">Voice: future device test</div>
+      </div>
+    </section>
+
+    <section id="diagnostics" class="screen hidden" aria-label="Runtime Diagnostics" aria-hidden="true">
+      <header class="top-bar">
+        <button id="diagnostics-back-btn" class="btn btn-ghost focusable">Back</button>
+        <h1>Diagnostics</h1>
+      </header>
+      <div id="diagnostics-panel" class="scroll-panel settings-list">
+        <button id="diagnostics-refresh-btn" class="row focusable">Refresh</button>
+        <div id="diagnostics-status"></div>
       </div>
     </section>
 
     <section id="error" class="screen hidden" aria-label="Error" aria-hidden="true">
       <div class="error-center">
         <div class="error-symbol" aria-hidden="true">!</div>
-        <p id="error-message">Something went wrong.</p>
-        <button id="error-retry-btn" class="btn btn-primary focusable">Try Again</button>
-        <button id="error-home-btn" class="btn focusable">Back Home</button>
+        <p id="error-message">Something went wrong. Try again.</p>
+        <button id="error-retry-btn" class="btn btn-primary focusable">Retry</button>
+        <button id="error-home-btn" class="btn btn-ghost focusable">Home</button>
       </div>
     </section>
 

@@ -9,6 +9,102 @@ Standalone web app foundation for K Scan AI on Meta Ray-Ban Display glasses. Thi
 - Backend API client is scaffolded; production backend testing is pending.
 - Supabase sync is not implemented yet.
 
+## Phase 1 — Real-Glasses Beta Readiness (Scaffolding Only)
+
+**Status: Loadable Web App candidate. Not device validated.**
+
+This phase prepares the virtual-alpha codebase for controlled testing on actual Meta Ray-Ban Display hardware. It does **not** claim real glasses, real DAT, real backend, voice, connectivity, or Supabase sync readiness.
+
+### What "beta readiness scaffolding" means
+
+- The app can be loaded onto glasses for visual/HUD/navigation testing.
+- The scan pipeline remains mock-only until the phone bridge is validated.
+- All new integrations are feature-gated, placeholder-only, or documented as future work.
+- No custom BLE, Wi-Fi Direct, WebRTC, or WebSocket bridge is introduced.
+- No production camera, microphone, voice, or backend sync is enabled.
+
+### 600×600 HUD invariants (preserved for real device)
+
+| Invariant | Rule | Status |
+|---|---|---|
+| Viewport | Fixed `600×600` CSS, `user-scalable=no` | Enforced |
+| Overflow | `html`, `body`, `#app` = `overflow: hidden` | Enforced |
+| Background | Pure black (`#000000`) for additive waveguide transparency | Enforced |
+| Contrast | Bright high-contrast UI (cyan `#00E5FF`, champagne `#C58A3A`) | Enforced |
+| Full-screen brightness | Avoid bright full-screen backgrounds inside HUD | Enforced |
+| Navigation | D-pad/keyboard only (Arrow keys + Enter) | Enforced |
+| Focus | Every interactive element has `.focusable` class | Enforced |
+| Mouse/touch | No mouse-only or touch-only interactions | Enforced |
+| Scroll | Internal scroll panels only, bounded `max-height` | Enforced |
+| Safe zone | 20 px inner margin; critical controls away from edges | Enforced |
+
+### D-pad / keyboard interaction instructions
+
+- **ArrowUp / ArrowDown**: Move focus between `.focusable` elements (wraps).
+- **ArrowRight / Enter**: Activate the focused element.
+- **ArrowLeft / Escape**: Go back / dismiss current screen.
+- **Focus ring**: Cyan outline + glow + subtle pulse animation.
+- **No mouse or touch required**: The app must remain fully usable with keyboard/D-pad only.
+
+### Device loading checklist (Meta AI companion app)
+
+**Important:** The glasses do not scan a QR code directly. The host phone companion app used for the glasses setup flow — Meta AI (depending on the installed device flow) — is used for pairing and adding/loading Web Apps.
+
+Requirements:
+- Public **HTTPS** URL is mandatory. HTTP URLs are invalid for real-device testing.
+- Meta Ray-Ban Display glasses paired with a phone (iOS or Android).
+- Developer Mode enabled in the Meta AI companion app.
+
+Steps to load the Web App:
+
+1. Pair glasses with the Meta AI companion app.
+2. Enable Developer Mode in the companion app (Settings → App Info → tap app version 5×).
+3. Navigate to: Devices → Display Glasses settings → App connections → Web apps.
+4. Tap **Add a Web App**.
+5. Enter app name: `K Scan`.
+6. Enter the public **HTTPS** URL (e.g. `https://kscan-glasses-demo.vercel.app`).
+7. Tap **Connect**.
+8. Launch the Web App from the glasses interface (app grid).
+
+**HTTPS enforcement:** The Web App URL must use HTTPS. HTTP requests/URLs should be treated as invalid for glasses testing.
+
+### Real glasses test checklist (device QA)
+
+Use this checklist during controlled hardware testing. Do not claim validation until each item is checked on real hardware.
+
+- [ ] **Launch**: App launches from the glasses app grid without error.
+- [ ] **Visual frame fit**: UI fits within the 600×600 waveguide frame; no clipping at edges.
+- [ ] **Focus ring**: Cyan focus outline is visible on the first interactive element.
+- [ ] **D-pad movement**: ArrowUp/ArrowDown moves focus between `.focusable` elements.
+- [ ] **Enter activation**: Enter selects the focused element (Scan, History, Settings, Back, Save).
+- [ ] **Escape / universal menu**: Escape or ArrowLeft navigates back; universal menu (if available) does not trap the app.
+- [ ] **Simulator route**: In staging builds with `VITE_ENABLE_SIMULATOR=true`, `/simulator.html` loads from the same origin.
+- [ ] **Brightness / readability**: Text and UI elements are legible indoors and outdoors on the additive waveguide.
+- [ ] **Restart / resume**: App restarts from the glasses Web App menu without corruption.
+- [ ] **Permissions menu**: If a permissions menu is presented, it is navigable by D-pad.
+- [ ] **Top-right status badge**: A compact bridge/status badge is visible (e.g. `BRIDGE: PENDING`) and does not block primary actions.
+- [ ] **No page scroll**: Body does not scroll; only internal panels scroll if needed.
+- [ ] **Mock/stub labeling**: UI clearly indicates mock/stub/placeholder state so testers are not misled.
+
+### Known hardware blockers (still unresolved)
+
+- Physical Meta Ray-Ban Display glasses not yet tested.
+- Real DAT/mobile bridge capture not validated on iOS/Android.
+- Real Neural Band D-pad latency and tactile feel unknown.
+- Real additive waveguide brightness/contrast uncalibrated.
+- Real microphone/voice runtime not verified.
+- `devicePixelRatio` and viewport behavior on actual display unknown.
+- Backend CORS from deployed HTTPS origin pending live test.
+
+### Public URLs
+
+| URL | Purpose | HTTPS |
+|---|---|---|
+| `https://kscan-glasses-demo.vercel.app` | Public investor demo | Yes |
+| `https://kscan-glasses-demo.vercel.app/simulator.html` | Simulator control room | Yes |
+
+**Note:** Verify both URLs return 200 OK before claiming glasses-load readiness. If a URL check fails, note it in the checklist but do not block the local build.
+
 ## Overview
 
 - Fixed `600x600` viewport
@@ -379,6 +475,67 @@ Version requirements:
 
 Developer Mode steps:
 - "Meta AI app -> Settings/App Info -> tap app version 5x": `UNKNOWN` from accessible source in this environment; verify against authenticated official docs before release testing.
+
+## Staging Deployment
+
+### Build output
+
+- `npm run build` produces `dist/` with both `index.html` and `simulator.html`.
+- `dist/` is `.gitignore`d and must not be committed.
+- Model and WASM assets are copied into `dist/` by the build.
+
+### Vercel staging settings (recommended)
+
+If deploying to Vercel for staging preview:
+
+| Setting | Value |
+|---|---|
+| Framework preset | Vite or Other |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Install command | `npm install` or `npm ci` |
+| Branch | `phase-11-virtual-alpha-infra` (or a dedicated staging branch) |
+| Environment | Preview only — never production |
+| HTTPS | Required (Vercel provides this automatically) |
+
+### Staging environment variables
+
+Create a `.env` file (gitignored) with staging-safe values:
+
+```bash
+VITE_KSCAN_BACKEND_URL=https://kscan-app-1.onrender.com
+VITE_ENABLE_SIMULATOR=true
+VITE_MOCK_DAT=false
+VITE_MOCK_ANALYZE=false
+```
+
+- `VITE_ENABLE_SIMULATOR=true` allows the simulator badge and scenario overrides in the staging build.
+- `VITE_MOCK_DAT=false` and `VITE_MOCK_ANALYZE=false` ensure the staging build uses real bridge and backend paths.
+- Do not commit `.env` or any file containing real values.
+- Vite env vars are baked into the bundle at build time; any change requires rebuild and redeploy.
+
+### Backend CORS risk
+
+The deployed staging origin must be allowed by the K Scan backend CORS policy before `POST /api/analyze` will succeed. If CORS fails:
+
+1. Note the exact failing origin and request path.
+2. Report to the backend team for CORS allowlist update.
+3. Do not modify backend in this repo.
+
+### QR / deeplink prep
+
+- QR codes should point to the **public HTTPS staging URL** only.
+- The QR is scanned by the **tester's phone / Meta AI companion app**, not the glasses.
+- Do not include secrets, tokens, or private query params in the URL.
+- QR validation is blocked until the public HTTPS staging URL exists.
+
+### Deployment rules
+
+- **Do not deploy to production.**
+- **Do not promote preview to production.**
+- **Do not change DNS.**
+- Deploy to **Preview / Staging only**.
+- Physical glasses validation remains blocked until hardware is available.
 
 ## Manual QA Checklist
 
@@ -963,3 +1120,528 @@ Manual test checklist:
 | timeout | `VITE_MOCK_DAT_SCENARIO=timeout` | `IDLE -> CAPTURING -> ERROR` | `Capture timed out.` | No | MANUAL QA REQUIRED |
 | invalid-response | `VITE_MOCK_DAT_SCENARIO=invalid-response` | `IDLE -> CAPTURING -> ERROR` | `Camera response invalid.` | No | MANUAL QA REQUIRED |
 | malformed-image | `VITE_MOCK_DAT_SCENARIO=malformed-image` | `IDLE -> CAPTURING -> SANITIZING -> ERROR` | `Privacy scan failed. Try again.` | No | MANUAL QA REQUIRED |
+
+---
+
+# Phase 11 — Virtual-Alpha Infrastructure (2026-06-11)
+
+Branch `phase-11-virtual-alpha-infra`. Desktop-Chrome virtual prototype:
+the full scan flow runs without physical glasses. **Not validated on real
+Meta Ray-Ban Display hardware.** See `QA_REPORT.md` for the test matrix.
+
+## Quick start (virtual alpha)
+
+```
+npm install            # once, on your machine
+npm run dev            # Vite dev server
+# App:        http://localhost:5173/
+# Simulator:  http://localhost:5173/simulator.html
+npm test               # verify models + build + static + contract tests
+```
+
+## New env vars (see .env.example)
+
+| Var | Purpose |
+|---|---|
+| `VITE_ENABLE_SIMULATOR` | `true` allows simulator features in a staging build. Never set in production. |
+| `VITE_DAT_PARENT_ORIGIN` | Comma-separated allowlist of parent-frame origins for capture responses. Own origin is always trusted. |
+
+## Scan pipeline
+
+`src/scanPipeline.js` structurally enforces capture → sanitize → analyze.
+The backend can only ever receive the sanitizer's output (JPEG data URL);
+a non-JPEG sanitizer result blocks the upload. Contract-tested.
+
+## DAT bridge contract (`src/datBridge.js`)
+
+- App sends `{ type: "capture-photo", requestId }` (plus legacy
+  `REQUEST_CAPTURE`) to the parent frame.
+- Runtime/simulator responds `{ type: "photo-captured", base64 }` or
+  `{ type: "photo-capture-error", code }` (legacy `CAPTURE_RESPONSE` /
+  `CAPTURE_ERROR` still accepted).
+- Promise-based `capturePhoto()`, 10 s timeout, listener cleanup after every
+  attempt, duplicate/stale messages ignored.
+- Payload must be a `data:image/jpeg;base64,` data URL; hard cap 8 MB chars
+  at the bridge. The sanitizer then downsamples (max side 800 px) and caps
+  output at ~1 MB (lower-quality retry, then fail closed).
+- **Origin validation**: `event.origin === "null"` never processed; trusted
+  = own origin or `VITE_DAT_PARENT_ORIGIN` allowlist; otherwise the message
+  must come from the direct parent window (`event.source`) — a documented
+  fallback until the real MRBD host origin is observed on hardware.
+  Wildcards are ignored. UI screens never call `postMessage` directly.
+
+## Simulator mode
+
+- Gated: only in DEV builds or when `VITE_ENABLE_SIMULATOR=true`. Inert in
+  production (contract-tested).
+- Gold **SIM** badge top-right on all screens whenever simulation is active.
+- `?mockAnalyze=success|empty|http-400|http-500|timeout|malformed|offline`
+  overrides the analyze call (gated as above).
+- `?dat=parent` forces the real postMessage bridge path in dev (used by the
+  parent-frame simulator). `?sim=1` shows the badge explicitly.
+
+## Parent-frame simulator (`simulator.html`)
+
+Dev-only parent-frame simulator (repo root — served by `npm run dev`, now also built into `dist/` via `vite.config.js` for staging access).
+Loads the app in a 600×600 iframe and answers capture requests with
+canvas-generated synthetic fixtures (no real photos/faces): success,
+oversized (>1 MB), invalid payload, cancelled, permission denied, generic
+error, timeout. Backend scenarios reload the iframe with `?mockAnalyze=`.
+Message log shows types/sizes only — never payloads.
+
+## Privacy sanitizer
+
+Canvas re-encode (strips EXIF/GPS, converts PNG→JPEG), downsamples to
+800 px max side, MediaPipe BlazeFace (lazy-loaded local WASM/model) solid-
+masks detected faces with 25% margin. **Conservative failure mode**: any
+detector failure blocks the upload ("We couldn't verify this image is safe
+to upload. Please try again."); raw captures are never uploaded.
+`__setMaskEngineForTests` injects a mock detector for tests — no real face
+imagery in the repo.
+
+## Backend client retry policy (`src/api.js`)
+
+Contract unchanged: `POST {VITE_KSCAN_BACKEND_URL}/api/analyze` with body
+exactly `{ image: <sanitized JPEG data URL> }`. First attempt 10 s timeout;
+retry **once** only on timeout/5xx after 2 s, second attempt 15 s; never on
+4xx/malformed JSON/network error. Live smoke testing is manual-only.
+
+## Auth & Library (virtual alpha)
+
+- Scanning always works as guest; guest scans are never sent to Supabase.
+- Guest history/saved items: localStorage, schema v1, small whitelisted
+  metadata only (never images/base64), capped 20 scans / 50 items, hard
+  privacy gate refuses any payload containing `base64,`.
+- Supabase env missing → offline stub mode: fixed `dev@virtual-alpha.local`
+  stub session, example library rows, visible banner
+  "Supabase stub – virtual-alpha only.", zero network calls.
+- `@supabase/supabase-js` is intentionally NOT installed yet (dependency
+  approval required); `src/authSession.js` is the seam for the real client.
+- Guest data is preserved on sign-in (migration strategy TODO).
+
+## D-pad / 600×600 QA
+
+Keyboard map: ArrowUp/Down move focus (wrap), Enter/ArrowRight activate,
+Escape/ArrowLeft back. Focus = 3 px cyan outline + glow. Fixed 600×600
+shell, no page overflow; results/library panels are the only scroll areas.
+In Chrome DevTools set viewport 600×600.
+
+## Staging readiness (docs only — no deploy performed)
+
+- Vercel/Netlify static deploy of `dist/` works; HTTPS public URL required
+  by MRBD Web Apps. Set `VITE_KSCAN_BACKEND_URL` (and optionally
+  `VITE_ENABLE_SIMULATOR=true` for a staging-only build) in the host's env.
+- Do not set mock/simulator flags on production deploys.
+- QR/deeplink: once staged, add the HTTPS URL as a Web App in the Meta AI
+  app (Developer Mode) — see `docs/meta/Test.txt`. Blocked until hardware.
+
+## Blocked until physical glasses
+
+Real camera capture, real MRBD runtime origin (strict postMessage pinning),
+Neural Band latency/gesture feel, additive display brightness/readability,
+microphone/voice runtime, QR/deeplink launch, device `devicePixelRatio`.
+
+---
+
+# Phase 14 — Staging Deployment Readiness (2026-06-18)
+
+## Objective
+
+Prepare the virtual alpha for safe staging deployment and future Meta AI
+companion app Web App loading. No production deployment. No physical device
+changes.
+
+## What changed
+
+- `vite.config.js` added with Multi-Page Application (MPA) config so
+  `simulator.html` is now built into `dist/` alongside `index.html`.
+  Testers can access the simulator control room from a deployed staging URL.
+- `.env.example` reorganized with clear sections:
+  Required for staging/production, dev-only, staging-only, mobile bridge dev,
+  and reserved/future.
+- README updated with staging checklist, QR/deeplink prep, and browser demo
+  staging script.
+
+## Vite MPA build
+
+`vite.config.js` uses `build.rollupOptions.input` with two entries:
+
+| Entry | File | Output | Purpose |
+|---|---|---|---|
+| `main` | `index.html` | `dist/index.html` | App shell (600×600 HUD) |
+| `simulator` | `simulator.html` | `dist/simulator.html` | Demo control room for testers |
+
+Both pages are served from the same static host. No additional dependencies.
+
+## Staging deployment checklist
+
+Before deploying to any staging host:
+
+- [ ] Branch is `phase-11-virtual-alpha-infra` (or approved descendant).
+- [ ] Working tree is clean; only intended files changed.
+- [ ] `npm test` passes (75 contract PASS / 0 FAIL).
+- [ ] `npm run build` passes; `dist/` contains both `index.html` and `simulator.html`.
+- [ ] No secrets in source (scan with `grep -r "sk-" src/` or similar).
+- [ ] No base64/image payloads in source or logs.
+- [ ] `dist/` is not committed to git (gitignored).
+- [ ] Model + WASM assets are present in `dist/`.
+- [ ] Simulator page is safe: no secrets, no payload logging, no real images.
+- [ ] Backend endpoint points to the staging/approved backend.
+- [ ] Supabase behavior is either configured or intentionally stubbed.
+- [ ] No physical-glasses readiness is claimed in docs or UI.
+- [ ] Public HTTPS URL is available before Meta AI app Web App loading.
+- [ ] HTTP-only URLs are not used. Meta runtime requires HTTPS.
+
+## Required staging environment variables
+
+| Variable | Required | Staging value | Notes |
+|---|---|---|---|
+| `VITE_KSCAN_BACKEND_URL` | **Yes** | `https://kscan-app-1.onrender.com` | No trailing slash. HTTPS only. |
+| `VITE_SUPABASE_URL` | No | (empty) | Stub mode if absent. |
+| `VITE_SUPABASE_ANON_KEY` | No | (empty) | Stub mode if absent. |
+| `VITE_ENABLE_SIMULATOR` | No | `true` for staging demo | Never `true` in production. |
+| `VITE_DAT_PARENT_ORIGIN` | No | (empty) | Set only after MRBD host origin is known. |
+
+**Dev-only variables** (must be `false` or absent in staging/production):
+- `VITE_MOCK_DAT`, `VITE_MOCK_ANALYZE`, `VITE_MOCK_DAT_SCENARIO`, `VITE_MOCK_ANALYZE_ERROR`, etc.
+
+## Staging env segmentation
+
+| Environment | Mocks | Simulator | Backend | Supabase |
+|---|---|---|---|---|
+| Local dev | `true` | Dev badge auto | Real or mock | Stub |
+| Staging preview | `false` | `VITE_ENABLE_SIMULATOR=true` | Real | Stub or real |
+| Production | `false` | Inert | Real | Real (when wired) |
+
+## QR / deeplink launch prep
+
+**Blocked until a public HTTPS staging URL exists.**
+
+Meta AI app Web App flow:
+
+1. Deploy app to a public HTTPS URL.
+2. Enable Developer Mode in the Meta AI app (tap app version 5× in Settings).
+3. Open Meta AI app → Devices → Display Glasses settings → App connections → Web apps.
+4. Tap **Add a Web App**.
+5. Enter app name: `K Scan`.
+6. Enter deployed HTTPS URL.
+7. Tap **Connect**.
+8. App appears in the MRBD app grid.
+
+**QR code:** The QR/deeplink is for the **tester's phone** — the companion app
+tests the URL, not the glasses. The QR can be generated from the staging URL
+via any standard QR generator. No QR package is added to this repo.
+
+**Security rule:** The QR URL must be a clean public HTTPS URL without embedded
+credentials, tokens, or private query parameters.
+
+## Browser/demo staging script
+
+A tester can validate the staging deploy in desktop Chrome/Edge without glasses:
+
+1. Open the staging HTTPS URL.
+2. Set DevTools viewport to 600×600.
+3. Open `/simulator.html` (if `VITE_ENABLE_SIMULATOR=true` in staging).
+4. Test **Success** scenario → results appear.
+5. Arrow keys to a product card → **Enter** saves it.
+6. **Escape** → **Library** → saved item appears.
+7. **Settings** → status rows show simulator/backend/Supabase/auth.
+8. Test failure scenarios: Empty, Error, Timeout, Network, Invalid, Cancel, Oversized.
+9. Confirm no console errors or asset 404s.
+10. Confirm no payload/secret logging in console or simulator log.
+11. Document any remaining hardware blockers.
+
+## HTTPS readiness
+
+| Requirement | Status | Notes |
+|---|---|---|
+| Meta Web Apps require HTTPS | VERIFIED | Official toolkit README |
+| HTTP-only URLs rejected | Expected | Meta runtime enforcement |
+| Localhost dev allowed | Yes | For `npm run dev` only |
+| Staging must be HTTPS | Yes | Required before Meta AI app loading |
+
+## Remaining hardware blockers
+
+- Physical Meta Ray-Ban Display glasses validation.
+- Real DAT/companion phone bridge capture (iOS/Android).
+- Real Neural Band D-pad latency and tactile feel.
+- Real additive waveguide brightness/contrast calibration.
+- Real microphone/voice runtime verification.
+- QR/deeplink launch via Meta AI app Developer Mode (URL-dependent).
+- `devicePixelRatio` and viewport behavior on actual display.
+- Backend CORS from deployed HTTPS origin.
+- Real MediaPipe BlazeFace performance on glasses web runtime.
+
+## Safe to stage deploy?
+
+**Yes — for browser/virtual-alpha staging only.** The app is not validated on
+physical Meta Ray-Ban Display glasses. The staging deploy is for:
+
+- Browser QA at 600×600.
+- Simulator scenario testing from a public HTTPS URL.
+- Backend CORS verification.
+- Meta AI app Web App loading preparation (once hardware is available).
+
+**Not safe for:** Production end-user deployment without physical device QA.
+
+## Suggested next steps
+
+1. **Push the Phase 14 changes** (vite.config.js, .env.example, README.md, simulator.html comment).
+2. **Manual browser walkthrough** on local machine with `npm run preview`.
+3. **Staging deploy** to a static host (Vercel, Netlify, or similar) with the
+   required env vars set in the host dashboard.
+4. **Verify** `/` and `/simulator.html` load from the staging HTTPS URL.
+5. **Generate QR** from the staging URL for later Meta AI app testing.
+6. **Physical glasses validation** as a separate effort when hardware and
+   Developer Mode access are available.
+
+---
+
+---
+
+# Phase 12 — Virtual Demo Script (2026-06-11)
+
+A tester can prove the full glasses flow in desktop Chrome, keyboard only,
+no glasses required.
+
+## Run the demo
+
+1. `npm run dev`
+2. Open `http://localhost:5173/simulator.html` (the demo control room).
+   - The app loads inside a 600×600 frame with the SIM badge active.
+   - For the bare app, open `http://localhost:5173/` and set the DevTools
+     viewport to 600×600.
+3. Click **Start Scan** (or click into the app and press **Enter** on
+   "K Scan").
+4. Watch: Capturing → Protecting privacy → Analyzing → Results.
+5. Arrow keys move through result cards; **Enter** saves one
+   ("Saved to Library").
+6. **Escape** back Home → **Library** shows the saved item and scan history
+   (newest first).
+7. Home → **Settings** shows plain-text status: Simulator, Backend
+   (hostname at most), Supabase (stub), Auth (guest/stub session). Sign
+   In (stub) / Sign Out toggles the virtual-alpha session.
+8. Repeat with failure scenarios (below), pressing **Start Scan** after
+   each scenario change.
+
+## Scenario matrix
+
+| Scenario | Where | Expected app result |
+|---|---|---|
+| Success with products | Capture: success | Results list with product cards |
+| Empty products | Backend: empty (reloads app) | "No matches found. Try another angle." + Retry |
+| Backend 500 | Backend: http-500 | "Something went wrong. Try again." |
+| Backend timeout | Backend: timeout | "Request timed out. Try again." |
+| Simulated network failure | Backend: offline | "Unable to connect. Try again." (demo label — not production offline support) |
+| Invalid capture payload | Capture: invalid | "Couldn't read image. Try again." |
+| Capture cancel | Capture: cancel | "Capture cancelled." + retry |
+| Capture timeout | Capture: timeout | "Capture timed out." after 10 s |
+| Permission denied | Capture: permission | "Camera permission denied." |
+| Oversized image | Capture: oversized | "Image too large. Try again." — rejected at the bridge, never reaches sanitizer/analyze |
+
+Notes:
+- Backend scenarios reload the app iframe with `?mockAnalyze=<scenario>`
+  (dev/staging-gated; inert in production builds).
+- Scanning is single-flight: extra Enter presses during processing are
+  ignored; Cancel invalidates the in-flight scan so a stale result can't
+  hijack the screen.
+- Scan/result state is in-memory by design; only library metadata persists
+  across reloads (guest localStorage, metadata only).
+
+
+## UI QA checklist (600×600 browser)
+
+A quick checklist for verifying the premium HUD feel in a browser:
+
+- [ ] Home screen shows "K SCAN" brand + "FASHION AI" tagline
+- [ ] Home primary action is "Scan" with cyan glow
+- [ ] Home secondary nav is "Library" / "Settings" (lighter weight)
+- [ ] Subtitle reads "Use D-pad arrows and Enter"
+- [ ] Processing shows spinner + "Analyzing..." + "Fashion AI is working"
+- [ ] Processing cancel button is visible and focusable
+- [ ] Results product cards show brand (cyan, uppercase), name (bold), price
+- [ ] Results save action reads "Save to Library" → "Saved" on click
+- [ ] Empty results show "No matches found" + "Try another angle" + Retry
+- [ ] Error screen shows red circle + short message + Retry + Home
+- [ ] Library shows Saved Items and Scan History with divider
+- [ ] Library stub banner reads "Demo mode — guest session"
+- [ ] Settings shows badge-style status indicators (On/Off/Guest/Live)
+- [ ] Settings back button is visible
+- [ ] Focus ring is bright cyan with subtle pulse animation
+- [ ] No full-page scroll; only scroll panels scroll
+- [ ] No mouse-only or touch-only controls
+- [ ] No console errors or asset 404s
+- [ ] No payload/secret logging in console
+
+## Phase 15 — UI Productization (2026-06-18)
+
+### What changed
+
+- **Premium Luminous AR design system**: Obsidian base, bright cyan highlights,
+  subtle chrome text, deep-space purple accents, minimal clutter.
+- **Home screen**: Brand header "K SCAN" with glow + "FASHION AI" tagline,
+  primary "Scan" button with cyan glow, lighter secondary nav.
+- **Processing**: Secondary text line "Fashion AI is working" / "Still working..."
+- **Results**: Cleaner product cards with uppercase brand label, diamond placeholder,
+  "Save to Library" action text.
+- **Library**: No "Example:" prefix, section divider, "Demo mode" banner.
+- **Settings**: Badge-style status indicators (On/Off/Guest/Live) instead of plain text.
+- **Error states**: Red glow on error symbol, "Retry" and "Home" buttons.
+- **Focus**: Subtle pulse animation on focus ring (not inside scroll panels).
+- **Transitions**: Opacity fade between screens (0.18s).
+- **Simulator**: Better frame border/shadow for demo presentation.
+
+### Visual constraints applied
+
+| Constraint | Implementation |
+|---|---|
+| 600×600 fixed viewport | `html/body/#app` all `600×600` with `overflow:hidden` |
+| Additive display (black = transparent) | Black background with bright high-contrast foreground |
+| D-pad/keyboard first | All interactive elements use `.focusable` |
+| Focus ring obvious | Cyan outline + glow + subtle pulse animation |
+| Short copy | No long paragraphs; single-line actions |
+| No dense text | Brand/name/price only on cards; no descriptions |
+| No debug jargon | "Demo mode" not "stub"; "Guest" not "stub session" |
+| No false claims | No "camera ready", "voice ready", or "production ready" |
+
+
+## Phase 16 — Browser QA / Staging Readiness
+
+### How to run local QA
+
+```bash
+cd C:\Users\jsmit\kscan-glasses-webapp
+npm run dev
+```
+
+Open:
+- `http://localhost:5173/` — app shell
+- `http://localhost:5173/simulator.html` — demo control room
+
+### How to test 600×600
+
+In Chrome or Edge DevTools:
+1. Toggle device toolbar (Ctrl+Shift+M).
+2. Set dimensions to **600 × 600**.
+3. Refresh the page.
+4. Use **Arrow keys**, **Enter**, and **Escape** only — no mouse/touch.
+
+### Known emulator limitation
+
+There is **no official Meta Ray-Ban Display emulator**. The browser at 600×600
+and the `/simulator.html` control room are the current development substitutes.
+They validate layout, navigation, focus handling, and scan-pipeline logic, but
+they **do not** validate:
+
+- Real additive waveguide brightness/contrast
+- Real Neural Band D-pad latency/tactile feel
+- Real DAT capture from companion phone
+- Real `devicePixelRatio` behavior
+- Real MediaPipe performance on glasses Web runtime
+
+### Physical MRBD testing still required
+
+Do not claim physical glasses readiness. All browser QA is virtual-alpha only.
+Physical testing requires:
+
+- Meta Ray-Ban Display glasses
+- Meta AI companion app with Developer Mode enabled
+- Public HTTPS staging URL
+- iOS or Android companion device paired to glasses
+
+### Camera / microphone support
+
+- **Web App camera access**: Not directly supported per current Meta Web App
+documentation. Capture remains abstracted through the DAT/mobile bridge.
+- **Web App microphone access**: Not directly supported. Voice activation is a
+product goal but remains a future abstraction. Do not request microphone
+permission from the Web App.
+
+### Staging readiness quick check
+
+Before deploying to any staging host:
+
+- [ ] `npm test` passes (75 contract, 0 fail)
+- [ ] `npm run build` passes
+- [ ] `git diff --check` passes
+- [ ] No secrets in working tree
+- [ ] `dist/index.html` and `dist/simulator.html` exist
+- [ ] Backend endpoint is `POST /api/analyze` with body `{ image }`
+- [ ] Sanitizer runs before analyze (verified by `scanPipeline.js`)
+- [ ] Invalid/oversized payloads rejected at bridge (verified by `datBridge.js`)
+- [ ] Voice code not imported in production (verified by contract tests)
+- [ ] No base64/image logging in source (verified by static tests)
+
+## Investor Demo Alpha
+
+**Status:** Virtual alpha / browser-testable prototype. Not physically validated on Meta Ray-Ban Display glasses.
+
+**Staging URL:** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app
+
+**Public Demo URL:** https://kscan-glasses-demo.vercel.app  
+*(Separate public demo — no Vercel SSO required. Uses mock-only flows for safety.)*
+
+**Simulator URL (public demo):** https://kscan-glasses-demo.vercel.app/simulator.html
+
+**Simulator URL (protected preview):** https://kscan-glasses-webapp-ouj5cxqrd-justinlandes-projects.vercel.app/simulator.html
+
+### What works in the demo
+
+- 600×600 MRBD-style HUD with D-pad/keyboard navigation.
+- Clean home screen → Scan → Processing → Results → Save → Library flow.
+- Privacy-first pipeline: capture → sanitize (MediaPipe face masking) → analyze.
+- Backend analyze client wired to `POST /api/analyze` with `{ image: sanitizedImageString }`.
+- Metadata-only library save (brand, name, price) — never images or payloads.
+- Simulator control room at `/simulator.html` with 10+ failure scenarios.
+- Bridge contract prepared for future DAT/mobile bridge integration.
+- Focus ring, scroll containment, async cancel safety, and D-pad navigation.
+
+### What is not yet validated
+
+- Physical Meta Ray-Ban Display glasses.
+- Real DAT/mobile bridge capture on iOS/Android.
+- Real camera capture latency and behavior.
+- Backend CORS from the deployed staging origin (pending test).
+- Phone sleep, background, lock behavior.
+- QR/deeplink launch via Meta AI companion app.
+- Real additive waveguide brightness/contrast.
+
+### How to demo
+
+1. Open the **public demo URL** in Chrome/Edge:
+   `https://kscan-glasses-demo.vercel.app`
+   (No login required. For the internal protected preview, use the staging URL.)
+2. For the glasses HUD view: set DevTools viewport to 600×600.
+3. For the simulator control room: open `/simulator.html` in a second tab.
+4. In the simulator:
+   - Select **"success"** capture scenario.
+   - Click **"Start Scan"** or press Enter on the Scan button in the app.
+   - Watch: Home → Processing → Results.
+   - Navigate to a result card, press Enter to save.
+   - Navigate to Library to see the saved item.
+   - Navigate to Settings to see system status.
+5. Try failure scenarios:
+   - **"timeout"** → shows "Unable to capture. Try again."
+   - **"permission"** → shows "Capture denied. Try again."
+   - **"oversized"** → shows "Image too large. Try again."
+   - **"phone-asleep"** → same as timeout.
+   - **"late-success"** → ignored by app after timeout.
+6. Explain: "The HUD and scan pipeline are built. The bridge contract is prepared. Device validation is the next milestone when hardware arrives."
+
+### Investor-safe talk track
+
+- "This is the browser-based virtual alpha of the K Scan MRBD glasses HUD."
+- "The 600×600 UI, D-pad navigation, and scan flow are functional today."
+- "Privacy is enforced: images are sanitized with on-device MediaPipe face masking before any backend upload."
+- "The backend analyze contract is wired and tested."
+- "The DAT bridge contract is prepared for iOS/Android companion app integration."
+- "The next milestone is real glasses + phone bridge testing, which requires the physical Meta Ray-Ban Display hardware."
+- "No production voice, no production camera, no production offline mode — those are future phases."
+
+### Demo safety notes
+
+- Do not claim physical glasses validation.
+- Do not claim real DAT bridge validation.
+- Do not claim production readiness.
+- The simulator is a testing tool, not a separate product.
+- The 600×600 HUD is the actual product surface.

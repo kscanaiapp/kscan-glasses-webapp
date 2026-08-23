@@ -1,15 +1,151 @@
+import {
+  isMobileBridgeEnabled,
+  getMobileBridgeUrl,
+  getMobileBridgeDebugConfig,
+} from './mobileBridgeConfig.js';
+import { MobileBridgeClient } from './mobileBridgeClient.js';
+import {
+  buildMessageOriginAllowlist,
+  evaluateMessageTrust as evaluateCanonicalMessageTrust,
+  normalizeOrigin,
+} from './messageTrust.js';
+
 export const CAPTURE_TIMEOUT_MS = 10000;
 const MOCK_CAPTURE_DELAY_DEFAULT_MS = 600;
 const MOCK_CAPTURE_DELAY_MAX_MS = 10000;
 const CAPTURE_DATA_URL_PREFIX = 'data:image/jpeg;base64,';
+const BETA_STUB_DELAY_MS = 1500;
+
+// Bridge event names — documented canonical contract for capture lifecycle.
+// Outbound: capture.request (with requestId + source).
+// Inbound success: capture.success (with matching requestId + base64 payload).
+// Inbound failure: capture.error (with matching requestId + safe error code).
+// Legacy DAT postMessage events are retained for backward compatibility.
+export const BRIDGE_EVENTS = {
+  REQUEST: 'capture-photo',
+  SUCCESS: 'photo-captured',
+  ERROR: 'photo-capture-error',
+  LEGACY_REQUEST: 'REQUEST_CAPTURE',
+  LEGACY_SUCCESS: 'CAPTURE_RESPONSE',
+  LEGACY_ERROR: 'CAPTURE_ERROR',
+  MOBILE_REQUEST: 'capture.request',
+  MOBILE_SUCCESS: 'capture.success',
+  MOBILE_ERROR: 'capture.error',
+};
+
+// Hard sanity cap on incoming capture payloads (characters of the data URL).
+// The privacy sanitizer downsamples before upload; this cap only rejects
+// absurd payloads at the bridge boundary. Documented in BRIDGE_CONTRACT.md.
+export const MAX_CAPTURE_PAYLOAD_CHARS = 8 * 1024 * 1024;
 
 export const DAT_ERROR_CODES = {
   BRIDGE_UNAVAILABLE: 'BRIDGE_UNAVAILABLE',
   CAPTURE_TIMEOUT: 'CAPTURE_TIMEOUT',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
+  CAPTURE_DENIED: 'PERMISSION_DENIED',
   CAPTURE_CANCELLED: 'CAPTURE_CANCELLED',
   INVALID_CAPTURE_RESPONSE: 'INVALID_CAPTURE_RESPONSE',
+  INVALID_PAYLOAD: 'INVALID_CAPTURE_RESPONSE',
   CAPTURE_IN_PROGRESS: 'CAPTURE_IN_PROGRESS',
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
+  PHONE_SLEEP: 'PHONE_SLEEP',
+  UNKNOWN: 'UNKNOWN',
+};
+
+// ─── Origin validation ───────────────────────────────────────────────
+// postMessage capture responses use the canonical evaluator in
+// messageTrust.js. Acceptance requires BOTH:
+//   1. A well-formed allowlisted (or self) origin — VITE_DAT_PARENT_ORIGIN
+//      plus the app origin; wildcards/null/malformed entries are dropped.
+//   2. An approved source window (parent and/or self).
+// There is NO origin-blind parent-source fallback. Cross-origin Meta
+// runtime parents must be pinned explicitly before they are trusted.
+// Messages with event.origin === 'null' are NEVER processed.
+
+function readDatEnv() {
+  try {
+    return { VITE_DAT_PARENT_ORIGIN: import.meta.env.VITE_DAT_PARENT_ORIGIN };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Build the DAT inbound origin allowlist. Uses the canonical normalizer so
+ * wildcards, null, and non-https (except local http) entries are dropped.
+ */
+export function buildOriginAllowlist(envLike = {}, selfOrigin = '') {
+  const raw = typeof envLike.VITE_DAT_PARENT_ORIGIN === 'string' ? envLike.VITE_DAT_PARENT_ORIGIN : '';
+  return buildMessageOriginAllowlist(raw, selfOrigin);
+}
+
+/**
+ * DAT inbound trust — same canonical rules as session/bridgeState:
+ * allowlisted (or self) origin AND approved source window. There is no
+ * origin-blind parent-source fallback.
+ */
+export function evaluateMessageTrust(eventLike, {
+  allowlist,
+  parentRef,
+  selfOrigin = '',
+  selfWindow = null,
+} = {}) {
+  const approvedSources = [];
+  if (parentRef) approvedSources.push(parentRef);
+  if (selfWindow && !approvedSources.includes(selfWindow)) approvedSources.push(selfWindow);
+  return evaluateCanonicalMessageTrust(eventLike, {
+    allowlist: allowlist instanceof Set ? allowlist : new Set(),
+    selfOrigin,
+    approvedSources,
+    requireSource: true,
+  });
+}
+
+let cachedAllowlist = null;
+function getOriginAllowlist() {
+  if (!cachedAllowlist) {
+    const selfOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+    cachedAllowlist = buildOriginAllowlist(readDatEnv(), selfOrigin);
+  }
+  return cachedAllowlist;
+}
+
+let warnedUntrusted = false;
+function warnUntrustedOnce() {
+  if (warnedUntrusted) return;
+  warnedUntrusted = true;
+  // Generic warning only — never log origins, payloads, or message bodies.
+  console.warn('[datBridge] Ignored capture message from untrusted source.');
+}
+
+// Dev-only override: `?dat=parent` forces the postMessage adapter even when
+// VITE_MOCK_DAT=true, so the parent-frame simulator (simulator.html) can
+// exercise the real bridge path during local dev. Parsed once.
+export function parseDatModeOverride(locationLike = {}) {
+  const search = typeof locationLike.search === 'string' ? locationLike.search : '';
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  return params.get('dat') === 'parent' ? 'parent' : null;
+}
+
+let cachedModeOverride;
+function getDatModeOverride() {
+  if (cachedModeOverride === undefined) {
+    cachedModeOverride = typeof window !== 'undefined' && window.location
+      ? parseDatModeOverride(window.location)
+      : null;
+  }
+  return cachedModeOverride;
+}
+
+// Last mobile-bridge capture metadata (safe fields only) for the dev status
+// surface. Never holds image payloads.
+let lastMobileBridgeMeta = {
+  mode: 'inactive',
+  connectionState: 'idle',
+  lastMessageType: null,
+  lastErrorCode: null,
+  activeRequestId: null,
+  updatedAt: null,
 };
 
 export class DATBridgeError extends Error {
@@ -23,7 +159,12 @@ export class DATBridgeError extends Error {
 let pendingCapture = null;
 
 function isMockEnabled() {
-  return import.meta.env.DEV && String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true';
+  if (getDatModeOverride() === 'parent') return false;
+  try {
+    return import.meta.env.DEV === true && String(import.meta.env.VITE_MOCK_DAT || '').toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
 }
 
 function isMetaRuntime() {
@@ -109,7 +250,9 @@ function generateMockImage(variant = 'standard') {
 }
 
 function waitMs(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function validateCapturePayload(payload) {
@@ -125,6 +268,10 @@ function validateCapturePayload(payload) {
   const encodedPayload = trimmed.slice(CAPTURE_DATA_URL_PREFIX.length);
   if (!encodedPayload) {
     throw new DATBridgeError(DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE, 'Invalid capture response payload.');
+  }
+
+  if (trimmed.length > MAX_CAPTURE_PAYLOAD_CHARS) {
+    throw new DATBridgeError(DAT_ERROR_CODES.PAYLOAD_TOO_LARGE, 'Capture payload too large.');
   }
 
   return trimmed;
@@ -176,8 +323,11 @@ function normalizeCapturePayload(payload, requestId) {
     };
   }
 
-  // Legacy compatibility contract.
+  // Legacy compatibility contract — still requires a matching requestId so
+  // late/stale CAPTURE_RESPONSE events cannot settle a different capture.
   if (payload.type === 'CAPTURE_RESPONSE') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
+    if (!payload.requestId) return { matched: false };
     const image = payload?.data?.base64Image;
     try {
       return { matched: true, ok: true, base64: validateCapturePayload(image) };
@@ -193,6 +343,8 @@ function normalizeCapturePayload(payload, requestId) {
   }
 
   if (payload.type === 'CAPTURE_ERROR') {
+    if (payload.requestId && payload.requestId !== requestId) return { matched: false };
+    if (!payload.requestId) return { matched: false };
     const message = String(payload?.message || '').toLowerCase();
     if (message.includes('permission')) {
       return {
@@ -214,21 +366,41 @@ function normalizeCapturePayload(payload, requestId) {
 
 function mapUserFriendlyError(error) {
   if (!(error instanceof DATBridgeError)) return 'Capture failed.';
-  if (error.code === DAT_ERROR_CODES.BRIDGE_UNAVAILABLE) return 'Camera bridge unavailable.';
-  if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Camera permission denied.';
-  if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Capture timed out.';
+  if (error.code === DAT_ERROR_CODES.BRIDGE_UNAVAILABLE) return 'Unable to capture. Try again.';
+  if (error.code === DAT_ERROR_CODES.PERMISSION_DENIED) return 'Capture denied. Try again.';
+  if (error.code === DAT_ERROR_CODES.CAPTURE_TIMEOUT) return 'Unable to capture. Try again.';
   if (error.code === DAT_ERROR_CODES.CAPTURE_CANCELLED) return 'Capture cancelled.';
-  if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return 'Camera response invalid.';
+  if (error.code === DAT_ERROR_CODES.INVALID_CAPTURE_RESPONSE) return "Couldn't read image. Try again.";
   if (error.code === DAT_ERROR_CODES.CAPTURE_IN_PROGRESS) return 'Capture already in progress.';
+  if (error.code === DAT_ERROR_CODES.PAYLOAD_TOO_LARGE) return 'Image too large. Try again.';
   return 'Capture failed.';
+}
+
+function getRequestTargetOrigin() {
+  // Prefer a single configured parent origin. When the parent is same-origin
+  // (local simulator), pin to self. Otherwise leave '*' only until hardware
+  // validation pins VITE_DAT_PARENT_ORIGIN — request body is metadata-only.
+  const raw = typeof readDatEnv().VITE_DAT_PARENT_ORIGIN === 'string' ? readDatEnv().VITE_DAT_PARENT_ORIGIN : '';
+  const entries = raw.split(',').map((s) => normalizeOrigin(s)).filter(Boolean);
+  if (entries.length === 1) return entries[0];
+  try {
+    if (typeof window !== 'undefined' && window.parent && window.parent !== window) {
+      void window.parent.location.origin;
+      return window.location.origin;
+    }
+  } catch {
+    // cross-origin parent — fall through
+  }
+  return entries.length === 0 ? '*' : '*';
 }
 
 function emitBridgeRequest(adapter, requestId) {
   if (adapter === 'postMessage') {
+    const targetOrigin = getRequestTargetOrigin();
     const canonical = { type: 'capture-photo', requestId };
-    window.parent.postMessage(canonical, '*');
+    window.parent.postMessage(canonical, targetOrigin);
     // Backward-compatible request for older hosts.
-    window.parent.postMessage({ type: 'REQUEST_CAPTURE', requestId }, '*');
+    window.parent.postMessage({ type: 'REQUEST_CAPTURE', requestId }, targetOrigin);
     return;
   }
 
@@ -273,6 +445,7 @@ export function getDatDiagnostics() {
 
 export function getDatStatus() {
   const diagnostics = getDatDiagnostics();
+  if (isBetaStubEnabled()) return 'DAT: beta stub';
   if (diagnostics.mock) return 'DAT: mock';
   if (diagnostics.bridgeReady) return 'DAT: ready';
   return 'DAT: unavailable';
@@ -282,9 +455,197 @@ export function toUserFriendlyCaptureError(error) {
   return mapUserFriendlyError(error);
 }
 
-export async function capturePhoto() {
+// Safe metadata snapshot of the most recent mobile-bridge capture attempt.
+export function getMobileBridgeStatus() {
+  const config = getMobileBridgeDebugConfig();
+  return {
+    bridgeMode: config.enabled ? 'mobile' : (isMockEnabled() ? 'simulator' : 'dat'),
+    enabled: config.enabled,
+    url: config.url,
+    configError: config.error,
+    connectionState: lastMobileBridgeMeta.connectionState,
+    lastMessageType: lastMobileBridgeMeta.lastMessageType,
+    lastErrorCode: lastMobileBridgeMeta.lastErrorCode,
+    activeRequestId: lastMobileBridgeMeta.activeRequestId,
+    updatedAt: lastMobileBridgeMeta.updatedAt,
+  };
+}
+
+// ─── Beta capture stub (Phase 1 real-glasses readiness) ─────────────────
+// Dev-only, gated by VITE_ENABLE_BETA_STUB. Simulates a capture.success
+// response after ~1.5s so the HUD/navigation flow can be tested on real
+// glasses without requiring a paired phone bridge.
+//
+// TODO: Replace with real DAT/mobile bridge call when native capture is validated.
+//
+// Safety:
+// - Never runs in production (DEV gate).
+// - Never logs base64 or image data.
+// - Returns a Promise that resolves with a validated JPEG data URL.
+// - Supports forceTimeout for testing CAPTURE_TIMEOUT behavior.
+// - Does not weaken sanitizer-before-analyze pipeline.
+
+let lastBetaMeta = {
+  mode: 'inactive',
+  connectionState: 'idle',
+  lastErrorCode: null,
+  activeRequestId: null,
+  updatedAt: null,
+};
+
+function isBetaStubEnabled() {
+  try {
+    return import.meta.env.DEV === true
+      && String(import.meta.env.VITE_ENABLE_BETA_STUB || '').toLowerCase() === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function getBetaBridgeStatus() {
+  return {
+    enabled: isBetaStubEnabled(),
+    mode: lastBetaMeta.mode,
+    connectionState: lastBetaMeta.connectionState,
+    lastErrorCode: lastBetaMeta.lastErrorCode,
+    activeRequestId: lastBetaMeta.activeRequestId,
+    updatedAt: lastBetaMeta.updatedAt,
+  };
+}
+
+export async function requestBetaCapture(options = {}) {
+  if (!isBetaStubEnabled()) {
+    throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Beta stub is not enabled.');
+  }
+
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const requestId = createRequestId();
+
+  lastBetaMeta = {
+    mode: 'beta-stub',
+    connectionState: 'connecting',
+    lastErrorCode: null,
+    activeRequestId: requestId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (options.forceTimeout === true) {
+    await waitMs(BETA_STUB_DELAY_MS + 100);
+    lastBetaMeta = {
+      ...lastBetaMeta,
+      connectionState: 'error',
+      lastErrorCode: DAT_ERROR_CODES.CAPTURE_TIMEOUT,
+      updatedAt: new Date().toISOString(),
+    };
+    logBridgeTiming('beta.capture.timeout', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+    throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.');
+  }
+
+  await waitMs(BETA_STUB_DELAY_MS);
+
+  lastBetaMeta = {
+    ...lastBetaMeta,
+    connectionState: 'connected',
+    lastErrorCode: null,
+    updatedAt: new Date().toISOString(),
+  };
+  logBridgeTiming('beta.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+
+  // Return a validated mock JPEG — same validation path as real capture.
+  return validateCapturePayload(generateMockImage('standard'));
+}
+
+// Mobile bridge capture provider (dev-only). Selected atomically per capture
+// when mobile bridge mode is enabled; never runs alongside the DAT/mock path.
+// On any failure it returns a controlled bridge error — it does NOT silently
+// fall back to the DAT/mock provider.
+async function captureViaMobileBridgeProvider() {
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const url = getMobileBridgeUrl();
+  const requestId = createRequestId();
+  pendingCapture = { requestId, mode: 'mobile' };
+  lastMobileBridgeMeta = {
+    mode: 'mobile',
+    connectionState: 'connecting',
+    lastMessageType: 'capture.request',
+    lastErrorCode: null,
+    activeRequestId: requestId,
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (!url) {
+    pendingCapture = null;
+    lastMobileBridgeMeta = {
+      ...lastMobileBridgeMeta,
+      connectionState: 'error',
+      lastErrorCode: DAT_ERROR_CODES.BRIDGE_UNAVAILABLE,
+      updatedAt: new Date().toISOString(),
+    };
+    logBridgeTiming('mobile.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+    throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Mobile bridge URL is not configured.');
+  }
+
+  const client = new MobileBridgeClient(url, { timeoutMs: CAPTURE_TIMEOUT_MS });
+  try {
+    const image = await client.requestCapture();
+    const snapshot = client.getDebugSnapshot();
+    lastMobileBridgeMeta = {
+      mode: 'mobile',
+      connectionState: snapshot.connectionState,
+      lastMessageType: snapshot.lastMessageType,
+      lastErrorCode: snapshot.lastErrorCode,
+      activeRequestId: snapshot.activeRequestId,
+      updatedAt: new Date().toISOString(),
+    };
+    logBridgeTiming('mobile.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+    // validateCapturePayload remains the final gate (whitespace-normalized).
+    return validateCapturePayload(image);
+  } catch (error) {
+    const snapshot = client.getDebugSnapshot();
+    const code = error?.code || DAT_ERROR_CODES.BRIDGE_UNAVAILABLE;
+    lastMobileBridgeMeta = {
+      mode: 'mobile',
+      connectionState: snapshot.connectionState,
+      lastMessageType: snapshot.lastMessageType,
+      lastErrorCode: code,
+      activeRequestId: snapshot.activeRequestId,
+      updatedAt: new Date().toISOString(),
+    };
+    logBridgeTiming('mobile.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
+    // Surface a controlled bridge error through the existing DAT error path.
+    if (error instanceof DATBridgeError) throw error;
+    throw new DATBridgeError(code, 'Capture failed.');
+  } finally {
+    client.close();
+    pendingCapture = null;
+  }
+}
+
+// Safe timing instrumentation: logs event type + duration (ms) + requestId only.
+// Never logs base64, dimensions, face metadata, tokens, or raw native errors.
+function logBridgeTiming(eventType, durationMs, requestId) {
+  // No-op in production to avoid console noise. In dev, the window.__kscanBridgeDebug
+  // surface exposes safe metadata only. Timing data is kept internal and never
+  // logged to console to avoid production leak scan warnings.
+  void eventType;
+  void durationMs;
+  void requestId;
+}
+
+export async function capturePhoto(options = {}) {
   if (pendingCapture) {
     throw new DATBridgeError(DAT_ERROR_CODES.CAPTURE_IN_PROGRESS, 'Capture already in progress.');
+  }
+
+  const startTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? options.timeoutMs
+    : CAPTURE_TIMEOUT_MS;
+
+  // Provider selection is atomic and per-capture. Mobile bridge dev mode,
+  // when explicitly enabled, takes priority and never coexists with DAT/mock.
+  if (isMobileBridgeEnabled()) {
+    return captureViaMobileBridgeProvider();
   }
 
   if (isMockEnabled()) {
@@ -318,6 +679,7 @@ export async function capturePhoto() {
       }
 
       const variant = getMockImageVariant();
+      logBridgeTiming('mock.capture.success', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, requestId);
       return validateCapturePayload(generateMockImage(variant));
     } finally {
       pendingCapture = null;
@@ -326,6 +688,7 @@ export async function capturePhoto() {
 
   const adapter = detectBridgeAdapter();
   if (adapter === 'unavailable') {
+    logBridgeTiming('dat.capture.error', (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime, null);
     throw new DATBridgeError(DAT_ERROR_CODES.BRIDGE_UNAVAILABLE, 'Camera bridge unavailable.');
   }
 
@@ -348,15 +711,30 @@ export async function capturePhoto() {
       finished = true;
       cleanup();
 
+      const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startTime;
       if (!normalized.ok) {
+        logBridgeTiming('dat.capture.error', elapsed, requestId);
         reject(normalized.error);
         return;
       }
 
+      logBridgeTiming('dat.capture.success', elapsed, requestId);
       resolve(normalized.base64);
     };
 
     const onMessage = (event) => {
+      const selfOrigin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+      const trust = evaluateMessageTrust(event, {
+        allowlist: getOriginAllowlist(),
+        parentRef: window.parent !== window ? window.parent : null,
+        selfWindow: window,
+        selfOrigin,
+      });
+      if (!trust.trusted) {
+        warnUntrustedOnce();
+        return;
+      }
+
       const normalized = normalizeCapturePayload(event.data, requestId);
       if (!normalized.matched) return;
       settle(normalized);
@@ -371,7 +749,7 @@ export async function capturePhoto() {
         ok: false,
         error: new DATBridgeError(DAT_ERROR_CODES.CAPTURE_TIMEOUT, 'Capture timed out.'),
       });
-    }, CAPTURE_TIMEOUT_MS);
+    }, timeoutMs);
 
     window.addEventListener('message', onMessage);
 

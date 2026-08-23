@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>K Scan — Real Phone Companion (PRIVATE HARDWARE CANDIDATE QA)</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0b0e12; color: #d7dee6; font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex; flex-direction: column; min-height: 100vh;
+    }
+    .qa-banner {
+      background: #3a2a10; color: #ffd28f; text-align: center; padding: 8px 12px;
+      font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .layout { display: flex; gap: 16px; padding: 16px; flex: 1; align-items: flex-start; }
+    .hud-wrap { flex: 0 0 auto; }
+    .hud-wrap iframe {
+      width: 600px; height: 600px; border: 2px solid #2b3b4d; border-radius: 12px; background: #000;
+    }
+    .hud-caption { text-align: center; font-size: 12px; color: #7c8a99; margin-top: 6px; }
+    .panel { flex: 1 1 auto; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+    .card { background: #11161d; border: 1px solid #26313f; border-radius: 10px; padding: 12px 14px; }
+    .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #8fa7bc; margin-bottom: 10px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    input {
+      background: #1d2836; color: #d7dee6; border: 1px solid #33465c; border-radius: 8px;
+      padding: 8px 10px; font-size: 13px; width: 100%;
+    }
+    button {
+      background: #1d2836; color: #d7dee6; border: 1px solid #33465c; border-radius: 8px;
+      padding: 8px 12px; font-size: 13px; cursor: pointer;
+    }
+    button:hover { background: #27374a; }
+    button.primary { background: #1f3a5f; border-color: #3d6396; }
+    button.danger { background: #4a2020; border-color: #7a3535; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .status-line { font-size: 13px; color: #a9b8c6; }
+    .hidden { display: none !important; }
+    #log {
+      font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11px; line-height: 1.5;
+      background: #080b0f; border: 1px solid #1d2836; border-radius: 8px; padding: 10px;
+      height: 260px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="qa-banner">PRIVATE HARDWARE CANDIDATE QA — Real Phone Companion — requires live Supabase credentials — never deploy publicly</div>
+  <div class="layout">
+    <div class="hud-wrap">
+      <iframe id="hud-frame" src="index.html?mode=hardware&companion=1" title="Meta HUD (600×600)"></iframe>
+      <div class="hud-caption">HUD under test — real backend — Meta Ray-Ban Display 600×600</div>
+    </div>
+    <div class="panel">
+      <div id="no-config" class="card hidden">
+        <h2>Not configured</h2>
+        <div class="status-line">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to use this page.</div>
+      </div>
+
+      <div id="auth-panel" class="card">
+        <h2>Phone sign-in (real Supabase user)</h2>
+        <form id="signin-form">
+          <div class="row"><input id="signin-email" type="email" placeholder="Test account email" autocomplete="username" required /></div>
+          <div class="row"><input id="signin-password" type="password" placeholder="Password" autocomplete="current-password" required /></div>
+          <div class="row"><button type="submit" class="primary">Sign in</button></div>
+        </form>
+        <div class="status-line" id="signin-status">Not signed in.</div>
+      </div>
+
+      <div id="control-panel" class="card hidden">
+        <h2>Phone companion (real backend)</h2>
+        <div class="status-line">State: <strong id="phone-state">idle</strong></div>
+        <div class="row" style="margin-top:8px;">
+          <button id="btn-approve" class="primary" disabled>Approve pairing</button>
+          <button id="btn-deny" class="danger" disabled>Deny</button>
+          <button id="btn-unpair" disabled>Unpair / sign out session</button>
+        </div>
+        <div class="row"><button id="btn-signout">Sign out</button></div>
+      </div>
+
+      <div class="card">
+        <h2>Log (metadata only)</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="src/companion/realCompanionEntry.js"></script>
+</body>
+</html>

@@ -1,5 +1,22 @@
 // Privacy sanitizer for on-device face masking before backend upload.
-// No face metadata is persisted or exposed outside this module.
+// No face metadata is persisted, logged, or exposed outside this module.
+//
+// Pipeline position (enforced by scanPipeline.js + tests): the sanitizer
+// ALWAYS runs between capture and analyzeImage. The raw capture string is
+// never sent to the backend.
+//
+// What sanitization does:
+//   1. Decodes the capture and redraws it onto a fresh canvas — this strips
+//      EXIF/GPS/metadata and converts any input format (incl. PNG) to JPEG.
+//   2. Downsamples to maxSide (800px default).
+//   3. Runs the MediaPipe BlazeFace detector (lazy-loaded, local WASM/model
+//      assets) and solid-masks every detected face region with margin.
+//   4. Re-encodes as JPEG. If output exceeds MAX_SANITIZED_OUTPUT_CHARS the
+//      sanitizer retries at lower quality, then fails closed.
+//
+// Failure mode (conservative, documented in README/QA_REPORT): any decode,
+// detector-init, or detection failure throws SanitizerError and the upload
+// is BLOCKED. We never fall back to uploading the unsanitized capture.
 
 const DEFAULT_OPTIONS = {
   maxSide: 800,
@@ -7,6 +24,10 @@ const DEFAULT_OPTIONS = {
   margin: 0.25,
   jpegQuality: 0.8,
 };
+
+// ~1MB cap on the sanitized data URL (chars). Documented in README.
+export const MAX_SANITIZED_OUTPUT_CHARS = 1024 * 1024;
+const FALLBACK_JPEG_QUALITY = 0.6;
 
 const VISION_WASM_BASE_PATH = '/mediapipe/wasm';
 const FACE_MODEL_PATH = '/models/blaze_face_full_range.tflite';
@@ -17,6 +38,7 @@ export const SANITIZER_ERROR_CODES = {
   FACE_DETECTION_FAILED: 'FACE_DETECTION_FAILED',
   CANVAS_FAILED: 'CANVAS_FAILED',
   SANITIZER_IN_PROGRESS: 'SANITIZER_IN_PROGRESS',
+  OUTPUT_TOO_LARGE: 'OUTPUT_TOO_LARGE',
 };
 
 export class SanitizerError extends Error {
@@ -30,6 +52,16 @@ export class SanitizerError extends Error {
 let inProgress = false;
 let detector = null;
 let detectorPromise = null;
+let maskEngineOverrideForTests = null;
+
+/**
+ * DEV/TEST ONLY hook: inject a mock detector ({ detect(canvas) => result }).
+ * Lets the simulator and tests exercise zero/one/multi face-region paths
+ * without committing real face imagery. Pass null to clear.
+ */
+export function __setMaskEngineForTests(detectorLike) {
+  maskEngineOverrideForTests = detectorLike || null;
+}
 
 function toDataUrl(input) {
   if (typeof input !== 'string' || input.trim().length < 16) {
@@ -71,6 +103,7 @@ function scaleSize(width, height, maxSide) {
 }
 
 async function ensureFaceDetector() {
+  if (maskEngineOverrideForTests) return maskEngineOverrideForTests;
   if (detector) return detector;
   if (detectorPromise) return detectorPromise;
 
@@ -164,6 +197,20 @@ function extractBoxes(result, scaleX, scaleY) {
     .filter(Boolean);
 }
 
+function encodeWithinLimit(canvas, preferredQuality) {
+  const first = canvas.toDataURL('image/jpeg', preferredQuality);
+  if (first.length <= MAX_SANITIZED_OUTPUT_CHARS) return first;
+
+  // One lower-quality retry, then fail closed. Never upload oversized output.
+  const second = canvas.toDataURL('image/jpeg', FALLBACK_JPEG_QUALITY);
+  if (second.length <= MAX_SANITIZED_OUTPUT_CHARS) return second;
+
+  throw new SanitizerError(
+    SANITIZER_ERROR_CODES.OUTPUT_TOO_LARGE,
+    'Sanitized image exceeds the upload size limit.',
+  );
+}
+
 export async function sanitizeImageBeforeUpload(base64Image, options = {}) {
   if (inProgress) {
     throw new SanitizerError(
@@ -238,7 +285,7 @@ export async function sanitizeImageBeforeUpload(base64Image, options = {}) {
       maskFaceBoxes(ctx, boxes, config.margin, outputSize.width, outputSize.height);
     }
 
-    return canvas.toDataURL('image/jpeg', config.jpegQuality);
+    return encodeWithinLimit(canvas, config.jpegQuality);
   } finally {
     if (sourceImage && typeof sourceImage.close === 'function') {
       sourceImage.close();
@@ -252,7 +299,15 @@ export async function sanitizeImageBeforeUpload(base64Image, options = {}) {
 }
 
 export function mapSanitizerErrorToUserMessage(error) {
-  if (!(error instanceof SanitizerError)) return 'Privacy scan failed. Try again.';
+  if (error instanceof SanitizerError && error.code === SANITIZER_ERROR_CODES.OUTPUT_TOO_LARGE) {
+    return 'Image too large. Try again.';
+  }
+  if (error instanceof SanitizerError && (
+    error.code === SANITIZER_ERROR_CODES.FACE_DETECTION_FAILED
+    || error.code === SANITIZER_ERROR_CODES.SANITIZER_MODEL_MISSING
+  )) {
+    return "We couldn't verify this image is safe to upload. Please try again.";
+  }
   return 'Privacy scan failed. Try again.';
 }
 

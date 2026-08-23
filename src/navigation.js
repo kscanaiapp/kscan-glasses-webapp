@@ -30,7 +30,7 @@ function focusAtIndex(viewId, index) {
   if (!items.length) return;
   focusIndex = ((index % items.length) + items.length) % items.length;
   items[focusIndex].focus();
-  items[focusIndex].scrollIntoView({ block: 'nearest' });
+  items[focusIndex].scrollIntoView({ block: 'nearest', inline: 'nearest' });
   applyFocusedClass(items[focusIndex]);
 }
 

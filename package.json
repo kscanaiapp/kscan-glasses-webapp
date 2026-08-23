@@ -6,18 +6,53 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:simulator": "vite build --config vite.simulator.config.js",
+    "build:hardware": "vite build --config vite.hardware.config.js",
+    "verify:artifacts": "node scripts/verify-artifacts.js",
+    "test:artifacts": "npm run verify:artifacts",
+    "lint": "eslint .",
     "preview": "vite preview",
+    "static": "npm run test:static",
     "copy:wasm": "node scripts/copy-mediapipe-wasm.js",
     "verify:models": "node scripts/verify-models.js",
     "download:models": "node scripts/download-models.js",
     "postinstall": "node scripts/copy-mediapipe-wasm.js",
+    "test:textscan": "node scripts/textscan-live-tests.js",
+    "test:smoke": "node scripts/textscan-live-smoke.js",
     "test:static": "node scripts/static-tests.js",
-    "test": "npm run verify:models && npm run build && npm run test:static"
+    "test:security": "node scripts/security-tests.js",
+    "test:bridge": "node scripts/bridge-lifecycle-tests.js",
+    "test:bridge-lifecycle": "npm run test:bridge",
+    "test:privacy": "node scripts/privacy-tests.js",
+    "test:browser": "node scripts/browser-smoke.js",
+    "browser:smoke": "npm run test:browser",
+    "browser:companion": "node scripts/browser-smoke-companion.js",
+    "browser:companion:scenarios": "node scripts/browser-smoke-companion.js scenarios",
+    "browser:companion:loops": "node scripts/browser-smoke-companion.js loops",
+    "test:contract": "node scripts/contract-tests.js",
+    "test:contracts": "npm run test:contract",
+    "test:companion-protocol": "node scripts/companion-protocol-tests.js",
+    "test:companion-pairing": "node scripts/companion-pairing-tests.js",
+    "test:companion-statemachine": "node scripts/companion-statemachine-tests.js",
+    "test:companion-state": "npm run test:companion-statemachine",
+    "test:companion-result": "node scripts/companion-result-tests.js",
+    "test:companion-results": "npm run test:companion-result",
+    "test:companion-reconnect": "node scripts/companion-reconnect-tests.js",
+    "test:companion-runtime": "npm run test:companion-reconnect",
+    "test:companion": "npm run test:companion-protocol && npm run test:companion-pairing && npm run test:companion-statemachine && npm run test:companion-result && npm run test:companion-reconnect",
+    "test:wearable": "node scripts/wearable-integration-tests.js",
+    "test:drift-guard": "node scripts/wearable-deploy-drift-guard.mjs --source-only",
+    "test:drift-guard:live": "node scripts/wearable-deploy-drift-guard.mjs --require-live",
+    "test:wearable-scan-backend": "deno test --no-check supabase/functions/wearable-scan/_test.ts",
+    "test": "npm run verify:models && npm run build && npm run build:simulator && npm run build:hardware && npm run lint && npm run test:static && npm run test:contract && npm run test:textscan && npm run test:security && npm run test:bridge && npm run test:privacy && npm run verify:artifacts && npm run test:companion && npm run test:wearable"
   },
   "devDependencies": {
+    "eslint": "9.39.4",
+    "playwright-core": "1.57.0",
     "vite": "^7.1.0"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35"
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "@supabase/supabase-js": "^2.108.2"
   }
 }

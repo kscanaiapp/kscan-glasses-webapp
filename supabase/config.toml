@@ -1,0 +1,22 @@
+# K Scan wearable backend — Meta physical device candidate.
+# See supabase/README.md for the full contract and trust model.
+#
+# verify_jwt = false on all wearable functions is INTENTIONAL and safe:
+#   - wearable-bridge authenticates phone-side operations via requireUser()
+#     (Supabase user JWT → auth.getUser()) and wearable-side operations via the
+#     short-lived wearable session token (SHA-256 hash lookup + expiry +
+#     revocation checks). Neither token shape is enforced at the gateway.
+#   - wearable-scan / wearable-save / wearable-open-on-phone authenticate via
+#     the wearable session token against the bridge-owned schema.
+
+[functions.wearable-bridge]
+verify_jwt = false
+
+[functions.wearable-scan]
+verify_jwt = false
+
+[functions.wearable-save]
+verify_jwt = false
+
+[functions.wearable-open-on-phone]
+verify_jwt = false

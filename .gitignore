@@ -1,3 +1,20 @@
 .env
+.env.local
+.env.*.local
 node_modules/
 dist/
+dist-simulator/
+dist-production/
+dist-hardware/
+
+.vercel
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+*.trace.zip
+**/trace.zip
+**/test-results/**
+
+# Supabase CLI scratch state (link target, access tokens) — never commit.
+supabase/.temp/

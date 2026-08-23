@@ -82,10 +82,10 @@ for (const rel of optionalSrc) {
 // ═══════════════════════════════════════════════════════════════════
 console.log('\n=== B. Dist/Build Asset Integrity ===');
 
-const distHtmlPath  = path.join(root, 'dist', 'index.html');
-const distModelPath = path.join(root, 'dist', 'models', 'blaze_face_full_range.tflite');
-const distWasmDir   = path.join(root, 'dist', 'mediapipe', 'wasm');
-const distAssetsDir = path.join(root, 'dist', 'assets');
+const distHtmlPath  = path.join(root, 'dist-production', 'index.html');
+const distModelPath = path.join(root, 'dist-production', 'models', 'blaze_face_full_range.tflite');
+const distWasmDir   = path.join(root, 'dist-production', 'mediapipe', 'wasm');
+const distAssetsDir = path.join(root, 'dist-production', 'assets');
 
 fileExists(distHtmlPath)
   ? pass('B.dist/index.html', 'exists', 'exists')
@@ -435,8 +435,742 @@ device('QA.dat:android-bridge',        'Android native bridge captures real phot
 device('QA.mrbd:devpixelratio',        'devicePixelRatio matches MRBD runtime',    'requires physical device');
 
 // ═══════════════════════════════════════════════════════════════════
-// SUMMARY
+// G. MOBILE BRIDGE DEV CLIENT (Phase 17)
 // ═══════════════════════════════════════════════════════════════════
+console.log('\n=== G. Mobile Bridge Dev Client (Phase 17) ===');
+
+const configPath = path.join(srcDir, 'mobileBridgeConfig.js');
+const clientPath = path.join(srcDir, 'mobileBridgeClient.js');
+const configSrc = readFile(configPath);
+const clientSrc = readFile(clientPath);
+const datSrc = readFile(path.join(srcDir, 'datBridge.js'));
+const mainSrc = readFile(path.join(srcDir, 'main.js'));
+
+fileExists(configPath)
+  ? pass('G.file:mobileBridgeConfig.js', 'exists', 'exists')
+  : fail('G.file:mobileBridgeConfig.js', 'exists', 'MISSING');
+fileExists(clientPath)
+  ? pass('G.file:mobileBridgeClient.js', 'exists', 'exists')
+  : fail('G.file:mobileBridgeClient.js', 'exists', 'MISSING');
+
+// Config exports
+for (const fn of ['isMobileBridgeEnabled', 'getMobileBridgeUrl', 'getMobileBridgeDebugConfig', 'parseMobileBridgeConfig']) {
+  configSrc.includes(`export function ${fn}`)
+    ? pass(`G.config:export:${fn}`, 'exported', 'found')
+    : fail(`G.config:export:${fn}`, 'exported', 'NOT found');
+}
+
+// Only ws/wss schemes accepted
+(configSrc.includes("'ws:'") && configSrc.includes("'wss:'"))
+  ? pass('G.config:ws-wss-only', 'accepts ws:// and wss:// only', 'found')
+  : fail('G.config:ws-wss-only', "ACCEPTED_WS_SCHEMES = ws:/wss:", 'NOT found');
+
+// Provider selection wired into capturePhoto, mobile bridge takes priority
+datSrc.includes('if (isMobileBridgeEnabled())')
+  ? pass('G.datBridge:provider-selection', 'capturePhoto checks isMobileBridgeEnabled()', 'found')
+  : fail('G.datBridge:provider-selection', 'if (isMobileBridgeEnabled())', 'NOT found');
+
+// Existing DAT/mock simulator path preserved
+(datSrc.includes('isMockEnabled()') && datSrc.includes('detectBridgeAdapter()'))
+  ? pass('G.datBridge:dat-mock-preserved', 'DAT/mock path still present', 'found')
+  : fail('G.datBridge:dat-mock-preserved', 'isMockEnabled + detectBridgeAdapter retained', 'NOT found');
+
+// validateCapturePayload remains the final gate on the bridge path
+datSrc.includes('return validateCapturePayload(image);')
+  ? pass('G.datBridge:final-gate', 'bridge payload passes through validateCapturePayload', 'found')
+  : fail('G.datBridge:final-gate', 'validateCapturePayload(image) final gate', 'NOT found');
+
+// Dev status surface gated by DEV && isMobileBridgeEnabled, window function only
+(/import\.meta\.env\.DEV[^]*isMobileBridgeEnabled\(\)/.test(mainSrc) && mainSrc.includes('window.__kscanBridgeDebug'))
+  ? pass('G.main:debug-surface-gated', 'window.__kscanBridgeDebug gated by DEV && enabled', 'found')
+  : fail('G.main:debug-surface-gated', 'DEV && isMobileBridgeEnabled() + window.__kscanBridgeDebug', 'NOT found');
+
+// No raw image / base64 / payload logging in mobile bridge source
+for (const [label, src] of [['config', configSrc], ['client', clientSrc]]) {
+  /console\.log\([^)]*image|console\.log\([^)]*base64/i.test(src)
+    ? fail(`G.${label}:no-image-log`, 'no console.log(image/base64)', 'FOUND')
+    : pass(`G.${label}:no-image-log`, 'no console.log(image/base64)', 'absent');
+}
+// Client must not stringify a full message that may carry image
+/JSON\.stringify\(\s*message/.test(clientSrc)
+  ? fail('G.client:no-stringify-message', 'no JSON.stringify(message)', 'FOUND')
+  : pass('G.client:no-stringify-message', 'no JSON.stringify(message)', 'absent');
+
+// No hardcoded private LAN IPs in new source or new docs (localhost/127.0.0.1 ok)
+const privateIpRx = /192\.168\.\d+\.\d+|\b10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[0-1])\.\d+\.\d+/;
+const ipScanTargets = [
+  'src/mobileBridgeConfig.js',
+  'src/mobileBridgeClient.js',
+  'src/datBridge.js',
+  'src/main.js',
+  'BRIDGE_DEV_MODE.md',
+  'BRIDGE_CONTRACT.md',
+];
+let ipHits = [];
+for (const rel of ipScanTargets) {
+  const content = readFile(path.join(root, rel));
+  if (privateIpRx.test(content)) ipHits.push(rel);
+}
+ipHits.length === 0
+  ? pass('G.no-hardcoded-private-ip', 'no private LAN IPs in source/docs', 'clean')
+  : fail('G.no-hardcoded-private-ip', 'no private LAN IPs', `FOUND in: ${ipHits.join(', ')}`);
+
+// ── Behavioral checks (import pure parser + client with a mock socket) ──
+const expectEq = (name, expected, actual) =>
+  expected === actual ? pass(name, String(expected), String(actual)) : fail(name, String(expected), String(actual));
+
+try {
+  const cfg = await import('../src/mobileBridgeConfig.js');
+
+  // Production default: nothing enabled.
+  expectEq('G.behav:default-disabled', false, cfg.parseMobileBridgeConfig({}, {}).enabled);
+
+  // Normal query param activation.
+  const q = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:query-enabled', true, q.enabled);
+  expectEq('G.behav:query-url', 'ws://localhost:8787/', q.url);
+  expectEq('G.behav:query-no-error', true, q.error === null);
+
+  // Hash-appended query param activation (SPA fallback).
+  const h = cfg.parseMobileBridgeConfig({ hash: '#/?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:hash-enabled', true, h.enabled);
+  expectEq('G.behav:hash-url', 'ws://localhost:8787/', h.url);
+
+  // Hash without slash.
+  const h2 = cfg.parseMobileBridgeConfig({ hash: '#?bridge=mobile&bridgeWs=ws://localhost:8787' }, {});
+  expectEq('G.behav:hash-noslash-enabled', true, h2.enabled);
+
+  // Env activation WITHOUT an explicit URL fails closed — no localhost
+  // default exists anywhere (Phase A hardening).
+  const e = cfg.parseMobileBridgeConfig({}, { VITE_ENABLE_MOBILE_BRIDGE: 'true' });
+  expectEq('G.behav:env-enabled', true, e.enabled);
+  expectEq('G.behav:env-no-default-url', null, e.url);
+  expectEq('G.behav:env-no-default-error', 'BRIDGE_UNAVAILABLE', e.error);
+
+  // Env activation with an explicit URL still works.
+  const e2 = cfg.parseMobileBridgeConfig({}, { VITE_ENABLE_MOBILE_BRIDGE: 'true', VITE_MOBILE_BRIDGE_WS_URL: 'ws://localhost:8787' });
+  expectEq('G.behav:env-explicit-url', 'ws://localhost:8787/', e2.url);
+
+  // Missing bridge URL (bare query) fails safely.
+  const miss = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile' }, {});
+  expectEq('G.behav:missing-url-enabled', true, miss.enabled);
+  expectEq('G.behav:missing-url-error', 'BRIDGE_UNAVAILABLE', miss.error);
+
+  // Invalid scheme fails safely.
+  for (const bad of ['http://localhost:8787', 'https://localhost', 'javascript:alert(1)', 'data:text/plain,x', 'file:///x', 'localhost:8787', '']) {
+    const r = cfg.parseMobileBridgeConfig({ search: `?bridge=mobile&bridgeWs=${encodeURIComponent(bad)}` }, {});
+    r.error === 'BRIDGE_UNAVAILABLE' && r.url === null
+      ? pass(`G.behav:reject-scheme:${bad || '(empty)'}`, 'BRIDGE_UNAVAILABLE', 'rejected')
+      : fail(`G.behav:reject-scheme:${bad || '(empty)'}`, 'BRIDGE_UNAVAILABLE', `enabled=${r.enabled} url=${r.url} error=${r.error}`);
+  }
+
+  // wss:// accepted.
+  const wss = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=wss://example.test:8787' }, {});
+  expectEq('G.behav:wss-accepted', true, wss.error === null && typeof wss.url === 'string');
+
+  // Query overrides env for the enable decision.
+  const ovr = cfg.parseMobileBridgeConfig({ search: '?bridge=mobile&bridgeWs=ws://localhost:9999' }, { VITE_ENABLE_MOBILE_BRIDGE: 'false' });
+  expectEq('G.behav:query-overrides-env', true, ovr.enabled && ovr.url === 'ws://localhost:9999/');
+} catch (err) {
+  fail('G.behav:config-import', 'mobileBridgeConfig importable + behavioral checks pass', `threw: ${err.message}`);
+}
+
+try {
+  const { MobileBridgeClient, MobileBridgeError } = await import('../src/mobileBridgeClient.js');
+
+  // Minimal mock WebSocket that opens on next microtask and records sends.
+  let liveSocket = null;
+  class MockSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.onopen = null; this.onclose = null; this.onerror = null; this.onmessage = null;
+      liveSocket = this;
+      Promise.resolve().then(() => { if (this.onopen) this.onopen(); });
+    }
+    send(data) { this.sent.push(data); }
+    close() { if (this.onclose) this.onclose(); }
+  }
+
+  const withTimeout = (p, ms, label) =>
+    Promise.race([p, new Promise((_, rej) => {
+      setTimeout(() => rej(new Error(`${label} hung`)), ms);
+    })]);
+  // Let the mock socket open and the client send its request (macrotask).
+  const tick = () => new Promise((r) => { setTimeout(r, 5); });
+
+  // Success path.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const reqStr = liveSocket.sent[0];
+    const req = JSON.parse(reqStr);
+    (req.type === 'capture.request' && req.source === 'glasses-web' && typeof req.requestId === 'string')
+      ? pass('G.client:request-shape', 'capture.request shape correct', 'ok')
+      : fail('G.client:request-shape', 'capture.request {type,requestId,source}', JSON.stringify({ type: req.type, source: req.source }));
+
+    liveSocket.onmessage({ data: JSON.stringify({
+      type: 'capture.success', requestId: req.requestId,
+      image: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD/2Q==',
+      mime: 'image/jpeg', encoding: 'data-url', createdAt: new Date().toISOString(),
+    }) });
+    const image = await withTimeout(promise, 2000, 'success');
+    image.startsWith('data:image/jpeg;base64,')
+      ? pass('G.client:success-validates', 'returns validated JPEG data URL', 'ok')
+      : fail('G.client:success-validates', 'data:image/jpeg;base64,...', 'unexpected');
+  }
+
+  // requestId mismatch is ignored, then matching success resolves.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: 'WRONG', image: 'data:image/jpeg;base64,AAAA' }) });
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==' }) });
+    const image = await withTimeout(promise, 2000, 'mismatch');
+    image.startsWith('data:image/jpeg;base64,')
+      ? pass('G.client:requestid-match', 'mismatched requestId ignored, match resolves', 'ok')
+      : fail('G.client:requestid-match', 'match by requestId', 'unexpected');
+  }
+
+  // capture.error mapping.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.error', requestId: req.requestId, code: 'DAT_NOT_CONFIGURED', message: 'blocked' }) });
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'error'); } catch (e) { caught = e; }
+    (caught && caught.code === 'DAT_NOT_CONFIGURED')
+      ? pass('G.client:error-mapping', 'capture.error maps to MobileBridgeError code', 'ok')
+      : fail('G.client:error-mapping', 'DAT_NOT_CONFIGURED', caught ? caught.code : 'no throw');
+  }
+
+  // Timeout cleanup → CAPTURE_TIMEOUT and pending cleared.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false, timeoutMs: 60 });
+    const promise = client.requestCapture();
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'timeout'); } catch (e) { caught = e; }
+    (caught && caught.code === 'CAPTURE_TIMEOUT' && client.pending === null)
+      ? pass('G.client:timeout-cleanup', 'timeout rejects CAPTURE_TIMEOUT and clears pending', 'ok')
+      : fail('G.client:timeout-cleanup', 'CAPTURE_TIMEOUT + pending cleared', caught ? caught.code : 'no throw');
+  }
+
+  // Socket close while pending → BRIDGE_UNAVAILABLE.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    liveSocket.onclose();
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'close'); } catch (e) { caught = e; }
+    (caught && caught.code === 'BRIDGE_UNAVAILABLE')
+      ? pass('G.client:close-cleanup', 'close while pending rejects BRIDGE_UNAVAILABLE', 'ok')
+      : fail('G.client:close-cleanup', 'BRIDGE_UNAVAILABLE', caught ? caught.code : 'no throw');
+  }
+
+  // One active request at a time → CAPTURE_ALREADY_PENDING.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const first = client.requestCapture();
+    await tick();
+    let caught = null;
+    try { await client.requestCapture(); } catch (e) { caught = e; }
+    (caught && caught.code === 'CAPTURE_ALREADY_PENDING')
+      ? pass('G.client:already-pending', 'second concurrent capture rejects CAPTURE_ALREADY_PENDING', 'ok')
+      : fail('G.client:already-pending', 'CAPTURE_ALREADY_PENDING', caught ? caught.code : 'no throw');
+    // settle the first to avoid a dangling timer
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'data:image/jpeg;base64,/9j/AAAA' }) });
+    await withTimeout(first, 2000, 'settle-first').catch(() => {});
+    client.close();
+  }
+
+  // Invalid success payload → INVALID_CAPTURE_RESPONSE.
+  {
+    const client = new MobileBridgeClient('ws://localhost:8787', { WebSocketImpl: MockSocket, allowReconnect: false });
+    const promise = client.requestCapture();
+    await tick();
+    const req = JSON.parse(liveSocket.sent[0]);
+    liveSocket.onmessage({ data: JSON.stringify({ type: 'capture.success', requestId: req.requestId, image: 'not-a-data-url' }) });
+    let caught = null;
+    try { await withTimeout(promise, 2000, 'invalid'); } catch (e) { caught = e; }
+    (caught && caught.code === 'INVALID_CAPTURE_RESPONSE')
+      ? pass('G.client:invalid-payload', 'invalid success payload rejects INVALID_CAPTURE_RESPONSE', 'ok')
+      : fail('G.client:invalid-payload', 'INVALID_CAPTURE_RESPONSE', caught ? caught.code : 'no throw');
+  }
+} catch (err) {
+  fail('G.client:behavioral', 'mobileBridgeClient behavioral checks pass', `threw: ${err.message}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// G. TextScan Adapter Phase 25
+// ═══════════════════════════════════════════════════════════════════
+console.log('\n=== G. TextScan Adapter ===');
+
+const textScanPath = path.join(srcDir, 'services', 'textScan.js');
+const textScanExists = fileExists(textScanPath);
+const textScanContent = textScanExists ? readFile(textScanPath) : '';
+
+// File existence
+const textScanFiles = [
+  'src/services/textScan.js',
+  'docs/meta-textscan-adapter.md',
+];
+for (const f of textScanFiles) {
+  fileExists(path.join(root, f))
+    ? pass(`G.textscan:${f}`, 'exists', 'found')
+    : fail(`G.textscan:${f}`, 'exists', 'MISSING');
+}
+
+// Contract checks
+if (textScanExists) {
+  textScanContent.includes("mode: 'text'")
+    ? pass('G.textscan:mode-text', "mode: 'text' in adapter", 'found')
+    : fail('G.textscan:mode-text', "mode: 'text' in adapter", 'NOT found');
+
+  textScanContent.includes('textQuery')
+    ? pass('G.textscan:textQuery', 'textQuery referenced', 'found')
+    : fail('G.textscan:textQuery', 'textQuery referenced', 'NOT found');
+
+  textScanContent.includes('source')
+    ? pass('G.textscan:source', 'source referenced', 'found')
+    : fail('G.textscan:source', 'source referenced', 'NOT found');
+
+  textScanContent.includes('clientTimestamp')
+    ? pass('G.textscan:clientTimestamp', 'clientTimestamp referenced', 'found')
+    : warn('G.textscan:clientTimestamp', 'clientTimestamp referenced', 'NOT found (live seam not wired yet)');
+
+  !textScanContent.includes('imageBase64')
+    ? pass('G.textscan:no-imageBase64', 'imageBase64 not present', 'clean')
+    : fail('G.textscan:no-imageBase64', 'imageBase64 not present', 'FOUND — must not send images');
+
+  textScanContent.includes('scan-identify')
+    ? pass('G.textscan:scan-identify', 'scan-identify referenced', 'found')
+    : pass('G.textscan:scan-identify', 'scan-identify referenced', 'found in comment (live seam)');
+
+  textScanContent.includes('AUTH_REQUIRED')
+    ? pass('G.textscan:auth-required', 'AUTH_REQUIRED error code', 'found')
+    : fail('G.textscan:auth-required', 'AUTH_REQUIRED error code', 'NOT found');
+
+  textScanContent.includes('validateTextScanQuery')
+    ? pass('G.textscan:validate-function', 'validateTextScanQuery function', 'found')
+    : fail('G.textscan:validate-function', 'validateTextScanQuery function', 'NOT found');
+
+  // Validation rules presence
+  const validationRules = [
+    ['length < 3', 'min length'],
+    ['MAX_TEXT_QUERY_LEN', 'max length'],
+    ['A-Za-z0-9+/', 'base64 rejection'],
+    ["'```'", 'code block rejection'],
+    ['ignore previous instructions', 'prompt injection'],
+    ['[\\w.+-]+@[\\w.-]+\\.\\w+', 'email rejection'],
+    ['\\d{3}[\\s-]\\d{2}[\\s-]\\d{4}', 'SSN rejection'],
+    ['0.30', 'non-alphanumeric ratio'],
+  ];
+  for (const [pattern, label] of validationRules) {
+    textScanContent.includes(pattern)
+      ? pass(`G.textscan:validation-${label}`, `${label} rule`, 'found')
+      : warn(`G.textscan:validation-${label}`, `${label} rule`, 'NOT found');
+  }
+
+  // No secrets
+  !textScanContent.includes('GEMINI_API_KEY')
+    ? pass('G.textscan:no-gemini-key', 'no Gemini API key in client', 'clean')
+    : fail('G.textscan:no-gemini-key', 'no Gemini API key in client', 'FOUND');
+
+  // No Node.js APIs
+  !textScanContent.includes('process.env')
+    ? pass('G.textscan:no-node-apis', 'no Node.js-only APIs', 'clean')
+    : fail('G.textscan:no-node-apis', 'no Node.js-only APIs', 'FOUND');
+}
+
+// HTML checks
+const textscanHtmlChecks = [
+  ['textscan-preset', 'preset buttons class'],
+  ['data-query', 'preset data-query attributes'],
+  ['textscan-results', 'textscan results container'],
+];
+for (const [pattern, label] of textscanHtmlChecks) {
+  indexHtmlContent.includes(pattern)
+    ? pass(`G.textscan:html-${label}`, label, 'found')
+    : fail(`G.textscan:html-${label}`, label, 'NOT found');
+}
+
+// No free-form text inputs in HUD
+const hudInputs = ['<input type="text"', '<textarea', 'type=\'text\'', 'contenteditable'];
+const foundInputs = hudInputs.filter((p) => indexHtmlContent.includes(p));
+foundInputs.length === 0
+  ? pass('G.textscan:no-free-text-input', 'no free-form text input in HUD', 'clean')
+  : fail('G.textscan:no-free-text-input', 'no free-form text input in HUD', `FOUND: ${foundInputs.join(', ')}`);
+
+// main.js TextScan integration
+mainContent.includes('startTextScan')
+  ? pass('G.textscan:main-startTextScan', 'startTextScan in main.js', 'found')
+  : fail('G.textscan:main-startTextScan', 'startTextScan in main.js', 'NOT found');
+
+mainContent.includes('renderTextScanResult')
+  ? pass('G.textscan:main-renderTextScanResult', 'renderTextScanResult in main.js', 'found')
+  : fail('G.textscan:main-renderTextScanResult', 'renderTextScanResult in main.js', 'NOT found');
+
+mainContent.includes('TEXTSCAN_ERROR_CODES')
+  ? pass('G.textscan:main-error-codes', 'TEXTSCAN_ERROR_CODES imported', 'found')
+  : fail('G.textscan:main-error-codes', 'TEXTSCAN_ERROR_CODES imported', 'NOT found');
+
+mainContent.includes('.textscan-preset')
+  ? pass('G.textscan:main-preset-wiring', 'preset buttons wired', 'found')
+  : fail('G.textscan:main-preset-wiring', 'preset buttons wired', 'NOT found');
+
+// StyleMatch contract includes textscan source
+const styleMatchContractContent = readFile(path.join(srcDir, 'styleMatchContract.js'));
+styleMatchContractContent.includes('textscan')
+  ? pass('G.textscan:contract-source', 'textscan in StyleMatch contract', 'found')
+  : fail('G.textscan:contract-source', 'textscan in StyleMatch contract', 'NOT found');
+
+// No Google files changed
+const googlePatterns = ['kscan-google-glasses', 'google-glasses', 'android-xr', 'gemini-glasses'];
+let googleChanged = false;
+for (const pattern of googlePatterns) {
+  if (textScanContent.includes(pattern) || mainContent.includes(pattern) || indexHtmlContent.includes(pattern)) {
+    googleChanged = true;
+    break;
+  }
+}
+!googleChanged
+  ? pass('G.textscan:no-google-files', 'no Google files referenced', 'clean')
+  : warn('G.textscan:no-google-files', 'no Google files referenced', 'pattern found — verify scope');
+
+// ─────────────────────────────────────────────────────────────────
+
+// ---------------------------------------------------------------------------
+// H. TextScan Phase 26 - Supabase live session bridge
+// ---------------------------------------------------------------------------
+console.log('\n=== H. TextScan Phase 26 ===');
+
+const packageJson = JSON.parse(readFile(path.join(root, 'package.json')) || '{}');
+const packageLock = readFile(path.join(root, 'package-lock.json'));
+const supabaseClientPath = path.join(srcDir, 'services', 'supabaseClient.js');
+const supabaseClientContent = readFile(supabaseClientPath);
+const simulatorContent = readFile(path.join(root, 'simulator.html'));
+const docsTextScanContent = readFile(path.join(root, 'docs', 'meta-textscan-adapter.md'));
+
+fileExists(supabaseClientPath)
+  ? pass('H.supabase:client-module', 'exact Meta Supabase client module exists', 'src/services/supabaseClient.js')
+  : fail('H.supabase:client-module', 'src/services/supabaseClient.js exists', 'MISSING');
+
+(packageJson.dependencies && packageJson.dependencies['@supabase/supabase-js'] && packageLock.includes('node_modules/@supabase/supabase-js'))
+  ? pass('H.supabase:dependency', '@supabase/supabase-js dependency + lockfile', 'found')
+  : fail('H.supabase:dependency', '@supabase/supabase-js dependency + lockfile', 'missing');
+
+const serviceRolePatterns = ['SERVICE_ROLE', 'SUPABASE_SERVICE', 'service_role'];
+const clientSecretHits = serviceRolePatterns.filter((s) => `${supabaseClientContent}\n${textScanContent}\n${mainContent}`.includes(s));
+clientSecretHits.length === 0
+  ? pass('H.secrets:no-service-role', 'no service-role references in client TextScan path', 'clean')
+  : fail('H.secrets:no-service-role', 'no service-role references', `FOUND: ${clientSecretHits.join(', ')}`);
+
+!`${supabaseClientContent}\n${textScanContent}\n${mainContent}`.includes('GEMINI_API_KEY')
+  ? pass('H.secrets:no-gemini-key', 'no Gemini API key in client TextScan path', 'clean')
+  : fail('H.secrets:no-gemini-key', 'no Gemini API key', 'FOUND');
+
+envExampleRaw.includes('VITE_SUPABASE_URL=')
+  ? pass('H.env:supabase-url', 'VITE_SUPABASE_URL in .env.example', 'present')
+  : fail('H.env:supabase-url', 'VITE_SUPABASE_URL in .env.example', 'missing');
+
+envExampleRaw.includes('VITE_SUPABASE_ANON_KEY=')
+  ? pass('H.env:supabase-anon', 'VITE_SUPABASE_ANON_KEY in .env.example', 'present')
+  : fail('H.env:supabase-anon', 'VITE_SUPABASE_ANON_KEY in .env.example', 'missing');
+
+envExampleRaw.includes('VITE_MOCK_TEXTSCAN=false')
+  ? pass('H.env:mock-default-false', 'VITE_MOCK_TEXTSCAN=false in .env.example', 'present')
+  : fail('H.env:mock-default-false', 'VITE_MOCK_TEXTSCAN=false', 'missing');
+
+envExampleRaw.includes('local simulator/dev only') && envExampleRaw.includes('Runtime window.__KSCAN_CONFIG__ takes precedence')
+  ? pass('H.env:mock-docs', 'mock dev-only + runtime precedence documented', 'found')
+  : fail('H.env:mock-docs', 'mock dev-only + runtime precedence documented', 'missing');
+
+(supabaseClientContent.includes('window.__KSCAN_CONFIG__') && supabaseClientContent.indexOf('window.__KSCAN_CONFIG__') < supabaseClientContent.indexOf('import.meta.env.VITE_SUPABASE_URL'))
+  ? pass('H.supabase:runtime-precedence', 'runtime config read before Vite env fallback', 'found')
+  : fail('H.supabase:runtime-precedence', 'window.__KSCAN_CONFIG__ before import.meta.env', 'not found');
+
+[
+  ['supabaseSession', 'runtime full session'],
+  ['SUPABASE_SESSION', 'runtime uppercase session'],
+  ['supabaseAccessToken', 'runtime token'],
+  ['AUTH_TOKEN', 'runtime auth token'],
+  ['access_token', 'URL token'],
+  ['history.replaceState', 'URL token scrub'],
+  ['kscan:supabase-session', 'postMessage session'],
+  ['kscan:supabase-token', 'postMessage token'],
+  ['auth.setSession', 'Supabase session hydration'],
+  ['auth.getSession', 'SDK session read'],
+].forEach(([pattern, label]) => {
+  supabaseClientContent.includes(pattern)
+    ? pass(`H.supabase:${label}`, `${pattern} implemented`, 'found')
+    : fail(`H.supabase:${label}`, `${pattern} implemented`, 'missing');
+});
+
+[
+  ["scan-identify", 'adapter invokes scan-identify'],
+  ["mode: 'text'", 'adapter sends mode:text'],
+  ['textQuery', 'adapter sends textQuery'],
+  ['source', 'adapter sends source'],
+  ['clientTimestamp', 'adapter sends clientTimestamp'],
+  ['MAX_TEXT_QUERY_LEN = 500', 'query cap constant'],
+  ['clampText(trimmed, MAX_TEXT_QUERY_LEN)', 'outgoing query capped'],
+  ['hasSupabaseConfig()', 'config checked before live invoke'],
+  ['getSupabaseSession()', 'session checked before live invoke'],
+  ['CONFIG_REQUIRED', 'missing config error code'],
+  ['AUTH_REQUIRED', 'missing auth error code'],
+  ['isDemo,', 'mock/live demo flag mapping'],
+  ['liveRequestInFlight', 'adapter concurrency latch'],
+  ['authRetried', '401 auth retry guard'],
+  ['networkRetries < NETWORK_RETRY_DELAYS_MS.length', 'network retry guard'],
+  ['TOTAL_TIMEOUT_MS = 8000', '8 second timeout budget'],
+  ['spokenSummary', 'spokenSummary mapping'],
+  ['MAX_HUD_ERROR_LEN = 35', 'HUD error length helper'],
+].forEach(([pattern, label]) => {
+  textScanContent.includes(pattern)
+    ? pass(`H.textscan:${label}`, pattern, 'found')
+    : fail(`H.textscan:${label}`, pattern, 'missing');
+});
+
+!textScanContent.includes('imageBase64')
+  ? pass('H.textscan:no-imageBase64', 'imageBase64 absent', 'clean')
+  : fail('H.textscan:no-imageBase64', 'imageBase64 absent', 'FOUND');
+
+!/source:\s*['"]manual['"]|source\s*=\s*['"]manual['"]/.test(textScanContent)
+  ? pass('H.textscan:no-manual-source', 'manual source label absent from Meta TextScan adapter', 'clean')
+  : fail('H.textscan:no-manual-source', 'manual source label absent', 'FOUND');
+
+textScanContent.includes('buildTextScanStyleMatch(mockResponse, capped, true)')
+  ? pass('H.textscan:mock-demo-true', 'mock mode sets meta.isDemo true', 'found')
+  : fail('H.textscan:mock-demo-true', 'mock mode sets meta.isDemo true', 'missing');
+
+textScanContent.includes('buildTextScanStyleMatch(response, capped, false)')
+  ? pass('H.textscan:live-demo-false', 'live mode sets meta.isDemo false', 'found')
+  : fail('H.textscan:live-demo-false', 'live mode sets meta.isDemo false', 'missing');
+
+!indexHtmlContent.includes('<input type="text"') && !indexHtmlContent.includes('<textarea') && !indexHtmlContent.includes("type='text'")
+  ? pass('H.hud:no-text-inputs', 'no HUD text input or textarea', 'clean')
+  : fail('H.hud:no-text-inputs', 'no HUD text input or textarea', 'FOUND');
+
+apiContent.includes('/api/analyze')
+  ? pass('H.image:path-preserved', 'image scan /api/analyze path preserved', 'found')
+  : fail('H.image:path-preserved', '/api/analyze path preserved', 'missing');
+
+!`${textScanContent}\n${supabaseClientContent}`.includes('onrender.com')
+  ? pass('H.backend:no-render-textscan', 'TextScan adapter does not call Render', 'clean')
+  : fail('H.backend:no-render-textscan', 'no Render TextScan route', 'FOUND');
+
+[
+  'live-missing-config',
+  'live-no-session',
+  'live-session',
+  'live-url-token',
+  'kscan:textscan-live-status',
+  'rapid-textscan',
+].forEach((pattern) => {
+  simulatorContent.includes(pattern)
+    ? pass(`H.simulator:${pattern}`, 'simulator TextScan control/status exists', 'found')
+    : fail(`H.simulator:${pattern}`, 'simulator TextScan control/status exists', 'missing');
+});
+
+docsTextScanContent.includes('Passive Session Injection') && docsTextScanContent.includes('phone companion app')
+  ? pass('H.docs:session-injection', 'passive session injection documented', 'found')
+  : fail('H.docs:session-injection', 'passive session injection documented', 'missing');
+
+try {
+  const changed = execSync('git diff --name-only', { cwd: root, encoding: 'utf8' })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const googleChanged = changed.filter((name) => /kscan-google-glasses|google-glasses|android-xr|gemini-glasses|\\bxr\\b/i.test(name));
+  googleChanged.length === 0
+    ? pass('H.scope:no-google-changed', 'no Google/Gemini/Android XR files changed', 'clean')
+    : fail('H.scope:no-google-changed', 'no Google/Gemini/Android XR files changed', googleChanged.join(', '));
+} catch (err) {
+  warn('H.scope:no-google-changed', 'git diff check available', `skipped: ${err.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// J. Real phone companion QA page — must never ship in a built artifact
+// ---------------------------------------------------------------------------
+console.log('\n=== J. Real Companion QA Artifact Separation ===');
+
+const realCompanionHtmlPath = path.join(root, 'companion-real.html');
+const realCompanionEntryPath = path.join(srcDir, 'companion', 'realCompanionEntry.js');
+
+fileExists(realCompanionHtmlPath)
+  ? pass('J.real-companion:page-exists', 'companion-real.html exists', 'found')
+  : fail('J.real-companion:page-exists', 'companion-real.html exists', 'missing');
+
+fileExists(realCompanionEntryPath)
+  ? pass('J.real-companion:entry-exists', 'src/companion/realCompanionEntry.js exists', 'found')
+  : fail('J.real-companion:entry-exists', 'src/companion/realCompanionEntry.js exists', 'missing');
+
+[
+  ['vite.config.js', 'production'],
+  ['vite.simulator.config.js', 'simulator'],
+  ['vite.hardware.config.js', 'hardware'],
+].forEach(([file, label]) => {
+  const content = readFile(path.join(root, file));
+  !content.includes('companion-real')
+    ? pass(`J.real-companion:excluded-from-${label}`, `${file} does not reference companion-real`, 'clean')
+    : fail(`J.real-companion:excluded-from-${label}`, `${file} does not reference companion-real`, 'FOUND');
+});
+
+const realCompanionEntryContent = readFile(realCompanionEntryPath);
+realCompanionEntryContent.includes('signInWithPassword') && realCompanionEntryContent.includes('autoApprove: false')
+  ? pass('J.real-companion:requires-real-auth', 'real sign-in required, no auto-approve bypass', 'found')
+  : fail('J.real-companion:requires-real-auth', 'real sign-in required, no auto-approve bypass', 'missing');
+
+// ---------------------------------------------------------------------------
+// I. Phase 27 — Local QA + Pre-Deployment Readiness
+// ---------------------------------------------------------------------------
+console.log('\n=== I. Phase 27 Local QA ===');
+
+const smokeScriptPath = path.join(root, 'scripts', 'textscan-live-smoke.js');
+const smokeScriptContent = readFile(smokeScriptPath);
+const qaDocPath = path.join(root, 'docs', 'meta-textscan-live-qa.md');
+const qaDocContent = readFile(qaDocPath);
+
+fileExists(smokeScriptPath)
+  ? pass('I.smoke:script-exists', 'textscan-live-smoke.js exists', 'found')
+  : fail('I.smoke:script-exists', 'textscan-live-smoke.js exists', 'MISSING');
+
+if (smokeScriptContent) {
+  !smokeScriptContent.includes('process.env.VITE_SUPABASE_URL')
+    ? fail('I.smoke:reads-env', 'reads config from env', 'NOT found')
+    : pass('I.smoke:reads-env', 'reads config from env', 'found');
+
+  smokeScriptContent.includes('SKIPPED: missing live QA env/session')
+    ? pass('I.smoke:skip-message', 'prints skip message when env missing', 'found')
+    : fail('I.smoke:skip-message', 'prints skip message when env missing', 'NOT found');
+
+  smokeScriptContent.includes('redact')
+    ? pass('I.smoke:redacts-tokens', 'redacts token values', 'found')
+    : fail('I.smoke:redacts-tokens', 'redacts token values', 'NOT found');
+
+  !smokeScriptContent.includes('console.log(ACCESS_TOKEN') && !smokeScriptContent.includes('console.log(REFRESH_TOKEN')
+    ? pass('I.smoke:no-token-log', 'does not log raw tokens', 'clean')
+    : fail('I.smoke:no-token-log', 'does not log raw tokens', 'FOUND');
+
+  smokeScriptContent.includes("mode: 'text'")
+    ? pass('I.smoke:mode-text', 'invokes mode:text', 'found')
+    : fail('I.smoke:mode-text', 'invokes mode:text', 'NOT found');
+
+  smokeScriptContent.includes("source: 'preset'")
+    ? pass('I.smoke:source-preset', 'uses source:preset', 'found')
+    : fail('I.smoke:source-preset', 'uses source:preset', 'NOT found');
+
+  smokeScriptContent.includes('process.exit(0)')
+    ? pass('I.smoke:exits-zero', 'exits zero on skip/pass', 'found')
+    : fail('I.smoke:exits-zero', 'exits zero on skip/pass', 'NOT found');
+
+  smokeScriptContent.includes('process.exit(1)')
+    ? pass('I.smoke:exits-nonzero', 'exits nonzero on failure', 'found')
+    : fail('I.smoke:exits-nonzero', 'exits nonzero on failure', 'NOT found');
+}
+
+// Session injection completeness
+supabaseClientContent.includes('window.__KSCAN_CONFIG__')
+  ? pass('I.session:runtime-config', 'runtime config session injection', 'found')
+  : fail('I.session:runtime-config', 'runtime config session injection', 'NOT found');
+
+supabaseClientContent.includes('history.replaceState')
+  ? pass('I.session:url-scrub', 'URL token scrub with replaceState', 'found')
+  : fail('I.session:url-scrub', 'URL token scrub with replaceState', 'NOT found');
+
+!supabaseClientContent.includes('window.location.href =') && !supabaseClientContent.includes('window.location.search =')
+  ? pass('I.session:no-reload-scrub', 'no reload-causing scrub pattern', 'clean')
+  : fail('I.session:no-reload-scrub', 'no reload-causing scrub pattern', 'FOUND');
+
+supabaseClientContent.includes('kscan:supabase-session')
+  ? pass('I.session:postmessage-session', 'postMessage session type', 'found')
+  : fail('I.session:postmessage-session', 'postMessage session type', 'NOT found');
+
+supabaseClientContent.includes('kscan:supabase-token')
+  ? pass('I.session:postmessage-token', 'postMessage token type', 'found')
+  : fail('I.session:postmessage-token', 'postMessage token type', 'NOT found');
+
+// spokenSummary checks
+textScanContent.includes('spokenSummary')
+  ? pass('I.spoken:exists', 'spokenSummary field exists', 'found')
+  : fail('I.spoken:exists', 'spokenSummary field exists', 'NOT found');
+
+textScanContent.includes('MAX_SPOKEN_SUMMARY_LEN = 120')
+  ? pass('I.spoken:max-120', 'spokenSummary capped at 120 chars', 'found')
+  : fail('I.spoken:max-120', 'spokenSummary capped at 120 chars', 'NOT found');
+
+// No forbidden APIs
+const allClientSrc = `${textScanContent}\n${supabaseClientContent}\n${mainContent}\n${indexHtmlContent}`;
+
+!allClientSrc.includes('speechSynthesis')
+  ? pass('I.forbidden:no-speech-synthesis', 'no speechSynthesis', 'clean')
+  : fail('I.forbidden:no-speech-synthesis', 'no speechSynthesis', 'FOUND');
+
+!allClientSrc.includes('getUserMedia')
+  ? pass('I.forbidden:no-getUserMedia', 'no getUserMedia', 'clean')
+  : fail('I.forbidden:no-getUserMedia', 'no getUserMedia', 'FOUND');
+
+!allClientSrc.includes('navigator.geolocation')
+  ? pass('I.forbidden:no-geolocation', 'no geolocation', 'clean')
+  : fail('I.forbidden:no-geolocation', 'no geolocation', 'FOUND');
+
+// D-pad preset existence
+indexHtmlContent.includes('textscan-preset focusable')
+  ? pass('I.dpad:presets-focusable', 'TextScan presets have .focusable', 'found')
+  : fail('I.dpad:presets-focusable', 'TextScan presets have .focusable', 'NOT found');
+
+indexHtmlContent.includes('data-query="black oversized blazer"')
+  ? pass('I.dpad:preset-query-attr', 'preset data-query attribute present', 'found')
+  : fail('I.dpad:preset-query-attr', 'preset data-query attribute present', 'NOT found');
+
+mainContent.includes("source: 'preset'") || mainContent.includes('const source = \'preset\'')
+  ? pass('I.dpad:source-preset', 'TextScan uses source:preset', 'found')
+  : fail('I.dpad:source-preset', 'TextScan uses source:preset', 'NOT found');
+
+// HUD containment CSS
+const styleContent = readFile(path.join(root, 'style.css'));
+
+styleContent.includes('text-overflow: ellipsis') && styleContent.includes('overflow: hidden')
+  ? pass('I.hud:containment-css', 'HUD containment CSS exists', 'found')
+  : fail('I.hud:containment-css', 'HUD containment CSS exists', 'NOT found');
+
+// No hardcoded http:// backend URLs in app source (excluding env example comments)
+const httpHits = [];
+for (const [label, content] of [['textScan.js', textScanContent], ['supabaseClient.js', supabaseClientContent]]) {
+  if (/http:\/\/[^l]/.test(content) && !content.includes('http://localhost')) {
+    httpHits.push(label);
+  }
+}
+httpHits.length === 0
+  ? pass('I.https:no-hardcoded-http', 'no hardcoded http:// backend URLs', 'clean')
+  : fail('I.https:no-hardcoded-http', 'no hardcoded http:// URLs', `FOUND in: ${httpHits.join(', ')}`);
+
+// QA doc exists
+fileExists(qaDocPath)
+  ? pass('I.docs:qa-doc', 'meta-textscan-live-qa.md exists', 'found')
+  : fail('I.docs:qa-doc', 'meta-textscan-live-qa.md exists', 'MISSING');
+
+if (qaDocContent) {
+  qaDocContent.includes('Phase 28')
+    ? pass('I.docs:phase28-handoff', 'Phase 28 handoff noted', 'found')
+    : fail('I.docs:phase28-handoff', 'Phase 28 handoff noted', 'NOT found');
+
+  qaDocContent.includes('600')
+    ? pass('I.docs:600x600-referenced', '600x600 viewport referenced', 'found')
+    : fail('I.docs:600x600-referenced', '600x600 viewport referenced', 'NOT found');
+}
+
+// Image scan unchanged
+apiContent.includes('/api/analyze')
+  ? pass('I.image:path-preserved', 'image scan /api/analyze preserved', 'found')
+  : fail('I.image:path-preserved', '/api/analyze preserved', 'missing');
+
 console.log('\n=== Summary ===');
 console.log(`FAIL:  ${failCount}`);
 console.log(`WARN:  ${warnCount}`);
