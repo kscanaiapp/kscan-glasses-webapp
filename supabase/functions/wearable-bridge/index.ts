@@ -46,6 +46,30 @@ function safeError(code: string, status = 400) {
   return response({ ok: false, code }, status);
 }
 
+// P2-06: a response returned while the request body is still un-read stalls the
+// hosted edge connection until the platform idle timeout (~160 s -> 503) for any
+// body larger than the in-flight transport buffer (~0.5 MB). Every early exit —
+// the auth middleware's 401, METHOD_NOT_ALLOWED, PAYLOAD_TOO_LARGE — took that
+// path. Draining the stream (discarding chunks, never buffering them) lets the
+// upload finish so the real status code is delivered instead.
+const MAX_DISCARD_BYTES = 16 * 1024 * 1024;
+
+async function discardBody(req: Request): Promise<void> {
+  if (!req.body || req.bodyUsed) return;
+  try {
+    const reader = req.body.getReader();
+    let seen = 0;
+    while (seen < MAX_DISCARD_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) return;
+      seen += value?.byteLength ?? 0;
+    }
+    await reader.cancel();
+  } catch {
+    // Peer already gone, or the stream was consumed concurrently. Nothing to do.
+  }
+}
+
 async function sha256(value: string): Promise<string> {
   const bytes = new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value)));
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -142,13 +166,12 @@ async function insertMessage(admin: any, sessionId: string, direction: string, f
   if (error) throw new Error("MESSAGE_WRITE_FAILED");
 }
 
-export default {
-  fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req: Request, ctx: any) => {
+const MAX_REQUEST_BYTES = MAX_FRAME_BYTES + 8_192;
+
+const authenticatedFetch = withSupabase({ auth: ["publishable", "secret"] }, async (req: Request, ctx: any) => {
     if (req.method !== "POST") return safeError("METHOD_NOT_ALLOWED", 405);
     let body: Json;
     try {
-      const length = Number(req.headers.get("content-length") ?? 0);
-      if (length > MAX_FRAME_BYTES + 8_192) return safeError("PAYLOAD_TOO_LARGE", 413);
       body = await req.json();
     } catch {
       return safeError("INVALID_JSON");
@@ -393,5 +416,20 @@ export default {
       const status = code === "AUTH_REQUIRED" ? 401 : code === "PAIR_RATE_LIMITED" ? 429 : code.startsWith("SESSION_") ? 403 : 400;
       return safeError(/^[A-Z0-9_]{3,48}$/.test(code) ? code : "SAFE_BACKEND_FAILURE", status);
     }
-  }),
+  });
+
+export default {
+  // The size guard sits OUTSIDE withSupabase so an oversized body is refused
+  // before authentication, and every exit path drains the request stream.
+  fetch: async (req: Request) => {
+    if (Number(req.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
+      await discardBody(req);
+      return safeError("PAYLOAD_TOO_LARGE", 413);
+    }
+    try {
+      return await authenticatedFetch(req);
+    } finally {
+      await discardBody(req);
+    }
+  },
 };
